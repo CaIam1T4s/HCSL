@@ -25,7 +25,6 @@
     <Setter Property="CornerRadius" Value="{StaticResource PillRadius}"/>
   </Style>
   <Style Selector="Border.sidebar">
-    <Setter Property="Background" Value="{DynamicResource SidebarBackground}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
     <Setter Property="BorderThickness" Value="0,0,1,0"/>
   </Style>

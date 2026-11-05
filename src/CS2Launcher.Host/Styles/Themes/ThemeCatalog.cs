@@ -19,13 +19,13 @@ public static class ThemeCatalog
         "#E7E0D4", "#F0EADF", "#F3EDE3", "#DFD6C8",
         "#E5DDCF", "#302D28", "#696157", "#CFC4B3",
         "#9C471A", "#EBD6BF", "#D9D0C2", "#736A60",
-        "#DDD8CC", "#CBBCA7", "#08B8A17D", "0 5 18 0 #382D2115");
+        "#CDD8D5", "#C4A789", "#05B8A17D", "0 5 18 0 #382D2115");
 
     private static readonly Palette Dark = new(
         "#171C24", "#222934", "#293240", "#202630",
-        "#DD202630", "#EDF1F7", "#A6B2C2", "#3B4655",
+        "#202630", "#EDF1F7", "#A6B2C2", "#3B4655",
         "#FFB47B", "#463226", "#3B4553", "#C0CAD7",
-        "#182B39", "#514135", "#300D1724", "0 6 22 0 #70000000");
+        "#1B3444", "#594133", "#140D1724", "0 6 22 0 #70000000");
 
     public static ArcThemePreset ArcPreset { get; } = ArcThemePreset.Create(
         "CS2LauncherWarm", preset =>

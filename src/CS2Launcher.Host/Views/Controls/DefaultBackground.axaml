@@ -4,6 +4,7 @@
              IsHitTestVisible="False">
   <Border>
     <Border.Background>
+      <!-- Relative endpoints keep the gradient from top-left to bottom-right at any size. -->
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
         <GradientStop Offset="0" Color="{DynamicResource BackdropStartColor}" />
         <GradientStop Offset="1" Color="{DynamicResource BackdropEndColor}" />

@@ -41,6 +41,36 @@ public sealed class ShellViewModel : ObservableObject
     }
     public double BackgroundOpacity => BackgroundOpacityPercent / 100;
     public string BackgroundOpacityLabel => $"{BackgroundOpacityPercent:0}%";
+    private double _sidebarTintPercent = 72;
+    public double SidebarTintPercent
+    {
+        get => _sidebarTintPercent;
+        set
+        {
+            if (!double.IsFinite(value)) return;
+            var clamped = Math.Clamp(value, 0, 100);
+            if (_sidebarTintPercent == clamped) return;
+            _sidebarTintPercent = clamped;
+            Notify(); Notify(nameof(SidebarTintOpacity)); Notify(nameof(SidebarTintLabel));
+        }
+    }
+    public double SidebarTintOpacity => SidebarTintPercent / 100;
+    public string SidebarTintLabel => $"{SidebarTintPercent:0}%";
+
+    private double _sidebarBlurRadius = 18;
+    public double SidebarBlurRadius
+    {
+        get => _sidebarBlurRadius;
+        set
+        {
+            if (!double.IsFinite(value)) return;
+            var clamped = Math.Clamp(value, 0, 32);
+            if (_sidebarBlurRadius == clamped) return;
+            _sidebarBlurRadius = clamped;
+            Notify(); Notify(nameof(SidebarBlurLabel));
+        }
+    }
+    public string SidebarBlurLabel => $"{SidebarBlurRadius:0} px";
     public IReadOnlyList<string> Themes { get; } = ["跟随系统", "浅色", "深色"];
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
