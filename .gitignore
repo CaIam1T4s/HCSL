@@ -1,0 +1,58 @@
+# .NET build, restore and publish output
+**/[Bb]in/
+**/[Oo]bj/
+/artifacts/
+**/publish/
+*.nupkg
+*.snupkg
+
+# Editors and per-user settings (keep shared .vscode configuration trackable)
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+*.userosscache
+*.sln.ide
+
+# Tests, coverage and local diagnostics
+**/TestResults/
+**/coverage/
+coverage.xml
+coverage.cobertura.xml
+*.coverage
+*.coveragexml
+*.trx
+*.log
+*.dmp
+*.stackdump
+/core
+/core.[0-9]*
+
+# Local server/runtime data; never ignore source CFG, JSON or image assets globally
+/server/
+/runtime/
+/instances/
+/cache/
+/downloads/
+/backups/
+/diagnostics/
+/local-data/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.template
+/.aws/
+/secrets/
+*.pfx
+*.p12
+
+# OS/editor temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo

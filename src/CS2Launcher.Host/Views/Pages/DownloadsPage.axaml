@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:CS2Launcher.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="CS2Launcher.Host.Views.Pages.DownloadsPage" x:DataType="vm:ShellViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="36" Spacing="22">
+      <TextBlock Classes="heading" Text="下载中心"/>
+      <TextBlock Classes="muted" Text="统一维护最新 CS2 服务端，并管理插件下载任务。"/>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="CS2 服务端"/>
+          <TextBlock Classes="muted" Text="尚未检测安装。接入 SteamCMD 后将在此显示版本、安装目录与更新状态。"/>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <arc:Button Content="安装服务端" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+            <arc:Button Content="检查更新" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+            <arc:Button Content="校验文件" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="插件目录"/>
+          <TextBlock Classes="muted" Text="将提供精选插件及本地导入，下载前选择目标实例和方案。"/>
+          <arc:Button Content="浏览精选插件" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="下载任务"/>
+          <TextBlock Classes="muted" Text="暂无下载任务。下载服务尚未接入。"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

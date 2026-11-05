@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CS2Launcher.Host.Views.Controls.DefaultBackground"
+             IsHitTestVisible="False">
+  <Border>
+    <Border.Background>
+      <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Offset="0" Color="{DynamicResource BackdropStartColor}" />
+        <GradientStop Offset="1" Color="{DynamicResource BackdropEndColor}" />
+      </LinearGradientBrush>
+    </Border.Background>
+  </Border>
+</UserControl>
