@@ -10,7 +10,7 @@ internal static class Program
     {
         if (args is ["--help"] or ["-h"])
         {
-            Console.WriteLine("HCSL TUI (development preview)\nUsage: HCSL.Tui [--lang en|zh-CN]\nTERM=linux defaults to English. Fixed dark palette and Unicode. Minimum size: 80x24.\nF1 Help | F10 / Ctrl+Q Quit\nNavigation only; server operations are not connected.");
+            Console.WriteLine("HCSL TUI (development preview)\nUsage: HCSL.Tui [--lang en|zh-CN]\nTERM=linux defaults to English. Fixed dark palette and Unicode. Minimum size: 80x24.\nF1 Help | F10 / Ctrl+Q Quit\nSteamCMD probes via local HCSL.Daemon; CS2 server operations are not connected.");
             return 0;
         }
         TerminalOptions options;
@@ -44,7 +44,7 @@ internal static class Program
             if (initialized) Application.Shutdown();
         }
         if (failure is null) return 0;
-        Console.Error.WriteLine($"CSL-TUI-001: Terminal UI failed.\n{failure.GetType().Name}: {failure.Message}\nCheck terminal type and dependencies. Run --help for requirements.");
+        Console.Error.WriteLine($"HCSL-TUI-001: Terminal UI failed.\n{failure.GetType().Name}: {failure.Message}\nCheck terminal type and dependencies. Run --help for requirements.");
         return 1;
     }
 }

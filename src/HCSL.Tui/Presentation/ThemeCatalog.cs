@@ -26,10 +26,10 @@ public static class ThemeCatalog
         if (Application.Driver.GetType().Name == "CursesDriver")
         {
             // A_DIM applies low intensity without using color IDs 8-15.
-            // Use the default pair: linux terminfo ncv forbids DIM with color pairs.
-            // ncurses pair zero is white-on-black, so this remains a dark-theme gray.
+            // Use the default pair: linux terminfo ncv forbids DIM with color pairs,
+            // so allocate no pair at all - pair zero is white-on-black, dimmed.
             const int dim = 1 << 20;
-            return new Terminal.Gui.Attribute(dim, Color.DarkGray, Color.Black);
+            return new Terminal.Gui.Attribute(dim);
         }
         return Application.Driver.MakeAttribute(Color.DarkGray, Color.Black);
     }

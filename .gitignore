@@ -17,6 +17,8 @@
 
 # Tests, coverage and local diagnostics
 **/TestResults/
+__pycache__/
+*.pyc
 **/coverage/
 coverage.xml
 coverage.cobertura.xml

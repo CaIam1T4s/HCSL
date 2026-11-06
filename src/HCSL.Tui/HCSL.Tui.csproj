@@ -8,4 +8,6 @@
   <ItemGroup>
     <PackageReference Include="Terminal.Gui" Version="1.19.0" />
   </ItemGroup>
+  <ItemGroup><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /></ItemGroup>
+  <Import Project="../../build/DaemonPayload.targets" />
 </Project>

@@ -1,0 +1,30 @@
+<Project>
+  <!-- Build-only project dependency; never reference the daemon executable from UI code. -->
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../src/HCSL.Daemon/HCSL.Daemon.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyBundledDaemon" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)../src/HCSL.Daemon/HCSL.Daemon.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)">
+      <Output TaskParameter="TargetOutputs" ItemName="_DaemonAssembly" />
+    </MSBuild>
+    <PropertyGroup><_DaemonOutput>@(_DaemonAssembly->'%(RootDir)%(Directory)')</_DaemonOutput></PropertyGroup>
+    <Error Condition="'$(_DaemonOutput)' == ''" Text="Could not resolve the bundled daemon output directory." />
+    <ItemGroup><_DaemonBuildFiles Include="$(_DaemonOutput)**/*" Exclude="$(_DaemonOutput)daemon/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(_DaemonBuildFiles)" DestinationFiles="@(_DaemonBuildFiles->'$(OutDir)daemon/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishBundledDaemon" BeforeTargets="ComputeFilesToPublish" Condition="'$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup><_DaemonPublishDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/$(IntermediateOutputPath)daemon-publish/'))</_DaemonPublishDir></PropertyGroup>
+    <MSBuild Projects="$(MSBuildThisFileDirectory)../src/HCSL.Daemon/HCSL.Daemon.csproj" Targets="Publish"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=false;PublishDir=$(_DaemonPublishDir)">
+    </MSBuild>
+    <ItemGroup>
+      <_DaemonPublishFiles Include="$(_DaemonPublishDir)**/*" />
+      <ResolvedFileToPublish Include="@(_DaemonPublishFiles)">
+        <RelativePath>daemon/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

@@ -1,4 +1,6 @@
 using Avalonia;
+using Avalonia.Threading;
+using HCSL.Frontend;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using HCSL.Host.Services;
@@ -19,10 +21,12 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = new ShellViewModel(new ThemeService(this))
-            };
+        {
+            var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
+            desktop.Exit += (_, _) => steamCmd.Dispose();
+            desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd) };
+            desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); };
+        }
         base.OnFrameworkInitializationCompleted();
     }
 }

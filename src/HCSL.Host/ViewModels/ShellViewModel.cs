@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using HCSL.Frontend;
 using HCSL.Host.Services;
 
 namespace HCSL.Host.ViewModels;
@@ -14,6 +15,7 @@ public sealed class NavigationItem(string id, string label, string description) 
 
 public sealed class ShellViewModel : ObservableObject
 {
+    public SteamCmdController SteamCmd { get; }
     public IReadOnlyList<NavigationItem> Pages { get; } =
     [
         new("home", "首页", "选择实例，准备启动服务器。"),
@@ -75,8 +77,9 @@ public sealed class ShellViewModel : ObservableObject
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
 
-    public ShellViewModel(IThemeService themeService)
+    public ShellViewModel(IThemeService themeService, SteamCmdController steamCmd)
     {
+        SteamCmd = steamCmd;
         _selectedPage = Pages[0];
         _selectedPage.IsSelected = true;
         SetThemeCommand = new RelayCommand(value => { if (value is string theme) SelectedTheme = theme; });

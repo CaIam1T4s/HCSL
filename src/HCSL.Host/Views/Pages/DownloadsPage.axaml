@@ -1,30 +1,66 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.Pages.DownloadsPage" x:DataType="vm:ShellViewModel">
   <ScrollViewer>
-    <StackPanel Margin="36" Spacing="22">
+    <StackPanel Margin="36" Spacing="20">
       <TextBlock Classes="heading" Text="下载中心"/>
-      <TextBlock Classes="muted" Text="统一维护最新 CS2 服务端，并管理插件下载任务。"/>
+      <TextBlock Classes="muted" Text="准备 SteamCMD、验证登录，并安装、更新或校验全局 CS2 服务端。" TextWrapping="Wrap"/>
       <Border Classes="panel">
         <StackPanel Spacing="12">
-          <TextBlock Classes="subheading" Text="CS2 服务端"/>
-          <TextBlock Classes="muted" Text="尚未检测安装。接入 SteamCMD 后将在此显示版本、安装目录与更新状态。"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="subheading" Text="SteamCMD"/>
+            <arc:Button Grid.Column="1" Content="连接本机宿主" Click="ConnectDaemon" IsEnabled="{Binding SteamCmd.CanConnect}" Variant="Secondary"/>
+          </Grid>
+          <TextBlock Text="{Binding SteamCmd.ConnectionText}" Classes="muted"/>
+          <TextBlock Text="应用会自动连接或启动本机宿主。关闭界面后，已提交任务继续运行。" Classes="muted" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsEnabled="{Binding SteamCmd.CanEdit}">
+            <TextBlock Text="设置目录" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="1" Text="{Binding SteamCmd.SettingsRoot, Mode=TwoWay}" Margin="0,3"/>
+            <TextBlock Grid.Row="1" Text="数据目录" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SteamCmd.DataRoot, Mode=TwoWay}" Margin="0,3"/>
+            <TextBlock Grid.Row="2" Text="内容库" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SteamCmd.LibraryRoot, Mode=TwoWay}" Margin="0,3"/>
+            <TextBlock Grid.Row="3" Text="SteamCMD 路径" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SteamCmd.ExecutablePath, Mode=TwoWay}" PlaceholderText="留空使用受管工具；或填写现有工具的绝对路径" Margin="0,3"/>
+            <TextBlock Grid.Row="4" Text="Steam 登录名" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SteamCmd.AccountName, Mode=TwoWay}" PlaceholderText="留空为匿名登录" Margin="0,3"/>
+            <TextBlock Grid.Row="5" Text="登录超时（秒）" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SteamCmd.TimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
+            <TextBlock Grid.Row="6" Text="安装超时（秒）" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SteamCmd.InstallTimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
+          </Grid>
+          <TextBlock Text="{Binding SteamCmd.ServerDirectory}" Classes="muted" TextWrapping="Wrap"/>
+          <TextBlock Text="首次使用建议将内容库放在空间充足的磁盘；新默认位置为用户主目录下的 HCSL-Library。安装目标为内容库下的 server 文件夹。安装中断会保留下载内容，可重新提交任务继续；校验可能重新下载文件。" Classes="muted" TextWrapping="Wrap"/>
+          <CheckBox Content="受管工具缺失时，从 Valve 下载 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}" IsEnabled="{Binding SteamCmd.CanEdit}"/>
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <arc:Button Content="安装服务端" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
-            <arc:Button Content="检查更新" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
-            <arc:Button Content="校验文件" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+            <arc:Button Content="准备并登录" Click="StartProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
+            <arc:Button Content="取消任务" Click="CancelProbe" IsEnabled="{Binding SteamCmd.CanCancel}" Variant="Secondary"/>
+            <arc:Button Content="恢复检查" Click="RecoverProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <arc:Button Content="安装/更新 CS2" Click="InstallServer" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
+            <arc:Button Content="校验 CS2 文件" Click="ValidateServer" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
           </StackPanel>
         </StackPanel>
       </Border>
       <Border Classes="panel">
-        <StackPanel Spacing="12">
-          <TextBlock Classes="subheading" Text="插件目录"/>
-          <TextBlock Classes="muted" Text="将提供精选插件及本地导入，下载前选择目标实例和配置预设。"/>
-          <arc:Button Content="浏览精选插件" IsEnabled="False" HorizontalAlignment="Left" Variant="Secondary"/>
+        <StackPanel Spacing="10">
+          <TextBlock Classes="subheading" Text="{Binding SteamCmd.StageText}"/>
+          <TextBlock Classes="muted" Text="{Binding SteamCmd.Detail}" TextWrapping="Wrap"/>
+          <ProgressBar IsVisible="{Binding SteamCmd.ShowProgress}" IsIndeterminate="{Binding SteamCmd.ProgressIndeterminate}" Value="{Binding SteamCmd.ProgressPercent}" Minimum="0" Maximum="100" Height="5"/>
+          <StackPanel IsVisible="{Binding SteamCmd.NeedsInput}" Spacing="8">
+            <TextBlock Text="{Binding SteamCmd.ChallengeText}" TextWrapping="Wrap"/>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBox x:Name="SecretInput" PasswordChar="●" MaxLength="512" PlaceholderText="仅用于当前认证，不保存"/>
+              <arc:Button Grid.Column="1" Content="提交" Click="SubmitSecret" IsEnabled="{Binding SteamCmd.CanSubmit}" Margin="12,0,0,0" Variant="Secondary"/>
+            </Grid>
+          </StackPanel>
+          <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="11"/>
+          <TextBox Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="220"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">
-        <StackPanel Spacing="12">
-          <TextBlock Classes="subheading" Text="下载任务"/>
-          <TextBlock Classes="muted" Text="暂无下载任务。下载服务尚未接入。"/>
+        <StackPanel Spacing="10">
+          <TextBlock Classes="subheading" Text="插件"/>
+          <TextBlock Classes="muted" Text="插件下载和实例开服尚未接入。此处安装操作只维护全局服务端基础文件。" TextWrapping="Wrap"/>
         </StackPanel>
       </Border>
     </StackPanel>

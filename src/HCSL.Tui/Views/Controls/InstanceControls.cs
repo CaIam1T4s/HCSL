@@ -36,10 +36,17 @@ public sealed class InstanceActionButton : Button
 
     public override void Redraw(Rect bounds)
     {
-        Driver.SetAttribute(!Enabled ? ColorScheme.Disabled : HasFocus ? ColorScheme.Focus : ColorScheme.Normal);
+        var state = !Enabled ? ColorScheme.Disabled : HasFocus ? ColorScheme.Focus : ColorScheme.Normal;
+        var width = Math.Max(0, Bounds.Width);
+        var label = " [" + TerminalLayout.Center(Text.ToString() ?? "", Math.Max(0, width - 4)) + "] ";
+        // Clear the whole slot with the ordinary background first: a disabled button must read as dim text,
+        // not as a filled block sitting next to its neighbours.
+        Driver.SetAttribute(ColorScheme.Normal);
         Move(0, 0);
-        var label = "[" + TerminalLayout.Center(Text.ToString() ?? "", Math.Max(0, Bounds.Width - 4)) + "]";
-        Driver.AddStr(" " + label + " ");
+        Driver.AddStr(new string(' ', width));
+        Driver.SetAttribute(state);
+        Move(0, 0);
+        Driver.AddStr(label.Length >= width ? label[..width] : label);
     }
 
     public override bool ProcessKey(KeyEvent keyEvent)

@@ -1,4 +1,22 @@
 <Solution>
   <Project Path="src/HCSL.Host/HCSL.Host.csproj" />
   <Project Path="src/HCSL.Tui/HCSL.Tui.csproj" />
+  <Project Path="src/HCSL.Application/HCSL.Application.csproj" />
+  <Project Path="src/HCSL.Infrastructure/HCSL.Infrastructure.csproj" />
+  <Project Path="build/HCSL.WorkspaceCheck/HCSL.WorkspaceCheck.csproj" />
+  <Project Path="tests/HCSL.IntegrationTests/HCSL.IntegrationTests.csproj" />
+  <Project Path="build/HCSL.SteamCmdCheck/HCSL.SteamCmdCheck.csproj" />
+  <Project Path="build/HCSL.FakeSteamCmd/HCSL.FakeSteamCmd.csproj" />
+  <Project Path="tests/HCSL.SteamCmdTests/HCSL.SteamCmdTests.csproj" />
+  <Project Path="src/HCSL.Contracts/HCSL.Contracts.csproj" />
+  <Project Path="src/HCSL.Frontend/HCSL.Frontend.csproj" />
+  <Project Path="src/HCSL.Daemon/HCSL.Daemon.csproj" />
+  <Project Path="tests/HCSL.IpcTests/HCSL.IpcTests.csproj" />
+  <Project Path="tests/HCSL.BootstrapTests/HCSL.BootstrapTests.csproj" />
+  <Project Path="src/HCSL.Core/HCSL.Core.csproj" />
+  <Project Path="tests/HCSL.InstanceTests/HCSL.InstanceTests.csproj" />
+  <Project Path="build/HCSL.DeploymentCheck/HCSL.DeploymentCheck.csproj" />
+  <Project Path="tests/HCSL.DeploymentTests/HCSL.DeploymentTests.csproj" />
+  <Project Path="build/HCSL.ServerCheck/HCSL.ServerCheck.csproj" />
+  <Project Path="tests/HCSL.ServerTests/HCSL.ServerTests.csproj" />
 </Solution>
