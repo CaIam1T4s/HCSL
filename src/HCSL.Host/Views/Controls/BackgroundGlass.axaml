@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:HCSL.Host.Views.Controls" x:Class="HCSL.Host.Views.Controls.BackgroundGlass" x:Name="GlassRoot" x:DataType="local:BackgroundGlass" IsHitTestVisible="False" ClipToBounds="True">
+  <Grid>
+    <!-- Render the same decoded image and composition at full scene dimensions.
+         This avoids stale VisualBrush recordings after an image source changes. -->
+    <Canvas>
+      <local:BackgroundScene x:Name="BlurredSurface"
+                             Width="{Binding #GlassRoot.Source.Bounds.Width}"
+                             Height="{Binding #GlassRoot.Source.Bounds.Height}"
+                             ImageSource="{Binding #GlassRoot.Source.ImageSource}"
+                             Strength="{Binding #GlassRoot.Source.Strength}"
+                             Canvas.Top="{Binding #GlassRoot.OffsetY}"/>
+    </Canvas>
+    <Border Background="{DynamicResource SidebarBackground}" Opacity="{Binding #GlassRoot.TintOpacity}"/>
+  </Grid>
+</UserControl>

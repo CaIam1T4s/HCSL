@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.Pages.SettingsPage" x:DataType="vm:ShellViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="36" Spacing="22">
+      <TextBlock Classes="heading" Text="设置"/>
+      <TextBlock Classes="muted" Text="外观设置即时生效，业务功能将分阶段接入。"/>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="外观主题"/>
+          <TextBlock Classes="muted" Text="浅色、深色与跟随系统同时适用于页面和 Arc 控件。"/>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <arc:Button Content="跟随系统" Classes.selected="{Binding IsSystemTheme}" Command="{Binding SetThemeCommand}" CommandParameter="跟随系统" Variant="Secondary"/>
+            <arc:Button Content="浅色" Classes.selected="{Binding IsLightTheme}" Command="{Binding SetThemeCommand}" CommandParameter="浅色" Variant="Secondary"/>
+            <arc:Button Content="深色" Classes.selected="{Binding IsDarkTheme}" Command="{Binding SetThemeCommand}" CommandParameter="深色" Variant="Secondary"/>
+          </StackPanel>
+          <TextBlock Classes="muted" Text="主题偏好仅在当前会话生效。"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="首页背景"/>
+          <TextBlock Classes="muted" Text="默认使用随主题变化的渐变占位背景，也可选择本地 PNG 或 JPEG。默认渐变随浅/深色主题切换；自定义图片仅本次会话生效。"/>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <arc:Button Content="选择图片" Click="ChooseBackground" Variant="Secondary"/>
+            <arc:Button Content="恢复默认" Click="ResetBackground" Variant="Secondary"/>
+          </StackPanel>
+          <TextBlock x:Name="BackgroundStatus" Classes="muted" Text="当前使用默认背景"/>
+          <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+            <TextBlock Text="背景显示强度" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="{Binding BackgroundOpacityLabel}" Classes="muted"/>
+          </Grid>
+          <arc:Slider Minimum="0" Maximum="100" Value="{Binding BackgroundOpacityPercent, Mode=TwoWay}" AutomationProperties.Name="背景显示强度，百分比"/>
+          <TextBlock Classes="muted" Text="0% 为主题底色，100% 为完整背景。这不是窗口透明度，不会透出桌面。设置仅本次会话生效。" FontSize="12"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="侧栏毛玻璃"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="侧栏着色不透明度"/>
+            <TextBlock Grid.Column="1" Text="{Binding SidebarTintLabel}" Classes="muted"/>
+          </Grid>
+          <arc:Slider Minimum="0" Maximum="100" Value="{Binding SidebarTintPercent, Mode=TwoWay}" AutomationProperties.Name="侧栏着色不透明度，百分比"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="侧栏模糊强度"/>
+            <TextBlock Grid.Column="1" Text="{Binding SidebarBlurLabel}" Classes="muted"/>
+          </Grid>
+          <arc:Slider Minimum="0" Maximum="32" Value="{Binding SidebarBlurRadius, Mode=TwoWay}" AutomationProperties.Name="侧栏模糊半径"/>
+          <TextBlock Classes="muted" FontSize="12" Text="仅模糊应用内背景，文字与图标保持清晰。照片背景更容易看出模糊；着色 100% 时遮住背景，显示强度 0% 时只有纯色，模糊差异不明显。"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="关于此版本"/>
+          <TextBlock Classes="muted" Text="开发预览 · 仅提供界面骨架。Steam 登录、建服、插件和组网尚未接入。"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

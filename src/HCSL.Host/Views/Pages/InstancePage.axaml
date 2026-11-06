@@ -1,0 +1,48 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.Pages.InstancePage" x:DataType="vm:ShellViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="36" Spacing="22">
+      <TextBlock Classes="heading" Text="实例管理"/>
+      <TextBlock Classes="muted" Text="每个实例包含独立的配置预设，所有实例共用最新版服务端。"/>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="尚未选择实例"/>
+          <TextBlock Classes="muted" Text="先从实例列表选择或创建一个实例。"/>
+          <arc:Button Content="前往实例列表 →" Command="{Binding NavigateCommand}" CommandParameter="instances" HorizontalAlignment="Left" Variant="Secondary"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="配置与 CFG"/>
+          <TextBlock Classes="muted" Text="管理启动参数、游戏模式、地图与自定义 CFG。实例创建后开放编辑。"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="插件"/>
+          <TextBlock Classes="muted" Text="管理当前配置预设的插件依赖、版本和插件配置。"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="配置预设"/>
+          <TextBlock Classes="muted" Text="尚未选择实例或配置预设。一个实例可保存多套预设，一次运行一套。"/>
+          <TextBlock Classes="muted" Text="预设隔离插件、CFG、地图、授权、启动设置和受管数据；切换前需停服。"/>
+          <WrapPanel>
+            <arc:Button Content="新建预设" IsEnabled="False" Variant="Secondary" Margin="0,0,12,12"/>
+            <arc:Button Content="复制预设" IsEnabled="False" Variant="Secondary" Margin="0,0,12,12"/>
+            <arc:Button Content="重命名" IsEnabled="False" Variant="Secondary" Margin="0,0,12,12"/>
+            <arc:Button Content="删除预设" IsEnabled="False" Variant="Secondary" Margin="0,0,12,12"/>
+            <arc:Button Content="切换预设" IsEnabled="False" Variant="Secondary" Margin="0,0,12,12"/>
+          </WrapPanel>
+          <TextBlock Classes="muted" Text="配置预设管理尚未接入，以上入口暂不可用，不会写入或切换真实配置。"/>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="subheading" Text="玩家授权"/>
+          <TextBlock Classes="muted" Text="参赛与管理员权限分别授予；未经参赛授权的玩家仅可旁观。"/>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
