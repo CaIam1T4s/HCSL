@@ -63,7 +63,9 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         stop.ThrowIfCancellationRequested();
         ServerLaunch prepared;
         try { prepared = await prepare(workspace, options, stop); }
-        catch (Exception e) when (e is not (ServerException or WorkspaceException or DeploymentException or OperationCanceledException))
+        // InstanceException carries the actionable code (HCSL-INSTANCE-BIND): replacing it with a generic
+        // PREFLIGHT code told the operator nothing about the address they had just edited.
+        catch (Exception e) when (e is not (ServerException or WorkspaceException or DeploymentException or InstanceException or OperationCanceledException))
         { throw new ServerException("HCSL-SERVER-PREFLIGHT", "Server preflight failed; no game process was launched."); }
         await using var launch = prepared; var l = launch.Workspace.Layout;
         var journal = Journal(l); var marker = Marker(launch.Runtime);

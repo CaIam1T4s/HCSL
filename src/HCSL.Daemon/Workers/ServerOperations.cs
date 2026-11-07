@@ -115,10 +115,10 @@ public sealed class ServerOperations : IAsyncDisposable
                 {
                     lock (sync)
                     {
-                        code = e switch { ServerException s => s.Code, WorkspaceException w => w.Code, DeploymentException d => d.Code, OperationCanceledException => "HCSL-SERVER-STOPPED", _ => "HCSL-SERVER-ERROR" };
-                        detail = e is ServerException or WorkspaceException or DeploymentException ? e.Message[..Math.Min(e.Message.Length, 512)] : "Server task failed; inspect the redacted logs.";
+                        code = e switch { ServerException s => s.Code, WorkspaceException w => w.Code, DeploymentException d => d.Code, InstanceException i => i.Code, OperationCanceledException => "HCSL-SERVER-STOPPED", _ => "HCSL-SERVER-ERROR" };
+                        detail = e is ServerException or WorkspaceException or DeploymentException or InstanceException ? e.Message[..Math.Min(e.Message.Length, 512)] : "Server task failed; inspect the redacted logs.";
                         // Runtime owns cleanup once it launches; thrown errors are preflight rejection or unknown failure.
-                        clean = e is ServerException or WorkspaceException or DeploymentException or OperationCanceledException;
+                        clean = e is ServerException or WorkspaceException or DeploymentException or InstanceException or OperationCanceledException;
                         state = clean ? code == "HCSL-SERVER-STOPPED" ? ServerState.Stopped : ServerState.Failed : ServerState.RecoveryRequired;
                     }
                 }

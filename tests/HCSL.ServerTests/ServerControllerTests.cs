@@ -84,6 +84,15 @@ public static class ServerControllerTests
         }
         public void Recover(WorkspaceRequest workspace, Guid instanceId, Guid? expectedRunId = null) => throw new NotSupportedException();
     }
+    /// <summary>Preflight rejects the address the way the real runtime does once the provider validates it.</summary>
+    private sealed class BindFailingRuntime : IServerRuntimeService
+    {
+        public Task<ServerOutcome> RunAsync(WorkspaceRequest workspace, Guid runId, ServerStartOptions options,
+            IProgress<ServerRuntimeEvent> events, CancellationToken stop) =>
+            throw new InstanceException("HCSL-INSTANCE-BIND", "Lan mode requires one specific address of a local interface; 0.0.0.0 belongs to the public mode.");
+        public void Recover(WorkspaceRequest workspace, Guid instanceId, Guid? expectedRunId = null) => throw new NotSupportedException();
+    }
+
     private sealed class NoRuntime : IServerRuntimeService
     {
         public Task<ServerOutcome> RunAsync(WorkspaceRequest workspace, Guid runId, ServerStartOptions options,
@@ -578,6 +587,18 @@ public static class ServerControllerTests
             Check(!await controller.StartAsync(), "a refused start must not look submitted");
             Check(controller.ErrorText.Contains("HCSL-SERVER-BIND"), $"refusal code lost: {controller.ErrorText}");
             Check(controller.State == ServerState.Idle, "a refusal must not invent a new state");
+        });
+
+        await Test("daemon.preflight.keeps-the-instance-bind-code", async () =>
+        {
+            await using var operations = new ServerOperations(new BindFailingRuntime());
+            operations.Start(new WorkspaceRequest("/settings", "/data", "/library"), new ServerStartOptions(Instance));
+            await WaitFor(() => operations.Snapshot().State is ServerState.Failed or ServerState.RecoveryRequired);
+            var snapshot = operations.Snapshot();
+            // The generic PREFLIGHT replacement hid which address was wrong, which is the one thing the
+            // operator can fix without reading logs.
+            Check(snapshot.Code == "HCSL-INSTANCE-BIND", $"instance bind code lost: {snapshot.Code}");
+            Check(snapshot.Detail?.Contains("0.0.0.0") == true, "bind detail lost");
         });
 
         Console.WriteLine($"PASS summary: {passed} controller and status-text tests");
