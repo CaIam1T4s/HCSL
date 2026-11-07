@@ -601,6 +601,21 @@ public static class ServerControllerTests
             Check(snapshot.Detail?.Contains("0.0.0.0") == true, "bind detail lost");
         });
 
+        await Test("daemon.payload.stale-only-when-the-bundled-binary-is-newer", async () =>
+        {
+            var older = DateTime.UtcNow.AddMinutes(-5);
+            var newer = DateTime.UtcNow;
+            Check(DaemonPayload.IsStale(older, newer), "an older daemon must be replaced");
+            Check(!DaemonPayload.IsStale(newer, older), "a newer daemon must be kept");
+            Check(!DaemonPayload.IsStale(older, older), "equal stamps must be kept");
+            Check(!DaemonPayload.IsStale(null, newer), "an unreported build must never be replaced");
+            Check(!DaemonPayload.IsStale(older, null), "a missing payload must never replace anything");
+            Check(DaemonPayload.Parse(older.ToString("O")) == older, "stamps round-trip");
+            Check(DaemonPayload.Parse("not a stamp") is null, "garbage stamps are ignored");
+            Check(DaemonPayload.Parse(null) is null, "missing stamps are ignored");
+            await Task.CompletedTask;
+        });
+
         Console.WriteLine($"PASS summary: {passed} controller and status-text tests");
         return 0;
     }

@@ -67,6 +67,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// A daemon that restarted reports the recorded map of the last run instead.</summary>
     public string? Map => snapshot?.Map ?? ServerStatusText.MapFromLog(snapshot?.Lines) ?? ObservedMap;
     public bool CleanupConfirmed => snapshot?.CleanupConfirmed == true;
+    /// <summary>Ticket of the last snapshot applied to this controller; a monotonically rising view counter.</summary>
+    public long Applied => applied;
     public bool HistoryTruncated => snapshot?.HistoryTruncated == true;
     public int LogLineCount => logLines.Count;
     /// <summary>Newest lines the daemon returned, oldest first. Bounded so a chatty server cannot grow the UI.</summary>

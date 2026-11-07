@@ -105,7 +105,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 catch (WorkspaceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (OperationRejected ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (Exception) { response = new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-ERROR", "Local request failed."); }
-                response = response with { InstanceId = instance, ProcessId = Environment.ProcessId };
+                response = response with { InstanceId = instance, ProcessId = Environment.ProcessId, DaemonBuild = build };
                 await LocalProtocol.WriteAsync(pipe, response, deadline.Token);
             }
             catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or InvalidDataException or ArgumentException)
@@ -172,6 +172,19 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog exceeds the local IPC frame limit.");
         return response;
+    }
+    /// <summary>Write time of the running daemon assembly. A frontend compares it with the payload it would
+    /// launch, so an old process left over from a previous build can be replaced instead of silently used.</summary>
+    private static readonly string? build = BuildStamp();
+    private static string? BuildStamp()
+    {
+        try
+        {
+            var path = typeof(LocalDaemonServer).Assembly.Location;
+            return string.IsNullOrEmpty(path) || !File.Exists(path) ? null
+                : File.GetLastWriteTimeUtc(path).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
     }
     private LocalResponse Hello(LocalRequest request)
     {

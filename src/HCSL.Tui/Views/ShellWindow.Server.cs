@@ -14,6 +14,9 @@ public sealed partial class ShellWindow
     private bool _logFollow = true;
     // A Start we issued whose preflight outcome has not been reported yet.
     private bool _startInFlight;
+    private Guid? _baselineRun;
+    private ServerState _baselineState;
+    private string _baselineCode = "";
     // Last failed state we already talked about, so polling the same failure never re-opens a dialog.
     private string _reportedFailure = "";
     private static string Short(Guid? id) => id is { } value ? value.ToString("N")[..8] : "—";
@@ -117,10 +120,13 @@ public sealed partial class ShellWindow
         if (MessageBox.Query(80, 20, T("启动服务器", "Start server"), body, T("取消", "Cancel"), T("启动", "Start")) != 1) return;
         _server.Attach(definition.Id);
         _startInFlight = true;
-        // Whatever the daemon reported before this press (usually the previous run's failure) is not news:
-        // seeding the dedupe signature keeps that stale snapshot from opening a dialog about an error the
-        // operator already fixed. A genuine new failure carries a new run ID, so it still shows.
-        _reportedFailure = _server.State + "|" + _server.Code + "|" + Short(_server.RunId);
+        _reportedFailure = "";
+        // Remember what the daemon already reported. A refresh can deliver that same snapshot after the press
+        // (the status poll is faster than a start), and a repeated refusal keeps the old run: only a failure
+        // whose run or state has moved on belongs to this attempt.
+        _baselineRun = _server.RunId;
+        _baselineState = _server.State;
+        _baselineCode = _server.Code;
         _status.Text = T("已提交启动请求，等待地图就绪…", "Start requested; waiting for map readiness…");
         // One press is enough: the daemon deploys first when the deployment is missing or stale, so the
         // operator never has to discover a refusal and press again to accept the same fix.
@@ -144,6 +150,8 @@ public sealed partial class ShellWindow
         if (_server.State is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap) return Task.CompletedTask;
         if (_server.State is ServerState.Running) { _startInFlight = false; return Task.CompletedTask; }
         if (_server.State is not (ServerState.Failed or ServerState.RecoveryRequired)) { _startInFlight = false; return Task.CompletedTask; }
+        if (_server.RunId == _baselineRun && _server.State == _baselineState && _server.Code == _baselineCode)
+            return Task.CompletedTask;
         var signature = _server.State + "|" + _server.Code + "|" + Short(_server.RunId);
         if (_reportedFailure == signature) return Task.CompletedTask;
         _reportedFailure = signature;

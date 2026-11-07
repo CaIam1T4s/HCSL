@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using HCSL.Contracts;
+using HCSL.Core;
 
 namespace HCSL.Frontend;
 
@@ -27,7 +28,7 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
         var ct = deadline.Token;
         try
         {
-            if (await IsReadyAsync(ct)) return;
+            if (await EnsureCurrentAsync(ct)) return;
             var state = StateDirectory();
             if (OperatingSystem.IsWindows()) Directory.CreateDirectory(state);
             else Directory.CreateDirectory(state, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
@@ -46,17 +47,17 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
                 }
                 catch (IOException)
                 {
-                    if (await IsReadyAsync(ct)) return;
+                    if (await EnsureCurrentAsync(ct)) return;
                     await Task.Delay(100, ct);
                 }
             }
             using (ownership)
             {
                 // Another frontend may have completed startup while this one waited for the lock.
-                if (await IsReadyAsync(ct)) return;
+                if (await EnsureCurrentAsync(ct)) return;
                 ct.ThrowIfCancellationRequested();
                 Launch();
-                while (!await IsReadyAsync(ct)) await Task.Delay(100, ct);
+                while (!await EnsureCurrentAsync(ct)) await Task.Delay(100, ct);
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -68,7 +69,95 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
             throw new DaemonStartupException("HCSL-DAEMON-START", "Cannot start or authenticate the local daemon. Check installation, directory permissions and matching user/elevation.", ex);
         }
     }
-    private async Task<bool> IsReadyAsync(CancellationToken ct)
+    /// <summary>Ready and running the bundled binary. A stale process is retired here, before any request can
+    /// be answered by old code; returning false then makes the caller launch the fresh payload.</summary>
+    private async Task<bool> EnsureCurrentAsync(CancellationToken ct)
+    {
+        var hello = await ProbeAsync(ct);
+        if (hello is null) return false;
+        if (!IsStale(hello)) return true;
+        await ReplaceAsync(hello, ct);
+        return false;
+    }
+    private bool IsStale(LocalResponse hello) =>
+        DaemonPayload.IsStale(DaemonPayload.Parse(hello.DaemonBuild), DaemonPayload.Bundled(payload));
+    /// <summary>Stop an old daemon so the next launch uses the rebuilt payload. Never trades away a running
+    /// server or an in-flight SteamCMD task: the operator stops those, the frontend does not guess.</summary>
+    private async Task ReplaceAsync(LocalResponse hello, CancellationToken ct)
+    {
+        await RequireIdleAsync(ct);
+        if (hello.ProcessId <= 0)
+            throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                "A newer daemon is bundled but the running daemon did not report its process. Stop it and retry.");
+        Process process;
+        try { process = Process.GetProcessById(hello.ProcessId); }
+        catch (ArgumentException) { return; } // Already gone; the launch path handles the rest.
+        using (process)
+        {
+            if (!IsDaemon(process))
+                throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                    "A newer daemon is bundled but the process on the pipe is not the bundled daemon; refusing to terminate it.");
+            Terminate(process);
+            var until = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < until)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (await ProbeAsync(ct) is null) return;
+                await Task.Delay(100, ct);
+            }
+            throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                "The previous daemon did not exit. Stop it manually and retry.");
+        }
+    }
+    private async Task RequireIdleAsync(CancellationToken ct)
+    {
+        var client = new DaemonClient(pipe);
+        try
+        {
+            var steam = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Status), ct);
+            if (steam.Snapshot?.Running == true)
+                throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                    "A newer daemon is bundled but a SteamCMD task is running. Let it finish, then restart the interface.");
+            var server = await new ServerClient(client).SendAsync(new(ServerAction.Status), null, ct);
+            if (server.Active)
+                throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                    "A newer daemon is bundled but the server is running. Stop it from the manage page, then restart the interface.");
+        }
+        catch (Exception e) when (e is IOException or HCSL.Core.ServerException) { /* Unreadable state is not permission to kill. */
+            throw new DaemonStartupException("HCSL-DAEMON-STALE",
+                "A newer daemon is bundled and its state could not be read. Stop it and retry.", e); }
+    }
+    /// <summary>Only a process whose executable really is the daemon is terminated; a recycled PID must never
+    /// take an unrelated program with it.</summary>
+    private static bool IsDaemon(Process process)
+    {
+        try
+        {
+            var path = OperatingSystem.IsLinux()
+                ? new FileInfo("/proc/" + process.Id + "/exe").LinkTarget
+                : process.MainModule?.FileName;
+            if (string.IsNullOrEmpty(path)) return false;
+            var name = Path.GetFileName(path);
+            return name.StartsWith("HCSL.Daemon", StringComparison.Ordinal);
+        }
+        catch (Exception e) when (e is IOException or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { return false; }
+    }
+    private static void Terminate(Process process)
+    {
+        try
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                using var kill = Process.Start(new ProcessStartInfo { FileName = File.Exists("/bin/kill") ? "/bin/kill" : "/usr/bin/kill",
+                    ArgumentList = { "-TERM", process.Id.ToString() }, UseShellExecute = false, CreateNoWindow = true });
+                kill?.WaitForExit(2000);
+                return;
+            }
+            if (!process.CloseMainWindow()) process.Kill(entireProcessTree: false);
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or IOException) { }
+    }
+    private async Task<LocalResponse?> ProbeAsync(CancellationToken ct)
     {
         using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
         probe.CancelAfter(250);
@@ -81,14 +170,14 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
                     throw new DaemonStartupException("HCSL-DAEMON-PROTOCOL", "The running daemon uses an incompatible protocol. Restart it before reconnecting.");
                 throw new DaemonStartupException(response.Code ?? "HCSL-DAEMON-ERROR", response.Message ?? "Cannot read daemon workspace settings.");
             }
-            return true;
+            return response;
         }
         catch (DaemonProtocolException ex)
         {
             throw new DaemonStartupException("HCSL-DAEMON-PROTOCOL", "The running daemon uses an incompatible protocol. Restart it before reconnecting.", ex);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return false; }
-        catch (IOException) { return false; }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
+        catch (IOException) { return null; }
     }
     private void Launch()
     {
