@@ -59,7 +59,7 @@ if [[ "$mode" != timeout ]]; then
 fi
 printf 'sv_password SUPER_SECRET_FIXTURE_VALUE\n'
 if [[ "$mode" == flood ]]; then
-  for ((i=0; i<600; i++)); do printf 'flood-%04d payload\n' "$i"; done
+  for ((i=0; i<2200; i++)); do printf 'flood-%04d payload\n' "$i"; done
 fi
 while IFS= read -r line; do
   if [[ "$line" == quit && "$mode" != ignore ]]; then printf 'MainLoop returning\n'; exit 0; fi
@@ -134,7 +134,7 @@ try
     await Test("paged logs redact credentials and bind cursor to run ID", async () =>
     {
         var run = await Status(); var page = await client.SendAsync(new(ServerAction.Logs, RunId: run.RunId));
-        Check(page.Lines.Length <= 8 && page.Lines.Any(l => l.Text.Contains("FIXTURE_PTY_ENV_OK")), "PTY evidence missing");
+        Check(page.Lines.Length <= 128 && page.Lines.Any(l => l.Text.Contains("FIXTURE_PTY_ENV_OK")), "PTY evidence missing");
         var all = string.Join("\n", page.Lines.Select(l => l.Text));
         Check(!all.Contains("SUPER_SECRET_FIXTURE_VALUE") && all.Contains("redacted"), "credential appeared in logs");
         foreach (var file in Directory.GetFiles(Path.Combine(request.DataRoot, "instances"), "server-*.log", SearchOption.AllDirectories))
@@ -182,9 +182,9 @@ try
     });
     await Test("log ring is bounded and explicitly reports truncated history", async () =>
     {
-        await Start("flood"); await Until(async () => (await Status()).NextSequence > 550, "log flood");
+        await Start("flood"); await Until(async () => (await Status()).NextSequence > 2100, "log flood");
         var s = await Status(); var page = await client.SendAsync(new(ServerAction.Logs, RunId: s.RunId));
-        Check(page.HistoryTruncated && page.Lines.Length == 8, "ring overflow not reported"); await Stop(s);
+        Check(page.HistoryTruncated && page.Lines.Length == 128, "ring overflow not reported"); await Stop(s);
     });
     await Test("ignored quit and escaped process group are killed by cgroup cleanup", async () =>
     {

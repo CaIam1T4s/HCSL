@@ -34,6 +34,10 @@ public sealed class ServerOperations : IAsyncDisposable
  private bool closing, active; private Guid? runId, instanceId;
     private ServerState state; private string code = "HCSL-SERVER-IDLE"; private bool loaded, clean = true; private int? exit; private string? detail, map;
     private long sequence, lastBusy = Stopwatch.GetTimestamp(); private readonly Queue<ServerLogLine> logs = new();
+    // A page must stay well inside the 64 KiB IPC frame even with long lines, and the ring must be
+    // large enough that a client paging at its poll interval does not fall behind a chatty server.
+    private const int LogPageSize = 128;
+    private const int LogCapacity = 2048;
     private readonly string? instancesRoot;
     private Guid lastRunInstance; private DateTime lastRunStamp; private string? lastRunMap;
     private CancellationTokenSource? cancellation; private Task? pending;
@@ -46,7 +50,7 @@ public sealed class ServerOperations : IAsyncDisposable
         {
             if (expected != null && expected != runId) throw new ServerException("HCSL-SERVER-STALE", "Log cursor belongs to another run.");
             if (after is < 0 || after > sequence) throw new ServerException("HCSL-SERVER-CURSOR", "Log cursor is outside this run; refresh status after a new run.");
-            var page = after is { } cursor ? logs.Where(l => l.Sequence > cursor).Take(8).ToArray() : [];
+            var page = after is { } cursor ? logs.Where(l => l.Sequence > cursor).Take(LogPageSize).ToArray() : [];
             var reported = map; var historical = false;
             if (reported is null && !active && hint is { } wanted && wanted != Guid.Empty) { reported = LastRunMap(wanted); historical = reported is not null; }
             return new(runId, instanceId, state, active, code, loaded, clean, exit, after == null ? sequence : page.LastOrDefault()?.Sequence ?? after.Value,
@@ -143,7 +147,7 @@ public sealed class ServerOperations : IAsyncDisposable
                 {
                     var line = e.Log.Length > 512 ? e.Log[..512] : e.Log;
                     owner.logs.Enqueue(new(++owner.sequence, line));
-                    while (owner.logs.Count > 256) owner.logs.Dequeue();
+                    while (owner.logs.Count > LogCapacity) owner.logs.Dequeue();
                     // The map name only ever appears once, in the launch log; keep it so later status
                     // replies and log pages can still name the running map.
                     if (MapFrom(line) is { } name) owner.map = name;

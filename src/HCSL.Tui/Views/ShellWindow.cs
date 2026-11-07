@@ -28,8 +28,6 @@ public sealed partial class ShellWindow : Toplevel
     private readonly Label _languageLabel;
     private readonly RadioGroup _language;
     private readonly Button _instanceButton;
-    private readonly Button _logsButton;
-    private readonly Button _manageButton;
     private TerminalOptions _options;
     private IReadOnlyList<SectionDefinition> _sections;
     private IReadOnlyDictionary<string, PageDefinition> _pages;
@@ -67,6 +65,8 @@ public sealed partial class ShellWindow : Toplevel
         _submenuFrame.Add(_submenu);
         _page = new FrameView("") { X = 0, Y = 5, Width = Dim.Fill(), Height = Dim.Fill() };
         _content = new TextView { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Fill(5), ReadOnly = true, WordWrap = true, CanFocus = false, TabStop = false };
+        // TextView swallows these keys while it owns focus, so the log controls live on the view itself.
+        _content.KeyPress += OnContentKeyPress;
         _languageLabel = new Label("") { X = 1, Y = Pos.AnchorEnd(4), Width = 12 };
         _language = new RadioGroup(["中文", "English"]) { X = 14, Y = Pos.AnchorEnd(4), SelectedItem = _options.English ? 1 : 0 };
         _language.SelectedItemChanged += _ =>
@@ -76,12 +76,8 @@ public sealed partial class ShellWindow : Toplevel
             RefreshText();
         };
         _instanceButton = new Button("") { X = 1, Y = Pos.AnchorEnd(4) };
-        _logsButton = new Button("") { X = 1, Y = Pos.AnchorEnd(3) };
-        _manageButton = new Button("") { X = 1, Y = Pos.AnchorEnd(2) };
         _instanceButton.Clicked += () => Navigate("instances");
-        _logsButton.Clicked += () => Navigate("logs");
-        _manageButton.Clicked += () => Navigate("manage");
-        _page.Add(_content, _languageLabel, _language, _instanceButton, _logsButton, _manageButton);
+        _page.Add(_content, _languageLabel, _language, _instanceButton);
         _instancesFrame = new FrameView("") { X = 1, Y = 0, Width = Dim.Fill(1), Height = Dim.Fill(4), Visible = false };
         // No synthetic rows: the host has not supplied any instances yet.
         _instances = new InstanceListView() { Width = Dim.Fill(), Height = Dim.Fill() };
@@ -250,7 +246,6 @@ public sealed partial class ShellWindow : Toplevel
         var language = id == "settings";
         _languageLabel.Visible = _language.Visible = language;
         _instanceButton.Visible = id == "home";
-        _logsButton.Visible = _manageButton.Visible = section.Id == "home";
         _content.CanFocus = _content.TabStop = id == "logs";
         foreach (var button in _presetActions) button.Visible = id == "presets";
         foreach (var button in _serverActions) button.Visible = id == "manage";
@@ -309,9 +304,9 @@ public sealed partial class ShellWindow : Toplevel
         _languageLabel.Text = T("语言", "Language");
         _language.RadioLabels = _options.English ? ["Chinese", "English"] : ["中文", "英文"];
         _language.SelectedItem = _options.English ? 1 : 0;
-        _instanceButton.Text = T("没有服务器实例 - 前往实例列表", "No instances - Open instances");
-        _logsButton.Text = T("日志", "Logs");
-        _manageButton.Text = T("运行管理", "Manage server");
+        _instanceButton.Text = CurrentInstance is null
+            ? T("没有服务器实例 - 前往实例列表", "No instances - Open instances")
+            : T("前往实例列表", "Open instances");
         RefreshServerButtons();
         _smallTerminal.Text = T("请扩大终端至至少 80x24。F10 退出", "Resize terminal to at least 80x24. F10 Quit");
         _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width, _pageId == "logs", _logFollow);

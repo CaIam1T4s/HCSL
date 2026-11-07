@@ -22,6 +22,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private Guid? logRun;
     private bool logsVisible, logsTruncated;
     private const int LogCapacity = 2000;
+    private static readonly TimeSpan LogPoll = TimeSpan.FromMilliseconds(250);
     private WorkspacePaths? workspace;
     private Guid attached;
     private string error = "", pending = "";
@@ -245,7 +246,11 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         {
             while (!ct.IsCancellationRequested && current == generation && !disposed)
             {
-                await Task.Delay(snapshot?.Active == true ? activePoll : idlePoll, ct);
+                // Reading the log wants a tighter cadence than the header: a 700 ms poll plus one page
+                // arrives in visible chunks. The cursor still keeps every page incremental.
+                var wait = snapshot?.Active == true ? activePoll : idlePoll;
+                if (logsVisible && wait > LogPoll) wait = LogPoll;
+                await Task.Delay(wait, ct);
                 if (Interlocked.CompareExchange(ref requestInFlight, 1, 0) != 0) continue;
                 try
                 {

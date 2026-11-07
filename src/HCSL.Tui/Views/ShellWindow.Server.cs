@@ -318,6 +318,19 @@ public sealed partial class ShellWindow
         RefreshText();
     }
 
+    /// <summary>Keys that only mean something while the log page holds focus.</summary>
+    private void OnContentKeyPress(KeyEventEventArgs e)
+    {
+        if (_pageId != "logs") return;
+        switch (e.KeyEvent.Key)
+        {
+            case Key.Space: ToggleLogFollow(); break;
+            case Key.End: JumpToNewestLog(); break;
+            default: return;
+        }
+        e.Handled = true;
+    }
+
     private async Task StopAndExitAsync()
     {
         await _server.StopAsync();

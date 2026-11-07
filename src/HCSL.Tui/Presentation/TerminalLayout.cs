@@ -33,7 +33,9 @@ public static class TerminalLayout
             ? ["F1 Help", "F5 Start", "F6 VAC", "F7 Preset", "F8 Manage", "F10 Quit"]
             : ["F1 帮助", "F5 启动", "F6 VAC", "F7 配置预设", "F8 管理", "F10 退出"];
         if (logs)
-            labels = [.. labels, english ? (following ? "Space Pause" : "Space Follow") + " · End Newest" : (following ? "空格 暂停" : "空格 跟随") + " · End 最新"];
+            labels = [.. labels,
+                english ? (following ? "Space Pause" : "Space Follow") : (following ? "空格 暂停" : "空格 跟随"),
+                english ? "End Newest" : "End 最新"];
         var gap = columns >= 100 ? "   │   " : "   ";
         return " " + string.Join(gap, labels);
     }
