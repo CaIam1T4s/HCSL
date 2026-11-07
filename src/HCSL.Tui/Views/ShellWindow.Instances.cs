@@ -96,13 +96,38 @@ public sealed partial class ShellWindow
         if (index is 1 or 3)
         {
             if (index == 3 && d == null) return;
-            var values = Form(T("实例", "Instance"), (T("名称", "Name"), index == 1 ? "" : d!.Name), (T("游戏端口", "Game port"), index == 1 ? "27015" : d!.GamePort.ToString()));
+            var current = index == 1 ? new ServerNetwork() : InstanceRules.Resolve(d!.Network);
+            var values = Form(T("实例", "Instance"),
+                (T("名称", "Name"), index == 1 ? "" : d!.Name),
+                (T("游戏端口", "Game port"), index == 1 ? "27015" : d!.GamePort.ToString()),
+                (T("接入方式 (loopback/lan)", "Access (loopback/lan)"), current.Mode.ToString().ToLowerInvariant()),
+                (T("绑定地址", "Bind address"), current.BindAddress));
             if (values == null) return;
             if (!int.TryParse(values[1], out var port)) { MessageBox.ErrorQuery("HCSL", T("端口必须是整数", "Port must be an integer"), "OK"); return; }
-            _ = RefreshInstancesAsync(new(index == 1 ? InstanceAction.Create : InstanceAction.Update, d?.Id ?? default, Revision: d?.Revision ?? 0, Name: values[0], GamePort: port));
+            if (!TryNetwork(values[2], values[3], out var network)) return;
+            _ = RefreshInstancesAsync(new(index == 1 ? InstanceAction.Create : InstanceAction.Update, d?.Id ?? default, Revision: d?.Revision ?? 0, Name: values[0], GamePort: port, Network: network));
         }
         if (index == 4 && d != null && MessageBox.Query(68, 10, T("删除实例", "Delete instance"), T("将实例配置、录像和日志移入回收区。确定？", "Move instance configuration, recordings and logs to the recycle area?"), T("取消", "Cancel"), T("删除", "Delete")) == 1)
             _ = RefreshInstancesAsync(new(InstanceAction.Delete, d.Id, Revision: d.Revision));
+    }
+    /// <summary>Parses the two access fields, rejecting what the store would reject anyway, before any write.</summary>
+    private bool TryNetwork(string modeText, string addressText, out ServerNetwork network)
+    {
+        network = new ServerNetwork();
+        var mode = modeText.Trim().ToLowerInvariant() switch
+        {
+            "loopback" or "本机" or "仅本机" => (NetworkAccessMode?)NetworkAccessMode.Loopback,
+            "lan" or "局域网" => NetworkAccessMode.Lan,
+            _ => null,
+        };
+        if (mode is null) { MessageBox.ErrorQuery("HCSL", T("接入方式只能是 loopback 或 lan", "Access must be loopback or lan"), "OK"); return false; }
+        // Loopback always means this host, so the address field cannot disagree with the mode.
+        var address = mode == NetworkAccessMode.Loopback ? "127.0.0.1" : addressText.Trim();
+        var candidate = new ServerNetwork(mode.Value, address);
+        try { InstanceRules.Network(candidate); }
+        catch (InstanceException e) { MessageBox.ErrorQuery(72, 12, "HCSL", Describe(e), "OK"); return false; }
+        network = InstanceRules.Resolve(candidate);
+        return true;
     }
     private void PresetAction(int index)
     {

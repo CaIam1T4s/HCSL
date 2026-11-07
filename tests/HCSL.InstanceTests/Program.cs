@@ -50,6 +50,17 @@ try
         Run(new(InstanceAction.Update, d.Id, Revision: d.Revision, Name: "Renamed", GamePort: 27016));
         Check(Entry().Definition?.Network?.BindAddress == "192.168.1.20", "network was silently reset");
     });
+    Test("create accepts a lan address and rejects an unusable one", () =>
+    {
+        // Its own workspace: these creates must not disturb the single-instance fixtures below.
+        var sandbox = new WorkspaceRequest(Path.Combine(root, "settings2"), Path.Combine(root, "data2"), Path.Combine(root, "library2"));
+        InstanceCatalog Exec(InstanceCommand c) => store.Execute(sandbox, c);
+        Reject("HCSL-INSTANCE-BIND", () => Exec(new(InstanceAction.Create, Name: "Bad", GamePort: 27998, Network: new(NetworkAccessMode.Lan, "0.0.0.0"))));
+        Reject("HCSL-INSTANCE-BIND", () => Exec(new(InstanceAction.Create, Name: "Bad", GamePort: 27998, Network: new(NetworkAccessMode.Loopback, "10.0.0.5"))));
+        Check(Exec(new(InstanceAction.List)).Instances.Count(x => x.Definition?.GamePort == 27998) == 0, "failed create left metadata");
+        var e = Exec(new(InstanceAction.Create, Name: "Lan", GamePort: 27997, Network: new(NetworkAccessMode.Lan, "192.168.1.20"))).Instances.Single(x => x.Definition?.Name == "Lan");
+        Check(e.Definition?.Network?.Mode == NetworkAccessMode.Lan && e.Definition.Network.BindAddress == "192.168.1.20", "create dropped the access mode");
+    });
     Test("preset copy isolates CFG and excludes plugin business data", () =>
     {
         var e = Entry(); var p = e.Presets.Single();
