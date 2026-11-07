@@ -26,6 +26,13 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (command.Action != InstanceAction.List) Mutate(root, command);
         return Catalog(root);
     }
+    /// <summary>Read-only bind address of one instance, without taking the lease a live run holds.
+    /// Used by the daemon to name the address before (or without) starting a server.</summary>
+    public static ServerNetwork NetworkOf(WorkspaceRequest workspace, Guid id)
+    {
+        var root = ListRoot(workspace);
+        return InstanceRules.Resolve(Load(Path.Combine(root, id.ToString("D")), id).Definition?.Network);
+    }
     // Metadata writes are temp-file renames, so a lock-free reader sees either the old or the new
     // complete file. Roots and markers are still validated before reading.
     private static string ListRoot(WorkspaceRequest workspace)
@@ -140,12 +147,12 @@ public sealed class LocalInstanceStore : IInstanceStore
     {
         if (c.Action == InstanceAction.Create)
         {
-            InstanceRules.Name(c.Name); Port(root, c.GamePort);
+            InstanceRules.Name(c.Name); Port(root, c.GamePort); InstanceRules.Network(c.Network);
             var id = Guid.NewGuid(); var pid = Guid.NewGuid();
             var stage = Path.Combine(root, ".creating-" + id); Directory.CreateDirectory(stage);
             foreach (var dir in new[] { "presets", "recordings", "logs", "backups" }) Directory.CreateDirectory(Path.Combine(stage, dir));
             CreatePreset(Path.Combine(stage, "presets", Id(pid)), new(1, pid, 1, "Default"));
-            Write(Path.Combine(stage, "instance.json"), new InstanceDefinition(1, id, 1, c.Name!.Trim(), c.GamePort, pid));
+            Write(Path.Combine(stage, "instance.json"), new InstanceDefinition(1, id, 1, c.Name!.Trim(), c.GamePort, pid, c.Network));
             Directory.Move(stage, Path.Combine(root, Id(id))); return;
         }
         var path = Path.Combine(root, Id(c.InstanceId));
@@ -159,8 +166,10 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (c.Action == InstanceAction.Delete) { Recycle(root, path); return; }
         if (c.Action == InstanceAction.Update)
         {
-            InstanceRules.Name(c.Name); Port(root, c.GamePort, d.Id);
-            Write(file, d with { Name = c.Name!.Trim(), GamePort = c.GamePort, Revision = d.Revision + 1 }); return;
+            InstanceRules.Name(c.Name); Port(root, c.GamePort, d.Id); InstanceRules.Network(c.Network);
+            // A command that omits Network leaves the stored address alone, so older callers cannot reset
+            // an instance to loopback by accident.
+            Write(file, d with { Name = c.Name!.Trim(), GamePort = c.GamePort, Network = c.Network ?? d.Network, Revision = d.Revision + 1 }); return;
         }
         var parent = Path.Combine(path, "presets");
         if (c.Action == InstanceAction.CreatePreset)

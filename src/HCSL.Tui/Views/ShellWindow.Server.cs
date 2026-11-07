@@ -89,26 +89,32 @@ public sealed partial class ShellWindow
         var preset = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
         var presetName = preset?.Name ?? T("无", "none");
         var presetMap = preset?.Map ?? T("无", "none");
-        var body = T(
-            string.Join("\n",
-                $"实例：{definition.Name}",
-                $"端口：{definition.GamePort}（仅 127.0.0.1，sv_lan 1）",
-                $"预设：{presetName}   地图：{presetMap}",
-                "VAC：关   模式：LoopbackLanValidation",
-                "启动超时：120 秒",
-                "",
-                "部署缺失或已过期时，宿主会先用 reflink 重新部署再启动（旧部署改名保留，不改基础安装）。",
-                "内存与进程数由宿主按 systemd 控制组限制；失败原因原样显示宿主代码。"),
-            string.Join("\n",
-                $"Instance: {definition.Name}",
-                $"Port: {definition.GamePort} (127.0.0.1 only, sv_lan 1)",
-                $"Preset: {presetName}   Map: {presetMap}",
-                "VAC: off   Mode: LoopbackLanValidation",
-                "Start timeout: 120 s",
-                "",
-                "A missing or stale deployment is reflinked and redeployed by the daemon before the start (the old deployment is kept as .previous-<time>; the base install is untouched).",
-                "Memory and process limits come from the daemon's systemd control group; failures keep the daemon's own code."));
-        if (MessageBox.Query(80, 18, T("启动服务器", "Start server"), body, T("取消", "Cancel"), T("启动", "Start")) != 1) return;
+        var network = InstanceRules.Resolve(definition.Network);
+        var zh = new List<string>
+        {
+            $"实例：{definition.Name}",
+            ServerStatusText.EndpointLine(false, network.BindAddress, definition.GamePort, network.Mode),
+            ServerStatusText.ConnectHint(false, network.BindAddress, definition.GamePort),
+        };
+        var en = new List<string>
+        {
+            $"Instance: {definition.Name}",
+            ServerStatusText.EndpointLine(true, network.BindAddress, definition.GamePort, network.Mode),
+            ServerStatusText.ConnectHint(true, network.BindAddress, definition.GamePort),
+        };
+        if (network.Mode == NetworkAccessMode.Lan)
+        {
+            zh.Add(ServerStatusText.FirewallHint(false, definition.GamePort));
+            en.Add(ServerStatusText.FirewallHint(true, definition.GamePort));
+        }
+        zh.AddRange([$"预设：{presetName}   地图：{presetMap}", "VAC：关 · sv_lan 1 · 接入：" + network.Mode, "启动超时：120 秒", "",
+            "部署缺失或已过期时，宿主会先用 reflink 重新部署再启动（旧部署改名保留，不改基础安装）。",
+            "内存与进程数由宿主按 systemd 控制组限制；失败原因原样显示宿主代码。"]);
+        en.AddRange([$"Preset: {presetName}   Map: {presetMap}", "VAC: off · sv_lan 1 · access: " + network.Mode, "Start timeout: 120 s", "",
+            "A missing or stale deployment is reflinked and redeployed by the daemon before the start (the old deployment is kept as .previous-<time>; the base install is untouched).",
+            "Memory and process limits come from the daemon's systemd control group; failures keep the daemon's own code."]);
+        var body = T(string.Join("\n", zh), string.Join("\n", en));
+        if (MessageBox.Query(80, 20, T("启动服务器", "Start server"), body, T("取消", "Cancel"), T("启动", "Start")) != 1) return;
         _server.Attach(definition.Id);
         _startInFlight = true;
         _reportedFailure = "";
@@ -284,7 +290,15 @@ public sealed partial class ShellWindow
             ? (_server.English ? "State: unknown — the local daemon is unreachable." : "状态：未知 · 无法连接本机宿主。")
             : _server.SummaryLine;
         var detail = _server.DetailText;
-        _summary.Text = head + "\n" + line + (detail.Length == 0 ? "" : "   · " + detail);
+        // The address comes from the instance; a live run on this instance wins, because the daemon resolved
+        // it before launching and the stored definition may have changed since.
+        var network = InstanceRules.Resolve(displayed?.Definition?.Network);
+        var bindAddress = liveId is { } current && current == displayed?.Id && _server.Connected ? _server.BindAddress : network.BindAddress;
+        var accessMode = liveId is { } mode && mode == displayed?.Id && _server.Connected ? _server.Access : network.Mode;
+        var endpoint = displayed?.Definition is { } addressed
+            ? "   · " + ServerStatusText.EndpointLine(_options.English, bindAddress, addressed.GamePort, accessMode)
+            : "";
+        _summary.Text = head + "\n" + line + endpoint + (detail.Length == 0 ? "" : "   · " + detail);
         UpdateLogView();
     }
 

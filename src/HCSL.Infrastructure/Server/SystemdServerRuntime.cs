@@ -11,10 +11,10 @@ namespace HCSL.Infrastructure.Server;
 public sealed class SystemdServerRuntime : IServerRuntimeService
 {
     private readonly string assembly;
-    private readonly Func<WorkspaceRequest, ServerStartOptions, CancellationToken, ServerLaunch> prepare;
+    private readonly Func<WorkspaceRequest, ServerStartOptions, CancellationToken, Task<ServerLaunch>> prepare;
     private readonly int memoryMiB;
-    public SystemdServerRuntime(string gateAssembly) : this(gateAssembly, ServerPreparation.Prepare, 2560) { }
-    internal SystemdServerRuntime(string gateAssembly, Func<WorkspaceRequest, ServerStartOptions, CancellationToken, ServerLaunch> prepare, int memoryMiB = 64)
+    public SystemdServerRuntime(string gateAssembly) : this(gateAssembly, ServerPreparation.PrepareAsync, 2560) { }
+    internal SystemdServerRuntime(string gateAssembly, Func<WorkspaceRequest, ServerStartOptions, CancellationToken, Task<ServerLaunch>> prepare, int memoryMiB = 64)
     { assembly = Path.GetFullPath(gateAssembly); this.prepare = prepare; this.memoryMiB = memoryMiB; }
     internal sealed record Session(int FormatVersion, Guid RunId, Guid InstanceId, Guid DataId, Guid LibraryId, int OwnerPid, long OwnerStartTicks, string PidNamespace);
     private static string Unit(Guid id) => "hcsl-server-" + id.ToString("N") + ".service";
@@ -62,10 +62,10 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         if (!File.Exists("/sys/fs/cgroup/cgroup.controllers")) throw new ServerException("HCSL-SERVER-CGROUP", "cgroup v2 is required; no unsupervised fallback is available.");
         stop.ThrowIfCancellationRequested();
         ServerLaunch prepared;
-        try { prepared = prepare(workspace, options, stop); }
+        try { prepared = await prepare(workspace, options, stop); }
         catch (Exception e) when (e is not (ServerException or WorkspaceException or DeploymentException or OperationCanceledException))
         { throw new ServerException("HCSL-SERVER-PREFLIGHT", "Server preflight failed; no game process was launched."); }
-        using var launch = prepared; var l = launch.Workspace.Layout;
+        await using var launch = prepared; var l = launch.Workspace.Layout;
         var journal = Journal(l); var marker = Marker(launch.Runtime);
         using var owner = Process.GetCurrentProcess();
         var session = new Session(2, runId, options.InstanceId, launch.Workspace.Identity.DataId, launch.Workspace.Identity.LibraryId,

@@ -20,7 +20,7 @@ SystemdServerRuntime Service(string root) => new(gateAssembly, (workspace, optio
     var lease = new LocalWorkspaceManager().Acquire(workspace);
     var runtime = Path.Combine(lease.Layout.RuntimeRoot, options.InstanceId.ToString("D"));
     foreach (var dir in new[] { "game", "home", "userdata" }) Directory.CreateDirectory(Path.Combine(runtime, dir));
-    return new(lease, runtime, "de_dust2", "/bin/bash", [Path.Combine(root, "fake.sh"), File.ReadAllText(Path.Combine(root, "scenario")), root], []);
+    return Task.FromResult(new ServerLaunch(lease, runtime, "de_dust2", "/bin/bash", [Path.Combine(root, "fake.sh"), File.ReadAllText(Path.Combine(root, "scenario")), root], [], new DirectAccessProvider()));
 }, 128);
 if (args is ["--fixture-daemon", var fixture, var endpoint])
 {

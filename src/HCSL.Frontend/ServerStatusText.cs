@@ -84,6 +84,12 @@ public static class ServerStatusText
         "HCSL-SERVER-OPTIONS" => english
             ? "Launch options are invalid."
             : "启动参数不合法。",
+        "HCSL-SERVER-BIND" => english
+            ? "The bind address is not on an active local interface. Pick the address this host has, or switch back to loopback."
+            : "绑定地址不在任何活动网卡上。请改成该主机当前的地址，或切回仅本机。",
+        "HCSL-INSTANCE-BIND" => english
+            ? "Instance bind address is invalid: use an IPv4 literal that belongs to this host."
+            : "实例绑定地址不合法：请填写属于本机的 IPv4 地址。",
         _ => null
     };
 
@@ -120,6 +126,21 @@ public static class ServerStatusText
         if (truncated) parts.Add(english ? "log truncated" : "日志已截断");
         return string.Join(" · ", parts);
     }
+
+    /// <summary>Where the server listens, in the operator's words.</summary>
+    public static string EndpointLine(bool english, string bindAddress, int gamePort, NetworkAccessMode access)
+    {
+        var scope = access == NetworkAccessMode.Lan ? (english ? "LAN" : "局域网") : (english ? "this host only" : "仅本机");
+        return (english ? "Address: " : "地址：") + bindAddress + ":" + gamePort + (english ? " (" : "（") + scope + (english ? ")" : "）");
+    }
+
+    /// <summary>What a player types in the CS2 console.</summary>
+    public static string ConnectHint(bool english, string bindAddress, int gamePort) =>
+        (english ? "Client: connect " : "客户端：connect ") + bindAddress + ":" + gamePort;
+
+    /// <summary>Firewall hint; the operator opens the port, the launcher never changes the host rules.</summary>
+    public static string FirewallHint(bool english, int gamePort) =>
+        (english ? "Firewall: sudo ufw allow " : "防火墙：sudo ufw allow ") + gamePort + "/udp";
 
     public static string DetailLine(string? code, string? detail, string? error, bool english)
     {

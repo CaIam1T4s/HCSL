@@ -5,7 +5,8 @@ public sealed record ServerCommand(ServerAction Action, Guid InstanceId = defaul
 public sealed record ServerStartOptions(Guid InstanceId, int StartTimeoutSeconds = 120, bool AutoDeploy = false);
 public sealed record ServerLogLine(long Sequence, string Text);
 public sealed record ServerSnapshot(Guid? RunId, Guid? InstanceId, ServerState State, bool Active, string Code,
-    bool MapLoaded, bool CleanupConfirmed, int? ExitCode, long NextSequence, bool HistoryTruncated, ServerLogLine[] Lines, string? Detail = null, string Mode = "LoopbackLanValidation", bool EffectiveVac = false, string? Map = null, bool MapHistorical = false);
+    bool MapLoaded, bool CleanupConfirmed, int? ExitCode, long NextSequence, bool HistoryTruncated, ServerLogLine[] Lines, string? Detail = null, string Mode = "LoopbackLanValidation", bool EffectiveVac = false, string? Map = null, bool MapHistorical = false,
+    string BindAddress = "127.0.0.1", NetworkAccessMode Access = NetworkAccessMode.Loopback);
 public sealed record ServerRuntimeEvent(ServerState State, string Code, string? Log = null);
 public sealed record ServerOutcome(string Code, int? ExitCode, bool MapLoaded, bool CleanupConfirmed);
 /// <summary>The map a finished run was observed to load, kept so a fresh daemon can still name it.</summary>

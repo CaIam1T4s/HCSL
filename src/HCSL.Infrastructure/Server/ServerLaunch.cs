@@ -7,7 +7,7 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 namespace HCSL.Infrastructure.Server;
 
-internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, string map, string executable, string[] arguments, List<Socket> ports) : IDisposable
+internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, string map, string executable, string[] arguments, List<Socket> ports, IServerAccessProvider access) : IAsyncDisposable
 {
     internal IWorkspaceLease Workspace { get; } = workspace;
     internal string Runtime { get; } = runtime;
@@ -15,15 +15,17 @@ internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, st
     internal string Executable { get; } = executable;
     internal string[] Arguments { get; } = arguments;
     internal void ReleasePorts() { foreach (var port in ports) port.Dispose(); ports.Clear(); }
-    public void Dispose() { ReleasePorts(); Workspace.Dispose(); }
+    /// <summary>The provider owns anything it created for this run (nothing for direct access).</summary>
+    public async ValueTask DisposeAsync() { ReleasePorts(); await access.DisposeAsync(); Workspace.Dispose(); }
 }
 internal static class ServerPreparation
 {
-    internal static ServerLaunch Prepare(WorkspaceRequest request, ServerStartOptions options, CancellationToken ct)
+    internal static async Task<ServerLaunch> PrepareAsync(WorkspaceRequest request, ServerStartOptions options, CancellationToken ct)
     {
         if (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new ServerException("HCSL-SERVER-PLATFORM", "Linux x64 server baseline is required.");
         CheckMemory(); var lease = new LocalWorkspaceManager().Acquire(request);
         var ports = new List<Socket>();
+        IServerAccessProvider? access = null;
         try
         {
             var deployment = new RuntimeDeploymentService();
@@ -40,20 +42,33 @@ internal static class ServerPreparation
                 throw new ServerException("HCSL-SERVER-STALE", "Deployment is stale. Redeploy after changing instance or preset settings.");
             deployment.VerifyBaseline(plan.RuntimePath, ct);
             var entry = LocalInstanceStore.Load(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), options.InstanceId);
+            var network = InstanceRules.Resolve(entry.Definition!.Network);
+            access = AccessProviders.For(network);
+            var resolved = await access.PrepareAsync(network, entry.Definition.GamePort, ct);
+            // The probe holds the same address the server will bind: a wrong interface must fail here
+            // as HCSL-SERVER-BIND, not as a CS2 startup failure after the deployment was touched.
+            var bind = IPAddress.Parse(resolved.BindAddress);
             foreach (var type in new[] { SocketType.Stream, SocketType.Dgram })
             {
-                var socket = new Socket(Socket.OSSupportsIPv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork, type, type == SocketType.Stream ? ProtocolType.Tcp : ProtocolType.Udp);
-                ports.Add(socket); if (socket.AddressFamily == AddressFamily.InterNetworkV6) socket.DualMode = true; socket.ExclusiveAddressUse = true;
-                socket.Bind(new IPEndPoint(socket.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, entry.Definition!.GamePort));
+                var socket = new Socket(AddressFamily.InterNetwork, type, type == SocketType.Stream ? ProtocolType.Tcp : ProtocolType.Udp);
+                ports.Add(socket); socket.ExclusiveAddressUse = true;
+                socket.Bind(new IPEndPoint(bind, entry.Definition.GamePort));
             }
             var preset = entry.Presets.Single(p => p.Id == plan.PresetId);
             CheckMemory();
-            return new(lease, plan.RuntimePath, preset.Map, "/bin/bash",
-                [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-ip", "127.0.0.1", "-port", entry.Definition!.GamePort.ToString(),
-                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+map", preset.Map], ports);
+            var launch = new ServerLaunch(lease, plan.RuntimePath, preset.Map, "/bin/bash",
+                [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-ip", resolved.BindAddress, "-port", entry.Definition.GamePort.ToString(),
+                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+map", preset.Map], ports, access);
+            access = null;
+            return launch;
         }
-        catch (SocketException) { foreach (var p in ports) p.Dispose(); lease.Dispose(); throw new ServerException("HCSL-SERVER-PORT", "Configured game port is occupied (TCP or UDP)."); }
-        catch { foreach (var p in ports) p.Dispose(); lease.Dispose(); throw; }
+        catch (SocketException) { await Dispose(ports, access); lease.Dispose(); throw new ServerException("HCSL-SERVER-PORT", "Configured game port is occupied (TCP or UDP) on the bind address."); }
+        catch { await Dispose(ports, access); lease.Dispose(); throw; }
+    }
+    private static async Task Dispose(List<Socket> ports, IServerAccessProvider? access)
+    {
+        foreach (var port in ports) port.Dispose();
+        if (access is not null) await access.DisposeAsync();
     }
     private static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId

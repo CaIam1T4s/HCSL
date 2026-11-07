@@ -58,6 +58,9 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         ? current.InstanceId : null;
     public Guid AttachedInstance => attached;
     public string Mode => snapshot?.Mode ?? "LoopbackLanValidation";
+    /// <summary>Address the daemon resolved for this run (loopback until it reports otherwise).</summary>
+    public string BindAddress => snapshot?.BindAddress ?? "127.0.0.1";
+    public NetworkAccessMode Access => snapshot?.Access ?? NetworkAccessMode.Loopback;
     public bool EffectiveVac => snapshot?.EffectiveVac == true;
     public bool MapLoaded => snapshot?.MapLoaded == true;
     /// <summary>Map the daemon observed for this instance, falling back to a scan of the returned log page.

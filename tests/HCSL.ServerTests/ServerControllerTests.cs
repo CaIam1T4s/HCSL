@@ -527,6 +527,32 @@ public static class ServerControllerTests
             Check(status.InstanceId == Instance, "status must name the attached instance so the daemon can answer its history");
         });
 
+        // S6.1: the header must say where players connect, and the daemon's address must survive the wire.
+        await Test("controller.status.exposes-the-resolved-bind-address", async () =>
+        {
+            var daemon = new StaticDaemon(_ => new ServerSnapshot(null, Instance, ServerState.Idle, false, "HCSL-SERVER-IDLE",
+                false, true, null, 0, false, [], BindAddress: "192.168.1.20", Access: NetworkAccessMode.Lan, Mode: "Lan"));
+            using var controller = new ServerController(daemon, action => action(), null, TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(60));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            Check(controller.BindAddress == "192.168.1.20" && controller.Access == NetworkAccessMode.Lan, "bind address lost on the wire");
+            Check(controller.Mode == "Lan", "mode must follow the access mode");
+        });
+
+        await Test("status.endpoint-text-names-the-address-and-scope", () =>
+        {
+            Check(ServerStatusText.EndpointLine(false, "192.168.1.20", 27015, NetworkAccessMode.Lan) == "地址：192.168.1.20:27015（局域网）",
+                "zh endpoint line");
+            Check(ServerStatusText.EndpointLine(true, "127.0.0.1", 27015, NetworkAccessMode.Loopback) == "Address: 127.0.0.1:27015 (this host only)",
+                "en endpoint line");
+            Check(ServerStatusText.ConnectHint(false, "192.168.1.20", 27015) == "客户端：connect 192.168.1.20:27015", "connect hint");
+            Check(ServerStatusText.ConnectHint(true, "127.0.0.1", 27015) == "Client: connect 127.0.0.1:27015", "english connect hint");
+            Check(ServerStatusText.FirewallHint(false, 27015).Contains("27015/udp"), "firewall hint must name the port");
+            Check(ServerStatusText.CodeHint("HCSL-SERVER-BIND", false)?.Contains("网卡") == true, "bind hint");
+            Check(ServerStatusText.CodeHint("HCSL-INSTANCE-BIND", true)?.Contains("IPv4") == true, "instance bind hint");
+            return Task.CompletedTask;
+        });
+
         Console.WriteLine($"PASS summary: {passed} controller and status-text tests");
         return 0;
     }

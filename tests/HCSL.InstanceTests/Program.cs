@@ -31,6 +31,25 @@ try
         Reject("HCSL-INSTANCE-CONFLICT", () => Run(new(InstanceAction.Update, d.Id, Revision: 1, Name: "stale")));
         Reject("HCSL-INSTANCE-PORT", () => Run(new(InstanceAction.Create, Name: "Second", GamePort: 27016)));
     });
+    Test("network bind address rules and persistence", () =>
+    {
+        var d = Entry().Definition!;
+        Check(InstanceRules.Resolve(null).BindAddress == "127.0.0.1", "default must stay loopback");
+        Check(InstanceRules.Resolve(new(NetworkAccessMode.Lan, "192.168.1.20")).Mode == NetworkAccessMode.Lan, "lan mode lost");
+        Reject("HCSL-INSTANCE-BIND", () => InstanceRules.Network(new(NetworkAccessMode.Lan, "0.0.0.0")));
+        Reject("HCSL-INSTANCE-BIND", () => InstanceRules.Network(new(NetworkAccessMode.Lan, "localhost")));
+        Reject("HCSL-INSTANCE-BIND", () => InstanceRules.Network(new(NetworkAccessMode.Loopback, "192.168.1.20")));
+        Reject("HCSL-INSTANCE-BIND", () => InstanceRules.Network(new(NetworkAccessMode.Lan, "127.0.0.1")));
+        // Hand-edited metadata reaches Resolve without validation; it must not throw.
+        Check(InstanceRules.Resolve(new(NetworkAccessMode.Lan, "localhost")).BindAddress == "localhost", "resolve must not throw");
+        Reject("HCSL-INSTANCE-BIND", () => InstanceRules.Network(new(NetworkAccessMode.Lan, "localhost")));
+        Run(new(InstanceAction.Update, d.Id, Revision: d.Revision, Name: "Renamed", GamePort: 27016, Network: new(NetworkAccessMode.Lan, "192.168.1.20")));
+        d = Entry().Definition!;
+        Check(d.Network?.Mode == NetworkAccessMode.Lan && d.Network.BindAddress == "192.168.1.20", "network not persisted");
+        // A command without Network keeps the stored address: an older caller must not reset it to loopback.
+        Run(new(InstanceAction.Update, d.Id, Revision: d.Revision, Name: "Renamed", GamePort: 27016));
+        Check(Entry().Definition?.Network?.BindAddress == "192.168.1.20", "network was silently reset");
+    });
     Test("preset copy isolates CFG and excludes plugin business data", () =>
     {
         var e = Entry(); var p = e.Presets.Single();
