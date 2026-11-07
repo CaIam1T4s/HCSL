@@ -1,5 +1,6 @@
 using HCSL.Core;
 using HCSL.Frontend;
+using HCSL.Tui.Presentation;
 using Terminal.Gui;
 
 namespace HCSL.Tui.Views;
@@ -298,9 +299,21 @@ public sealed partial class ShellWindow
         if (text.Length == 0) text = T("（暂无日志；服务器启动后这里会显示宿主返回的最近日志）", "(no log lines yet; the daemon's recent log appears here once a server starts)");
         var truncated = _server.LogsTruncated ? T("日志已截断，只显示最近 2000 行\n", "older lines were dropped; showing the newest 2000\n") : "";
         var next = truncated + text;
-        if (_content.Text?.ToString() == next) return;
+        if (_content.Text?.ToString() == next)
+        {
+            if (_logFollow) _content.MoveEnd();
+            return;
+        }
+        // Replacing Text resets the caret, so a paused reader would be thrown back to the first line.
+        var top = _content.TopRow;
+        var row = _content.CurrentRow;
         _content.Text = next;
-        if (_logFollow) _content.MoveEnd();
+        if (_logFollow) { _content.MoveEnd(); return; }
+        var count = _content.Lines;
+        if (count == 0) return;
+        // CursorPosition is a Point(col,row); CurrentRow/CurrentColumn are read-only and Lines is a count.
+        _content.CursorPosition = new Point(0, Math.Min(row, count - 1));
+        _content.TopRow = Math.Min(top, Math.Max(0, count - 1));
     }
 
     /// <summary>Space pauses/resumes following; End jumps back to the newest line and re-follows.</summary>
@@ -308,14 +321,21 @@ public sealed partial class ShellWindow
     {
         _logFollow = !_logFollow;
         if (_logFollow) _content?.MoveEnd();
-        RefreshText();
+        RefreshHotkeys();
     }
 
     private void JumpToNewestLog()
     {
         _logFollow = true;
         _content?.MoveEnd();
-        RefreshText();
+        RefreshHotkeys();
+    }
+
+    /// <summary>Updates only the hotkey bar; reopening the page would reset the log caret.</summary>
+    private void RefreshHotkeys()
+    {
+        _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width, _pageId == "logs", _logFollow);
+        SetNeedsDisplay();
     }
 
     /// <summary>Keys that only mean something while the log page holds focus.</summary>

@@ -240,7 +240,7 @@ public sealed partial class ShellWindow : Toplevel
         _page.Title = instanceList ? section.Title : _pages[id].Title;
         if (id != "logs") _content.Text = _pages[id].Content;
         if (id == "presets") UpdateInstanceSummary();
-        _content.MoveHome();
+        if (id != "logs") _content.MoveHome();
         _server.SetLogsVisible(id == "logs");
         UpdateLogView();
         var language = id == "settings";
