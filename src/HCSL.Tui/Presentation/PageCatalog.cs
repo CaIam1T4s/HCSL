@@ -44,7 +44,7 @@ public static class PageCatalog
             new("launch", T("启动设置", "Launch"), T("未选择实例。\n\n可在配置预设页编辑地图、模式与 VAC 偏好。\n自定义启动参数和 CFG 编辑器待接入。", "No instance selected.\n\nEdit map, mode and VAC preference on the Presets page.\nCustom launch arguments and the CFG editor are not connected.")),
             new("network", T("组网", "Network"), T("EasyTier：未接入\n虚拟地址 / 邀请：无", "EasyTier: not connected\nVirtual address / invitation: none")),
             new("settings", T("语言", "Language"), T("语言仅在当前会话生效。\n固定使用深色配色和 Unicode 字符，语言只替换文字。\n\nSteam 配对登录尚未接入，当前不生成网址或代码。", "Language applies to this session only.\nFixed dark palette and Unicode characters; language changes text only.\n\nSteam pairing is not connected; no URL or code is generated.")),
-            new("logs", T("日志", "Logs"), T("暂无日志。\n筛选、搜索、自动滚动与脱敏导出待接入。", "No logs.\nFiltering, search, follow and redacted export are not connected.")),
+            new("logs", T("日志", "Logs"), T("服务器启动后，这里显示宿主返回的最近日志（宿主已脱敏）。", "Once a server starts, the daemon's recent log lines appear here (already redacted by the daemon).")),
             new("manage", T("管理", "Manage"), T("服务器状态：见窗口顶栏（来自本机宿主）\n\n下方按钮对应宿主已实现的启动、停服与恢复检查。\n启动使用选中实例的当前预设；实例或预设改动后需重新部署。\n重启、换图与交互式命令尚未接入。", "Server state: see the header (reported by the local daemon)\n\nThe buttons below drive start, stop and recovery as implemented by the daemon.\nStart uses the selected instance's preset; redeploy after changing either.\nRestart, map changes and interactive commands are not connected yet."))
         ];
     }

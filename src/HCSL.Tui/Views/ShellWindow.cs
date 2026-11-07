@@ -149,6 +149,8 @@ public sealed partial class ShellWindow : Toplevel
                 case Key.F8: Navigate("manage"); break;
                 case Key.F10:
                 case Key.CtrlMask | Key.Q: ConfirmExit(); break;
+                case Key.Space when _pageId == "logs": ToggleLogFollow(); break;
+                case Key.End when _pageId == "logs": JumpToNewestLog(); break;
                 default: return;
             }
             args.Handled = true;
@@ -240,9 +242,11 @@ public sealed partial class ShellWindow : Toplevel
         // Select/copy/delete require an actual selection; do not target an empty row.
         UpdateInstanceActions();
         _page.Title = instanceList ? section.Title : _pages[id].Title;
-        _content.Text = _pages[id].Content;
+        if (id != "logs") _content.Text = _pages[id].Content;
         if (id == "presets") UpdateInstanceSummary();
         _content.MoveHome();
+        _server.SetLogsVisible(id == "logs");
+        UpdateLogView();
         var language = id == "settings";
         _languageLabel.Visible = _language.Visible = language;
         _instanceButton.Visible = id == "home";
@@ -310,7 +314,7 @@ public sealed partial class ShellWindow : Toplevel
         _manageButton.Text = T("运行管理", "Manage server");
         RefreshServerButtons();
         _smallTerminal.Text = T("请扩大终端至至少 80x24。F10 退出", "Resize terminal to at least 80x24. F10 Quit");
-        _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width);
+        _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width, _pageId == "logs", _logFollow);
         OpenPage(_pageId);
         UpdateInstanceSummary();
     }
@@ -332,7 +336,7 @@ public sealed partial class ShellWindow : Toplevel
 
     private void CheckSize()
     {
-        _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width);
+        _status.Text = TerminalLayout.Hotkeys(_options.English, Bounds.Width, _pageId == "logs", _logFollow);
         var small = Bounds.Width < 80 || Bounds.Height < 24;
         if (small == _tooSmall) return;
         _tooSmall = small;
@@ -346,7 +350,7 @@ public sealed partial class ShellWindow : Toplevel
         T("F6 VAC 修改尚未接入：当前启动固定 -insecure 并报告 VAC 关闭。", "F6 VAC edits are not wired yet: launches stay -insecure and report VAC off."), T("返回", "Back"));
 
     private void ShowHelp() => MessageBox.Query(68, 17, T("帮助", "Help"),
-        T("Tab / Shift+Tab 切换同级菜单并立即显示页面\n方向键同样切换，Enter 进入下一级\n实例列表：上下选实例，右方向键 / Enter 到操作按钮\n按钮 Tab 循环，Enter 执行，Esc 返回上级\n日志支持方向键 / PageUp / PageDown\nF5 启动，F6 VAC，F7 配置预设，F8 管理\n设置页切换语言；固定深色与 Unicode\nF10 / Ctrl+Q 退出\n\n顶栏显示本机宿主报告的服务器状态与地图；\nF5 启动，F8 管理页可停服/恢复检查；日志页尚未接入。", "Tab / Shift+Tab: peer menu, immediate preview\nArrows: peer menu; Enter: descend\nInstances: Up/Down select, Right/Enter to actions\nActions: Tab cycle, Enter run; Esc parent\nLogs: arrows / PageUp / PageDown\nF5 Start, F6 VAC, F7 Presets, F8 Manage\nSettings: language; fixed dark palette and Unicode\nF10 / Ctrl+Q: quit\n\nThe header shows live server state and map from the local daemon;\nF5 starts; the F8 manage page stops and recovers; the log page is not wired yet."), T("返回", "Back"));
+        T("F1 帮助 · Tab 切换菜单 · 实例列表上下选择 · 日志页空格暂停/恢复跟随、End 跳到最新\nF5 启动，F6 VAC（未接入），F7 配置预设，F8 管理（停服/恢复检查），F10 退出\n\n顶栏两行来自本机宿主：实例与预设、宿主报告的实时状态与具体地图名；\n停服后地图标为“（上次运行）”，退出界面时可选是否停服。", "F1 Help · Tab peers · Up/Down in the instance list · Logs: Space pauses follow, End jumps to the newest line\nF5 Start, F6 VAC (not wired), F7 Presets, F8 Manage (stop / recover), F10 Quit\n\nThe two header lines come from the local daemon: instance and preset, live state and the map it actually loaded;\nafter a stop the map is labelled \"(last run)\", and quitting offers to stop the server."), T("返回", "Back"));
 
     private void ConfirmExit()
     {

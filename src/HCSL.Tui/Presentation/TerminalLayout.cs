@@ -27,11 +27,13 @@ public static class TerminalLayout
         return new string(' ', spare / 2) + text + new string(' ', spare - spare / 2);
     }
 
-    public static string Hotkeys(bool english, int columns)
+    public static string Hotkeys(bool english, int columns, bool logs = false, bool following = true)
     {
         string[] labels = english
             ? ["F1 Help", "F5 Start", "F6 VAC", "F7 Preset", "F8 Manage", "F10 Quit"]
             : ["F1 帮助", "F5 启动", "F6 VAC", "F7 配置预设", "F8 管理", "F10 退出"];
+        if (logs)
+            labels = [.. labels, english ? (following ? "Space Pause" : "Space Follow") + " · End Newest" : (following ? "空格 暂停" : "空格 跟随") + " · End 最新"];
         var gap = columns >= 100 ? "   │   " : "   ";
         return " " + string.Join(gap, labels);
     }

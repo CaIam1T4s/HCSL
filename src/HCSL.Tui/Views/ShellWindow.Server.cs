@@ -9,6 +9,8 @@ public sealed partial class ShellWindow
     private readonly ServerController _server = new(new DaemonClient(), action => Application.MainLoop.Invoke(action), new DaemonBootstrapper());
 
     private long _catalogAttempt;
+    // Log page: follow the newest line until the operator pauses it.
+    private bool _logFollow = true;
     // A Start we issued whose preflight outcome has not been reported yet.
     private bool _startInFlight;
     // Last failed state we already talked about, so polling the same failure never re-opens a dialog.
@@ -282,6 +284,38 @@ public sealed partial class ShellWindow
             : _server.SummaryLine;
         var detail = _server.DetailText;
         _summary.Text = head + "\n" + line + (detail.Length == 0 ? "" : "   · " + detail);
+        UpdateLogView();
+    }
+
+    /// <summary>
+    /// Renders the daemon's paged log. Following keeps the newest line visible; the operator can stop
+    /// following to read history without the next poll yanking the view back to the end.
+    /// </summary>
+    private void UpdateLogView()
+    {
+        if (_content is null || _pageId != "logs") return;
+        var text = _server.LogText;
+        if (text.Length == 0) text = T("（暂无日志；服务器启动后这里会显示宿主返回的最近日志）", "(no log lines yet; the daemon's recent log appears here once a server starts)");
+        var truncated = _server.LogsTruncated ? T("日志已截断，只显示最近 2000 行\n", "older lines were dropped; showing the newest 2000\n") : "";
+        var next = truncated + text;
+        if (_content.Text?.ToString() == next) return;
+        _content.Text = next;
+        if (_logFollow) _content.MoveEnd();
+    }
+
+    /// <summary>Space pauses/resumes following; End jumps back to the newest line and re-follows.</summary>
+    private void ToggleLogFollow()
+    {
+        _logFollow = !_logFollow;
+        if (_logFollow) _content?.MoveEnd();
+        RefreshText();
+    }
+
+    private void JumpToNewestLog()
+    {
+        _logFollow = true;
+        _content?.MoveEnd();
+        RefreshText();
     }
 
     private async Task StopAndExitAsync()

@@ -26,6 +26,11 @@ public static class ServerControllerTests
             lines.Select((text, index) => new ServerLogLine(index + 1, text)).ToArray(),
             Mode: "LoopbackLanValidation", EffectiveVac: false, Map: map);
 
+    // A live run as the daemon reports it: the log page is what the paging tests vary.
+    private static ServerSnapshot Running(long next, ServerLogLine[] lines, Guid? run = null) => new(
+        run ?? Run, Instance, ServerState.Running, true, "HCSL-SERVER-RUNNING", true, false, null, next, false, lines,
+        Mode: "LoopbackLanValidation", Map: "de_dust2");
+
     private sealed class StaticDaemon : IDaemonClient
     {
         private readonly Func<ServerCommand, ServerSnapshot> server;
@@ -250,6 +255,74 @@ public static class ServerControllerTests
             controller.Attach(Instance);
             await controller.ConnectAsync();
             Check(await WaitFor(() => controller.State == ServerState.Running), "polling must observe the daemon state");
+        });
+
+        await Test("controller.logs.pages-by-cursor", async () =>
+        {
+            var all = Enumerable.Range(1, 5).Select(i => new ServerLogLine(i, "line " + i)).ToArray();
+            var cursors = new List<long>();
+            var daemon = new StaticDaemon(command =>
+            {
+                if (command.Action != ServerAction.Logs)
+                    return Running(6, []);
+                lock (cursors) cursors.Add(command.AfterSequence);
+                var page = all.Where(line => line.Sequence > command.AfterSequence).Take(2).ToArray();
+                var next = page.Length == 0 ? command.AfterSequence + 1 : page[^1].Sequence + 1;
+                return Running(next, page);
+            });
+            using var controller = new ServerController(daemon, action => action(),
+                null, TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(40));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            controller.SetLogsVisible(true);
+            Check(await WaitFor(() => controller.LogLineCount == 5), "log pages must accumulate every sequence exactly once");
+            Check(controller.LogCursor == 5, $"cursor must follow the newest sequence, got {controller.LogCursor}");
+            Check(controller.LogText.Replace(Environment.NewLine, "|") == "line 1|line 2|line 3|line 4|line 5",
+                "log text must stay ordered and deduplicated");
+            lock (cursors)
+                Check(cursors.Count > 1 && cursors.Zip(cursors.Skip(1)).All(pair => pair.Second > pair.First),
+                    "each page request must advance the cursor");
+        });
+
+        await Test("controller.logs.new-run-clears-the-ring", async () =>
+        {
+            var other = Guid.Parse("7a7c831a-5d0a-4311-8cec-87fab66facf0");
+            var run = Run;
+            var daemon = new StaticDaemon(command =>
+            {
+                var page = new[] { new ServerLogLine(1, run == Run ? "first run" : "second run") };
+                if (command.Action != ServerAction.Logs) return Running(2, [], run);
+                return command.AfterSequence >= 1 ? Running(2, [], run) : Running(2, page, run);
+            });
+            using var controller = new ServerController(daemon, action => action(),
+                null, TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(40));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            controller.SetLogsVisible(true);
+            Check(await WaitFor(() => controller.LogText.Contains("first run")), "the first run's line must arrive");
+            run = other;
+            Check(await WaitFor(() => controller.LogText.Contains("second run")), "a new run must be paged from its own cursor");
+            Check(!controller.LogText.Contains("first run"), "a new run must not mix with the previous run's lines");
+        });
+
+        await Test("controller.logs.ring-is-bounded", async () =>
+        {
+            var all = Enumerable.Range(1, 2100).Select(i => new ServerLogLine(i, "line " + i)).ToArray();
+            var daemon = new StaticDaemon(command =>
+            {
+                if (command.Action != ServerAction.Logs) return Running(2101, []);
+                var page = all.Where(line => line.Sequence > command.AfterSequence).Take(300).ToArray();
+                var next = page.Length == 0 ? command.AfterSequence + 1 : page[^1].Sequence + 1;
+                return Running(next, page);
+            });
+            using var controller = new ServerController(daemon, action => action(),
+                null, TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            controller.SetLogsVisible(true);
+            Check(await WaitFor(() => controller.LogLineCount == 2000, 6000), "the ring must stop at its capacity");
+            Check(controller.LogCursor == 2100, $"the cursor must still reach the newest line, got {controller.LogCursor}");
+            Check(controller.LogsTruncated, "dropping old lines must mark the log as truncated");
         });
 
         await Test("controller.dispose.stops-polling", async () =>

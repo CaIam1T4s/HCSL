@@ -17,6 +17,11 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private readonly TimeSpan activePoll, idlePoll;
     private CancellationTokenSource life = new();
     private ServerSnapshot? snapshot;
+    private readonly List<ServerLogLine> logLines = new();
+    private long logCursor;
+    private Guid? logRun;
+    private bool logsVisible, logsTruncated;
+    private const int LogCapacity = 2000;
     private WorkspacePaths? workspace;
     private Guid attached;
     private string error = "", pending = "";
@@ -59,7 +64,13 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public string? Map => snapshot?.Map ?? ServerStatusText.MapFromLog(snapshot?.Lines) ?? ObservedMap;
     public bool CleanupConfirmed => snapshot?.CleanupConfirmed == true;
     public bool HistoryTruncated => snapshot?.HistoryTruncated == true;
-    public int LogLineCount => snapshot?.Lines.Length ?? 0;
+    public int LogLineCount => logLines.Count;
+    /// <summary>Newest lines the daemon returned, oldest first. Bounded so a chatty server cannot grow the UI.</summary>
+    public IReadOnlyList<ServerLogLine> LogLines => logLines;
+    /// <summary>True when the daemon dropped history, or when the local ring dropped lines.</summary>
+    public bool LogsTruncated => logsTruncated || HistoryTruncated;
+    /// <summary>Next sequence to ask for; also the cursor the daemon validates against the run.</summary>
+    public long LogCursor => logCursor;
     public ServerSeverity Severity => ServerStatusText.Severity(State);
     public bool Connected => connected;
     public bool ConnectionUnknown => connectionUnknown;
@@ -91,13 +102,13 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public string? ObservedMap { get; set; }
 
     public string SummaryLine => ServerStatusText.SummaryLine(english, State, RunId,
-        Map, ConfiguredMap, MapLoaded, HistoryTruncated, LogLineCount, Pending, MapIsHistorical);
+        Map, ConfiguredMap, MapLoaded, LogsTruncated, LogLineCount, Pending, MapIsHistorical);
 
     private bool MapIsHistorical => snapshot?.MapHistorical == true
         || (snapshot?.Map is null && ServerStatusText.MapFromLog(snapshot?.Lines) is null && ObservedMap is not null);
     public string DetailText => ServerStatusText.DetailLine(Code.Length == 0 ? null : Code,
         string.IsNullOrWhiteSpace(snapshot?.Detail) ? null : snapshot!.Detail, error.Length == 0 ? null : error, english);
-    public string LogText => snapshot is null ? "" : string.Join(Environment.NewLine, snapshot.Lines.Select(line => line.Text));
+    public string LogText => string.Join(Environment.NewLine, logLines.Select(line => line.Text));
 
     public void Attach(Guid instanceId)
     {
@@ -149,6 +160,24 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     }
 
     public Task<bool> RefreshAsync() => SendAsync(new(ServerAction.Status, attached), false, "", 500);
+
+    /// <summary>
+    /// Telling the controller whether the log page is visible keeps paging off the wire while the
+    /// operator looks at other pages; turning it on fetches the backlog immediately.
+    /// </summary>
+    public void SetLogsVisible(bool visible)
+    {
+        if (logsVisible == visible) return;
+        logsVisible = visible;
+        if (visible && connected) _ = RefreshLogsAsync();
+    }
+
+    /// <summary>The daemon binds a log cursor to its run, so a run without a RunId cannot be paged.</summary>
+    public Task<bool> RefreshLogsAsync()
+    {
+        if (!logsVisible || !connected || snapshot?.RunId is not { } run) return Task.FromResult(false);
+        return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, logCursor), false, "", 500);
+    }
 
     public Task<bool> StartAsync(int timeoutSeconds = 120, bool autoDeploy = false) =>
         CanStart
@@ -223,6 +252,13 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                     var ticket = Interlocked.Increment(ref issued);
                     var result = await server.SendAsync(new(ServerAction.Status), null, ct);
                     Post(() => { Apply(result, ticket); Notify(); }, current);
+                    // Page the log only while the operator is looking at it; the cursor keeps it incremental.
+                    if (logsVisible && snapshot?.RunId is { } run && !ct.IsCancellationRequested)
+                    {
+                        var pageTicket = Interlocked.Increment(ref issued);
+                        var page = await server.SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, logCursor), null, ct);
+                        Post(() => { Apply(page, pageTicket); Notify(); }, current);
+                    }
                 }
                 finally { Interlocked.Exchange(ref requestInFlight, 0); }
             }
@@ -244,6 +280,34 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         if (ticket < applied) return;
         applied = ticket;
         snapshot = value;
+        AppendLogs(value);
+    }
+
+    /// <summary>
+    /// Merges the returned page into the local ring. Lines are appended strictly by sequence, a new run
+    /// clears the ring, and the cursor only ever moves forward so a late page cannot duplicate or rewind.
+    /// </summary>
+    private void AppendLogs(ServerSnapshot value)
+    {
+        if (value.RunId != logRun)
+        {
+            logRun = value.RunId;
+            logLines.Clear();
+            logCursor = 0;
+            logsTruncated = false;
+        }
+        if (value.HistoryTruncated) logsTruncated = true;
+        foreach (var line in value.Lines)
+        {
+            if (line.Sequence <= logCursor) continue;
+            logLines.Add(line);
+            logCursor = line.Sequence;
+        }
+        if (logLines.Count > LogCapacity)
+        {
+            logLines.RemoveRange(0, logLines.Count - LogCapacity);
+            logsTruncated = true;
+        }
     }
 
     private void Post(Action action, int current)
