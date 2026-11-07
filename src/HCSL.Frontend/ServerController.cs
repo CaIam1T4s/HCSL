@@ -223,16 +223,20 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             catch (OperationCanceledException) { return false; }
         }
         var ticket = Interlocked.Increment(ref issued);
+        var accepted = true;
         Post(() => { pending = pendingName; error = ""; Notify(); }, current);
         try
         {
             var result = await server.SendAsync(command, includeWorkspace ? workspace : null, life.Token);
             Post(() => { Apply(result, ticket); error = ""; Notify(); }, current);
         }
-        catch (OperationCanceledException) when (life.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (life.IsCancellationRequested) { accepted = false; }
         catch (Exception e)
         {
-            // The daemon refused or the transport failed: keep the last reported state, surface the code.
+            // The daemon refused or the transport failed: keep the last reported state, surface the code,
+            // and tell the caller the command never ran. Reporting success here made a refusal look like a
+            // submitted start, so the operator only saw the old failure on a later attempt.
+            accepted = false;
             Post(() => { error = e.Message; Notify(); }, current);
         }
         finally
@@ -240,7 +244,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             Interlocked.Exchange(ref requestInFlight, 0);
             Post(() => { pending = ""; Notify(); }, current);
         }
-        return true;
+        return accepted;
     }
 
     private async Task PollAsync(int current, CancellationToken ct)

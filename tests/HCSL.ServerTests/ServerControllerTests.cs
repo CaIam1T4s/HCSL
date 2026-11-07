@@ -31,6 +31,22 @@ public static class ServerControllerTests
         run ?? Run, Instance, ServerState.Running, true, "HCSL-SERVER-RUNNING", true, false, null, next, false, lines,
         Mode: "LoopbackLanValidation", Map: "de_dust2");
 
+    /// <summary>Refuses Start the way the daemon refuses a bad bind address: the response carries an error
+    /// code instead of a snapshot, so the command never ran.</summary>
+    private sealed class RefusingDaemon : IDaemonClient
+    {
+        public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
+        {
+            if (request.Kind == RequestKind.Hello)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: Defaults));
+            var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!;
+            if (command.Action == ServerAction.Start)
+                throw new IOException("HCSL-SERVER-BIND: 192.168.1.99 is not an address of an active local interface.");
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                ServerSnapshotJson: JsonSerializer.Serialize(Snapshot(ServerState.Idle))));
+        }
+    }
+
     private sealed class StaticDaemon : IDaemonClient
     {
         private readonly Func<ServerCommand, ServerSnapshot> server;
@@ -551,6 +567,17 @@ public static class ServerControllerTests
             Check(ServerStatusText.CodeHint("HCSL-SERVER-BIND", false)?.Contains("网卡") == true, "bind hint");
             Check(ServerStatusText.CodeHint("HCSL-INSTANCE-BIND", true)?.Contains("IPv4") == true, "instance bind hint");
             return Task.CompletedTask;
+        });
+
+        await Test("controller.start.refusal-is-not-reported-as-submitted", async () =>
+        {
+            using var controller = new ServerController(new RefusingDaemon(), action => action(), null,
+                TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(60));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            Check(!await controller.StartAsync(), "a refused start must not look submitted");
+            Check(controller.ErrorText.Contains("HCSL-SERVER-BIND"), $"refusal code lost: {controller.ErrorText}");
+            Check(controller.State == ServerState.Idle, "a refusal must not invent a new state");
         });
 
         Console.WriteLine($"PASS summary: {passed} controller and status-text tests");

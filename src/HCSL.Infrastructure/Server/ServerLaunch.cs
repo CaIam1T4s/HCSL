@@ -45,9 +45,10 @@ internal static class ServerPreparation
             var network = InstanceRules.Resolve(entry.Definition!.Network);
             access = AccessProviders.For(network);
             var resolved = await access.PrepareAsync(network, entry.Definition.GamePort, ct);
-            // The probe holds the same address the server will bind: a wrong interface must fail here
-            // as HCSL-SERVER-BIND, not as a CS2 startup failure after the deployment was touched.
-            var bind = IPAddress.Parse(resolved.BindAddress);
+            // Probe the wildcard, not the instance address: CS2's SteamNetworkingSockets server socket is
+            // opened on 0.0.0.0 regardless of -ip (verified against build 26445667 — `ss` reports *:27015), so
+            // a specific-address probe could pass while the real wildcard bind fails on another interface.
+            var bind = IPAddress.Any;
             foreach (var type in new[] { SocketType.Stream, SocketType.Dgram })
             {
                 var socket = new Socket(AddressFamily.InterNetwork, type, type == SocketType.Stream ? ProtocolType.Tcp : ProtocolType.Udp);

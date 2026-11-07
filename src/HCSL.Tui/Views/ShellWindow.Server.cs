@@ -117,7 +117,10 @@ public sealed partial class ShellWindow
         if (MessageBox.Query(80, 20, T("启动服务器", "Start server"), body, T("取消", "Cancel"), T("启动", "Start")) != 1) return;
         _server.Attach(definition.Id);
         _startInFlight = true;
-        _reportedFailure = "";
+        // Whatever the daemon reported before this press (usually the previous run's failure) is not news:
+        // seeding the dedupe signature keeps that stale snapshot from opening a dialog about an error the
+        // operator already fixed. A genuine new failure carries a new run ID, so it still shows.
+        _reportedFailure = _server.State + "|" + _server.Code + "|" + Short(_server.RunId);
         _status.Text = T("已提交启动请求，等待地图就绪…", "Start requested; waiting for map readiness…");
         // One press is enough: the daemon deploys first when the deployment is missing or stale, so the
         // operator never has to discover a refusal and press again to accept the same fix.
