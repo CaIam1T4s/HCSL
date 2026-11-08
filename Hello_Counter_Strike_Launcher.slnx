@@ -1,4 +1,7 @@
 <Solution>
+  <Project Path="src/HCSL.UI.Shared/HCSL.UI.Shared.csproj" />
+  <Project Path="src/HCSL.Client/HCSL.Client.csproj" />
+  <Project Path="tests/HCSL.PlayerTests/HCSL.PlayerTests.csproj" />
   <Project Path="src/HCSL.Host/HCSL.Host.csproj" />
   <Project Path="src/HCSL.Tui/HCSL.Tui.csproj" />
   <Project Path="src/HCSL.Application/HCSL.Application.csproj" />
@@ -15,6 +18,10 @@
   <Project Path="tests/HCSL.BootstrapTests/HCSL.BootstrapTests.csproj" />
   <Project Path="src/HCSL.Core/HCSL.Core.csproj" />
   <Project Path="tests/HCSL.InstanceTests/HCSL.InstanceTests.csproj" />
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/HCSL.HostTests/HCSL.HostTests.csproj" />
+  </Folder>
   <Project Path="build/HCSL.DeploymentCheck/HCSL.DeploymentCheck.csproj" />
   <Project Path="tests/HCSL.DeploymentTests/HCSL.DeploymentTests.csproj" />
   <Project Path="build/HCSL.ServerCheck/HCSL.ServerCheck.csproj" />

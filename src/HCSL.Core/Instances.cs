@@ -10,14 +10,24 @@ public sealed record ServerNetwork(NetworkAccessMode Mode = NetworkAccessMode.Lo
 
 public sealed record InstanceDefinition(int FormatVersion, Guid Id, long Revision, string Name, int GamePort, Guid SelectedPresetId, ServerNetwork? Network = null);
 public sealed record PresetDefinition(int FormatVersion, Guid Id, long Revision, string Name, string Map = "de_dust2", int GameType = 0, int GameMode = 1, bool VacPreferred = true);
-public sealed record InstanceEntry(Guid Id, InstanceDefinition? Definition, PresetDefinition[] Presets, string? Error = null);
-public sealed record InstanceCatalog(InstanceEntry[] Instances);
-public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset }
+public sealed record InstanceEntry(Guid Id, InstanceDefinition? Definition, PresetDefinition[] Presets, string? Error = null, bool HasPassword = false);
+public sealed record InstanceCatalog(InstanceEntry[] Instances, string[]? ConnectionAddresses = null);
+public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword }
 public sealed record InstanceCommand(InstanceAction Action, Guid InstanceId = default, Guid PresetId = default, long Revision = 0,
-    string? Name = null, int GamePort = 27015, PresetDefinition? Preset = null, ServerNetwork? Network = null);
+    string? Name = null, int GamePort = 27015, PresetDefinition? Preset = null, ServerNetwork? Network = null, string? Password = null)
+{
+    public override string ToString() => $"InstanceCommand {Action} {InstanceId}";
+}
 public sealed class InstanceException(string code, string message) : Exception(message) { public string Code { get; } = code; }
 public static class InstanceRules
 {
+    public static void Password(string? password)
+    {
+        if (password is null) throw new InstanceException("HCSL-INSTANCE-PASSWORD", "A password value is required; empty clears it.");
+        try { PlayerServerRules.Password(password); }
+        catch (ArgumentException) { throw new InstanceException("HCSL-INSTANCE-PASSWORD", "Password must be at most 128 characters, without control characters, quotes, backslashes, semicolons or plus signs."); }
+    }
+
     public static void Name(string? name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > 80 || name.Any(char.IsControl))

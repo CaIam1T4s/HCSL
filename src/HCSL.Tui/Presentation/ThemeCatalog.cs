@@ -1,6 +1,7 @@
 using Terminal.Gui;
 
 namespace HCSL.Tui.Presentation;
+using Application = global::Terminal.Gui.Application;
 
 /// <summary>Fixed dark palette using only ncurses base colors (0-7).</summary>
 public static class ThemeCatalog

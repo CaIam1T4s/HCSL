@@ -13,23 +13,23 @@
           <TextBlock Text="应用会自动连接或启动本机宿主。关闭界面后，已提交任务继续运行。" Classes="muted" TextWrapping="Wrap"/>
           <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsEnabled="{Binding SteamCmd.CanEdit}">
             <TextBlock Text="设置目录" VerticalAlignment="Center"/>
-            <TextBox Grid.Column="1" Text="{Binding SteamCmd.SettingsRoot, Mode=TwoWay}" Margin="0,3"/>
+            <arc:Input Grid.Column="1" Text="{Binding SteamCmd.SettingsRoot, Mode=TwoWay}" Margin="0,3"/>
             <TextBlock Grid.Row="1" Text="数据目录" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SteamCmd.DataRoot, Mode=TwoWay}" Margin="0,3"/>
+            <arc:Input Grid.Row="1" Grid.Column="1" Text="{Binding SteamCmd.DataRoot, Mode=TwoWay}" Margin="0,3"/>
             <TextBlock Grid.Row="2" Text="内容库" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SteamCmd.LibraryRoot, Mode=TwoWay}" Margin="0,3"/>
+            <arc:Input Grid.Row="2" Grid.Column="1" Text="{Binding SteamCmd.LibraryRoot, Mode=TwoWay}" Margin="0,3"/>
             <TextBlock Grid.Row="3" Text="SteamCMD 路径" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SteamCmd.ExecutablePath, Mode=TwoWay}" PlaceholderText="留空使用受管工具；或填写现有工具的绝对路径" Margin="0,3"/>
+            <arc:Input Grid.Row="3" Grid.Column="1" Text="{Binding SteamCmd.ExecutablePath, Mode=TwoWay}" PlaceholderText="留空使用受管工具；或填写现有工具的绝对路径" Margin="0,3"/>
             <TextBlock Grid.Row="4" Text="Steam 登录名" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SteamCmd.AccountName, Mode=TwoWay}" PlaceholderText="留空为匿名登录" Margin="0,3"/>
+            <arc:Input Grid.Row="4" Grid.Column="1" Text="{Binding SteamCmd.AccountName, Mode=TwoWay}" PlaceholderText="留空为匿名登录" Margin="0,3"/>
             <TextBlock Grid.Row="5" Text="登录超时（秒）" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SteamCmd.TimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
+            <arc:Input Grid.Row="5" Grid.Column="1" Text="{Binding SteamCmd.TimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
             <TextBlock Grid.Row="6" Text="安装超时（秒）" VerticalAlignment="Center"/>
-            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SteamCmd.InstallTimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
+            <arc:Input Grid.Row="6" Grid.Column="1" Text="{Binding SteamCmd.InstallTimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
           </Grid>
           <TextBlock Text="{Binding SteamCmd.ServerDirectory}" Classes="muted" TextWrapping="Wrap"/>
           <TextBlock Text="首次使用建议将内容库放在空间充足的磁盘；新默认位置为用户主目录下的 HCSL-Library。安装目标为内容库下的 server 文件夹。安装中断会保留下载内容，可重新提交任务继续；校验可能重新下载文件。" Classes="muted" TextWrapping="Wrap"/>
-          <CheckBox Content="受管工具缺失时，从 Valve 下载 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}" IsEnabled="{Binding SteamCmd.CanEdit}"/>
+          <arc:Checkbox Content="受管工具缺失时，从 Valve 下载 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}" IsEnabled="{Binding SteamCmd.CanEdit}"/>
           <StackPanel Orientation="Horizontal" Spacing="12">
             <arc:Button Content="准备并登录" Click="StartProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
             <arc:Button Content="取消任务" Click="CancelProbe" IsEnabled="{Binding SteamCmd.CanCancel}" Variant="Secondary"/>
@@ -49,12 +49,12 @@
           <StackPanel IsVisible="{Binding SteamCmd.NeedsInput}" Spacing="8">
             <TextBlock Text="{Binding SteamCmd.ChallengeText}" TextWrapping="Wrap"/>
             <Grid ColumnDefinitions="*,Auto">
-              <TextBox x:Name="SecretInput" PasswordChar="●" MaxLength="512" PlaceholderText="仅用于当前认证，不保存"/>
+              <arc:PasswordField x:Name="SecretInput" MaxLength="512" PlaceholderText="仅用于当前认证，不保存"/>
               <arc:Button Grid.Column="1" Content="提交" Click="SubmitSecret" IsEnabled="{Binding SteamCmd.CanSubmit}" Margin="12,0,0,0" Variant="Secondary"/>
             </Grid>
           </StackPanel>
           <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="11"/>
-          <TextBox Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="220"/>
+          <arc:Textarea Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="task-log"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">

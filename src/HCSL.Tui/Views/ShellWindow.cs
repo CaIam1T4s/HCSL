@@ -5,6 +5,7 @@ using HCSL.Frontend;
 using HCSL.Core;
 
 namespace HCSL.Tui.Views;
+using Application = global::Terminal.Gui.Application;
 
 public sealed partial class ShellWindow : Toplevel
 {
@@ -49,7 +50,7 @@ public sealed partial class ShellWindow : Toplevel
         _navigation = new NavigationBar { Width = NavigationBar.ItemWidth * 6 };
         _navigation.SelectionChanged += SelectSection;
         _navigation.Activated += OpenSection;
-        _summary = new Label("") { X = 1, Y = 2, Width = Dim.Fill(1), Height = 2 };
+        _summary = new Label("") { X = 1, Y = 2, Width = Dim.Fill(1), Height = 3 };
         _submenuFrame = new FrameView("") { X = 0, Y = 5, Width = 19, Height = Dim.Fill() };
         _submenu = new PeerListView { Width = Dim.Fill(), Height = Dim.Fill() };
         _submenu.SelectedItemChanged += args =>
@@ -185,7 +186,7 @@ public sealed partial class ShellWindow : Toplevel
         _emptyInstances.Visible = (_instances.Source?.Count ?? 0) == 0;
         var selected = _instances.SelectedItem >= 0 && _instances.SelectedItem < (_instances.Source?.Count ?? 0);
         _instanceActions[0].Enabled = _instanceActions[3].Enabled = _instanceActions[4].Enabled = selected && SelectedRow?.Definition != null;
-        _instanceActions[2].Enabled = false;
+        _instanceActions[2].Enabled = selected && SelectedRow?.Definition != null;
         foreach (var button in _presetActions) button.Enabled = CurrentInstance != null && !_instanceBusy;
     }
 
@@ -291,11 +292,11 @@ public sealed partial class ShellWindow : Toplevel
         _server.English = _options.English;
         RefreshHostTitle();
         _navigation.Titles = _options.English
-            ? ["Home", "Manage", "Servers", "Download", "Network", "Settings"]
-            : ["首页", "实例管理", "实例列表", "下载", "组网", "设置"];
+            ? ["Home", "Manage", "Servers", "Download", "Settings"]
+            : ["首页", "实例管理", "实例列表", "下载", "设置"];
         _instancesFrame.Title = T("实例", "Instances");
         _emptyInstances.Text = T("暂无实例；请创建，或重新进入本页刷新。", "No instances. Create one, or reopen this page to refresh.");
-        var actions = _options.English ? new[] { "Select", "Create", "Import", "Edit", "Delete" } : ["选择", "创建", "导入", "编辑", "删除"];
+        var actions = _options.English ? new[] { "Select", "Create", "Password", "Edit", "Delete" } : ["选择", "创建", "入服密码", "编辑", "删除"];
         for (var i = 0; i < actions.Length; i++) _instanceActions[i].Text = actions[i];
         var presetActions = _options.English
             ? new[] { "New", "Copy", "Edit", "Delete", "Switch" }

@@ -2,6 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="HCSL.Host.App" RequestedThemeVariant="Default">
   <Application.Styles>
-    <StyleInclude Source="/Styles/Shell.axaml" />
+    <StyleInclude Source="avares://HCSL.UI.Shared/Styles/Shell.axaml" />
   </Application.Styles>
 </Application>

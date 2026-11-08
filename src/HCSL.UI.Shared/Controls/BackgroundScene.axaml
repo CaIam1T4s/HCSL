@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="using:HCSL.Host.Views.Controls"
-             x:Class="HCSL.Host.Views.Controls.BackgroundScene"
+             xmlns:local="using:HCSL.UI.Shared.Controls"
+             x:Class="HCSL.UI.Shared.Controls.BackgroundScene"
              x:Name="SceneRoot" x:DataType="local:BackgroundScene"
              IsHitTestVisible="False" ClipToBounds="True">
   <Grid Background="{DynamicResource ShellBackground}">

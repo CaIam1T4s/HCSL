@@ -4,7 +4,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using TKCode.Arc;
 
-namespace HCSL.Host.Styles.Themes;
+namespace HCSL.UI.Shared.Styles.Themes;
 
 /// <summary>Single palette source for the shell resources and native Arc theme presets.</summary>
 public static class ThemeCatalog

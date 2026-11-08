@@ -1,5 +1,5 @@
 using Avalonia.Controls;
-namespace HCSL.Host.Views.Controls;
+namespace HCSL.UI.Shared.Controls;
 public partial class DefaultBackground : UserControl
 {
     public DefaultBackground() => InitializeComponent();

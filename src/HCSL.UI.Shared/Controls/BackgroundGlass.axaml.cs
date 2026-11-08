@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace HCSL.Host.Views.Controls;
+namespace HCSL.UI.Shared.Controls;
 
 /// <summary>Application-local frosted background; never blurs its foreground or the desktop.</summary>
 public partial class BackgroundGlass : UserControl

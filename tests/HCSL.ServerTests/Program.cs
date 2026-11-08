@@ -10,6 +10,13 @@ using HCSL.Frontend;
 using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
 
+await HCSL.ServerTests.ServerNetworkReadinessTests.RunAsync();
+await HCSL.ServerTests.HostInstanceCrudTests.RunAsync();
+await HCSL.ServerTests.DirectAddressTests.RunAsync();
+
+await HCSL.ServerTests.HostServerControllerTests.RunAsync();
+HCSL.ServerTests.InstancePasswordTests.Run();
+HCSL.ServerTests.ServerMemoryTests.Run();
 if (await HCSL.ServerTests.ServerControllerTests.RunAsync() != 0) return 1;
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP Linux systemd lifecycle tests"); return 0; }
 var gateAssembly = typeof(DaemonEntry).Assembly.Location;
@@ -44,6 +51,7 @@ stty -echo
 test -t 0 && test -t 1 || exit 90
 [[ "$HOME" == */home && "$USRLOCALcsgo" == */userdata && -z "$LD_PRELOAD" ]] || exit 91
 printf 'FIXTURE_PTY_ENV_OK\n'
+printf 'AuthStatus (invalid): Waiting (Waiting for Steam login)\nSDR network config fetch attempt #1 failed. No response from server. Trying again.\nGot SDR network config. Loaded revision 1 OK\nAuthStatus (steamid:123): OK (OK)\n'
 group=$(sed -n 's/^0:://p' /proc/self/cgroup)
 [[ "$(cat "/sys/fs/cgroup$group/memory.max")" == 134217728 && "$(cat "/sys/fs/cgroup$group/memory.swap.max")" == 0 ]] || exit 92
 printf 'FIXTURE_LIMITS_OK\n' 
@@ -115,7 +123,9 @@ try
     {
         var run = await Start("ready"); Check(run.Active && run.State == ServerState.Preparing, "start was not asynchronous");
         await Until(async () => (await Status()).State == ServerState.Running, "map readiness");
-        Check((await Status()).MapLoaded, "map evidence missing");
+        var readyStatus = await Status();
+        Check(readyStatus.MapLoaded, "map evidence missing");
+        Check(readyStatus.NetworkReadiness is { Authentication: SteamAuthenticationState.Ready, Configuration: SdrConfigurationState.Ready }, "network readiness lost between PTY parser, daemon and IPC");
     });
     await Test("duplicate starts, stale stop and SteamCMD conflict are rejected", async () =>
     {

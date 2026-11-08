@@ -1,0 +1,4 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Arc supplies templates; all app-level control formats live in one file. -->
+  <StyleInclude Source="avares://HCSL.UI.Shared/Styles/Controls.axaml" />
+</Styles>

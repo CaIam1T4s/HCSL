@@ -7,25 +7,31 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 namespace HCSL.Infrastructure.Server;
 
-internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, string map, string executable, string[] arguments, List<Socket> ports, IServerAccessProvider access) : IAsyncDisposable
+internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, string map, string executable, string[] arguments, List<Socket> ports, IServerAccessProvider access, InstancePasswordConfig.Binding? password = null) : IAsyncDisposable
 {
     internal IWorkspaceLease Workspace { get; } = workspace;
     internal string Runtime { get; } = runtime;
     internal string Map { get; } = map;
     internal string Executable { get; } = executable;
     internal string[] Arguments { get; } = arguments;
+    internal string Redact(string text) => password?.Redact(text) ?? text;
     internal void ReleasePorts() { foreach (var port in ports) port.Dispose(); ports.Clear(); }
     /// <summary>The provider owns anything it created for this run (nothing for direct access).</summary>
-    public async ValueTask DisposeAsync() { ReleasePorts(); await access.DisposeAsync(); Workspace.Dispose(); }
+    public async ValueTask DisposeAsync()
+    {
+        try { ReleasePorts(); await access.DisposeAsync(); }
+        finally { try { password?.Dispose(); } finally { Workspace.Dispose(); } }
+    }
 }
 internal static class ServerPreparation
 {
     internal static async Task<ServerLaunch> PrepareAsync(WorkspaceRequest request, ServerStartOptions options, CancellationToken ct)
     {
         if (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64) throw new ServerException("HCSL-SERVER-PLATFORM", "Linux x64 server baseline is required.");
-        CheckMemory(); var lease = new LocalWorkspaceManager().Acquire(request);
+        CheckMemory(options.AllowLowMemory); var lease = new LocalWorkspaceManager().Acquire(request);
         var ports = new List<Socket>();
         IServerAccessProvider? access = null;
+        InstancePasswordConfig.Binding? password = null;
         try
         {
             var deployment = new RuntimeDeploymentService();
@@ -56,15 +62,17 @@ internal static class ServerPreparation
                 socket.Bind(new IPEndPoint(bind, entry.Definition.GamePort));
             }
             var preset = entry.Presets.Single(p => p.Id == plan.PresetId);
-            CheckMemory();
+            CheckMemory(options.AllowLowMemory);
+            password = InstancePasswordConfig.Bind(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), plan.PresetId.ToString("D"));
             var launch = new ServerLaunch(lease, plan.RuntimePath, preset.Map, "/bin/bash",
-                [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-ip", resolved.BindAddress, "-port", entry.Definition.GamePort.ToString(),
-                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+map", preset.Map], ports, access);
+                [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-port", entry.Definition.GamePort.ToString(),
+                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, "+map", preset.Map], ports, access, password);
+            password = null;
             access = null;
             return launch;
         }
-        catch (SocketException) { await Dispose(ports, access); lease.Dispose(); throw new ServerException("HCSL-SERVER-PORT", "Configured game port is occupied (TCP or UDP) on the bind address."); }
-        catch { await Dispose(ports, access); lease.Dispose(); throw; }
+        catch (SocketException) { password?.Dispose(); await Dispose(ports, access); lease.Dispose(); throw new ServerException("HCSL-SERVER-PORT", "Configured game port is occupied (TCP or UDP) on the bind address."); }
+        catch { password?.Dispose(); await Dispose(ports, access); lease.Dispose(); throw; }
     }
     private static async Task Dispose(List<Socket> ports, IServerAccessProvider? access)
     {
@@ -74,7 +82,7 @@ internal static class ServerPreparation
     private static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId
         || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision;
-    internal static void CheckMemory()
+    internal static void CheckMemory(bool allowLowMemory = false)
     {
         long available = long.Parse(File.ReadLines("/proc/meminfo").First(l => l.StartsWith("MemAvailable:", StringComparison.Ordinal)).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]) * 1024;
         var group = File.ReadLines("/proc/self/cgroup").FirstOrDefault(l => l.StartsWith("0::", StringComparison.Ordinal));
@@ -91,6 +99,17 @@ internal static class ServerPreparation
                 if (current == "/sys/fs/cgroup") break; current = Path.GetDirectoryName(current)!;
             }
         }
-        if (available < 4096L * 1024 * 1024) throw new ServerException("HCSL-SERVER-MEMORY", "At least 4096 MiB of host/cgroup available memory is required. No server was launched.");
+        EnforceMemory(available, allowLowMemory);
+    }
+    internal static void EnforceMemory(long available, bool allowLowMemory = false)
+    {
+        var mib = Math.Max(0, available / ServerMemoryPolicy.MiB);
+        switch (ServerMemoryPolicy.Evaluate(available, allowLowMemory))
+        {
+            case ServerMemoryDecision.Insufficient:
+                throw new ServerException("HCSL-SERVER-MEMORY", $"Available host/cgroup memory is {mib} MiB; at least 3072 MiB is required even with confirmation. No server was launched.");
+            case ServerMemoryDecision.ConfirmationRequired:
+                throw new ServerException("HCSL-SERVER-MEMORY-WARNING", $"Available host/cgroup memory is {mib} MiB (recommended: 4096 MiB). Explicit low-memory confirmation is required for this start. The 2560 MiB service limit and swap prohibition remain unchanged. No server was launched.");
+        }
     }
 }

@@ -34,10 +34,9 @@ public sealed class ServerOperations : IAsyncDisposable
     }
  private bool closing, active; private Guid? runId, instanceId;
     private ServerState state; private string code = "HCSL-SERVER-IDLE"; private bool loaded, clean = true; private int? exit; private string? detail, map;
+    private ServerNetworkReadiness networkReadiness = new();
+    private long? networkWaitSince;
     private long sequence, lastBusy = Stopwatch.GetTimestamp(); private readonly Queue<ServerLogLine> logs = new();
-    // Where this run binds; resolved from the instance so the frontend can show the address even when a
-    // fresh daemon has not started anything yet.
-    private string bindAddress = "127.0.0.1"; private NetworkAccessMode access = NetworkAccessMode.Loopback;
     // A page must stay well inside the 64 KiB IPC frame even with long lines, and the ring must be
     // large enough that a client paging at its poll interval does not fall behind a chatty server.
     private const int LogPageSize = 128;
@@ -55,12 +54,16 @@ public sealed class ServerOperations : IAsyncDisposable
             if (expected != null && expected != runId) throw new ServerException("HCSL-SERVER-STALE", "Log cursor belongs to another run.");
             if (after is < 0 || after > sequence) throw new ServerException("HCSL-SERVER-CURSOR", "Log cursor is outside this run; refresh status after a new run.");
             var page = after is { } cursor ? logs.Where(l => l.Sequence > cursor).Take(LogPageSize).ToArray() : [];
+            var addresses = LocalServerAddresses.Discover();
             var reported = map; var historical = false;
             if (reported is null && !active && hint is { } wanted && wanted != Guid.Empty) { reported = LastRunMap(wanted); historical = reported is not null; }
             return new(runId, instanceId, state, active, code, loaded, clean, exit, after == null ? sequence : page.LastOrDefault()?.Sequence ?? after.Value,
                 after != null && logs.Count > 0 && logs.Peek().Sequence > after + 1, page, detail,
-                Mode: access == NetworkAccessMode.Loopback ? "LoopbackLanValidation" : "Lan", Map: reported, MapHistorical: historical,
-                BindAddress: bindAddress, Access: access);
+                Mode: "Direct", Map: reported, MapHistorical: historical,
+                BindAddress: addresses[0], Access: addresses[0] == "127.0.0.1" ? NetworkAccessMode.Loopback : NetworkAccessMode.Lan,
+                ConnectionAddresses: addresses,
+                NetworkReadiness: active && state is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap or ServerState.Running
+                    ? networkReadiness.WithElapsed(networkWaitSince is { } since ? Stopwatch.GetElapsedTime(since) : TimeSpan.Zero) : new());
         }
     }
     /// <summary>Map of the last run that reached readiness, read from the instance directory on demand.
@@ -76,30 +79,20 @@ public sealed class ServerOperations : IAsyncDisposable
         }
         return lastRunMap;
     }
-    /// <summary>Address the run will bind, read from the instance so the snapshot can name it. Rules were
-    /// already enforced when the instance was written; a corrupt file falls back to loopback and the
-    /// launch itself still validates before starting.</summary>
-    private static ServerNetwork ResolveNetwork(WorkspaceRequest workspace, Guid id)
-    {
-        try
-        {
-            return LocalInstanceStore.NetworkOf(workspace, id);
-        }
-        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException or InstanceException) { return new ServerNetwork(); }
-    }
-    private void Admit(Guid id, ServerNetwork? network = null)
+    private void Admit(Guid id)
     {
         if (closing || active || pending is { IsCompleted: false }) throw new ServerException("HCSL-SERVER-BUSY", "A server is active, cleaning up, or the daemon is stopping.");
         if (id == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
+        networkReadiness = new(); networkWaitSince = null;
         cancellation?.Dispose(); cancellation = new(); runId = Guid.NewGuid(); instanceId = id;
-        if (network is not null) { bindAddress = network.BindAddress; access = network.Mode; } loaded = false; clean = false; exit = null; map = null; active = true; state = ServerState.Preparing; code = "HCSL-SERVER-PREPARING"; logs.Clear(); sequence = 0; detail = null;
+        loaded = false; clean = false; exit = null; map = null; active = true; state = ServerState.Preparing; code = "HCSL-SERVER-PREPARING"; logs.Clear(); sequence = 0; detail = null;
     }
     public ServerSnapshot Start(WorkspaceRequest workspace, ServerStartOptions options)
     {
         if (options.StartTimeoutSeconds is < 1 or > 300) throw new ServerException("HCSL-SERVER-OPTIONS", "Startup timeout must be 1..300 seconds.");
         lock (sync)
         {
-            Admit(options.InstanceId, ResolveNetwork(workspace, options.InstanceId)); var current = runId!.Value; var token = cancellation!.Token;
+            Admit(options.InstanceId); var current = runId!.Value; var token = cancellation!.Token;
             pending = Task.Run(async () =>
             {
                 try
@@ -143,7 +136,7 @@ public sealed class ServerOperations : IAsyncDisposable
         {
             if (closing || pending is { IsCompleted: false }) throw new ServerException("HCSL-SERVER-BUSY", "A task is still active.");
             if (id == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
-            active = false; Admit(id, ResolveNetwork(workspace, id)); code = "HCSL-SERVER-RECOVERING";
+            active = false; Admit(id); code = "HCSL-SERVER-RECOVERING";
             pending = Task.Run(() =>
             {
                 try { service.Recover(workspace, id, expected); lock (sync) { clean = true; state = ServerState.Stopped; code = "HCSL-SERVER-RECOVERED"; } }
@@ -161,6 +154,8 @@ public sealed class ServerOperations : IAsyncDisposable
             lock (owner.sync)
             {
                 if (owner.runId != run) return;
+                if (owner.cancellation?.IsCancellationRequested != true && e.NetworkReadiness is { } readiness)
+                    owner.networkReadiness = readiness;
                 if (e.Log != null)
                 {
                     var line = e.Log.Length > 512 ? e.Log[..512] : e.Log;
@@ -172,7 +167,13 @@ public sealed class ServerOperations : IAsyncDisposable
                     return;
                 }
                 if (owner.cancellation?.IsCancellationRequested == true) return;
-                owner.state = e.State; owner.code = e.Code; if (e.State == ServerState.Running) owner.loaded = true;
+                if (e.Map is { } actualMap && ServerLastRunStore.IsMapName(actualMap)) owner.map = actualMap;
+                owner.state = e.State; owner.code = e.Code;
+                if (e.State == ServerState.Running)
+                {
+                    owner.loaded = true;
+                    owner.networkWaitSince ??= Stopwatch.GetTimestamp();
+                }
             }
         }
     }

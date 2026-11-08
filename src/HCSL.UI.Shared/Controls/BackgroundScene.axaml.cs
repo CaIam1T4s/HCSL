@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace HCSL.Host.Views.Controls;
+namespace HCSL.UI.Shared.Controls;
 
 /// <summary>The shared composition recipe for the visible scene and the sidebar's blurred copy.</summary>
 public partial class BackgroundScene : UserControl

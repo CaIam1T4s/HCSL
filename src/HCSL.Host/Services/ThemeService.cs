@@ -1,11 +1,11 @@
 using Avalonia;
 using Avalonia.Styling;
 using TKCode.Arc;
-using HCSL.Host.Styles.Themes;
+using HCSL.UI.Shared.Styles.Themes;
 
 namespace HCSL.Host.Services;
 
-public sealed class ThemeService(Application application) : IThemeService
+public sealed class ThemeService(Avalonia.Application application) : IThemeService
 {
     public void Apply(ThemePreference preference)
     {

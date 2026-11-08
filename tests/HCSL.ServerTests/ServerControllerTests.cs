@@ -225,11 +225,12 @@ public static class ServerControllerTests
             using var controller = new ServerController(daemon, action => action());
             controller.Attach(Instance);
             await controller.ConnectAsync();
-            await controller.StartAsync(45, autoDeploy: true);
+            await controller.StartAsync(45, autoDeploy: true, allowLowMemory: true);
             var start = daemon.Commands().Last(c => c.Action == ServerAction.Start);
             Check(start.InstanceId == Instance, "start must carry the attached instance");
             Check(start.StartTimeoutSeconds == 45, "start must carry the requested timeout");
             Check(start.AutoDeploy, "explicit redeploy-and-start must reach the daemon");
+            Check(start.AllowLowMemory, "explicit low-memory consent must reach the daemon");
             var request = daemon.Requests.Last();
             Check(request.Options?.Workspace == Defaults, "start must carry workspace defaults");
         });
@@ -439,10 +440,11 @@ public static class ServerControllerTests
             var runtime = new RecordingRuntime();
             await using var servers = new ServerOperations(runtime);
             var workspace = new WorkspaceRequest("/settings", "/data", "/library");
-            servers.Start(workspace, new(Instance, 60, AutoDeploy: true));
+            servers.Start(workspace, new(Instance, 60, AutoDeploy: true, AllowLowMemory: true));
             for (var i = 0; i < 200 && runtime.Seen is null; i++) await Task.Delay(25);
             Check(runtime.Seen is not null, "the runtime must be invoked");
             Check(runtime.Seen!.AutoDeploy, "redeploy-and-start must reach the runtime options");
+            Check(runtime.Seen.AllowLowMemory, "low-memory consent must reach the runtime options");
             Check(runtime.Seen.StartTimeoutSeconds == 60, "timeout must reach the runtime options");
         });
 

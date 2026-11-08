@@ -55,8 +55,11 @@ public static class ServerStatusText
             ? "Instance or preset changed after deployment. Redeploy before starting."
             : "部署后实例或预设已修改。请重新部署后再启动。",
         "HCSL-SERVER-MEMORY" => english
-            ? "Less than 4096 MiB is available; the start was refused."
-            : "可用内存不足 4096 MiB，已拒绝启动。",
+            ? "Less than 3072 MiB is available; confirmation cannot bypass this floor."
+            : "可用内存不足 3072 MiB，即使确认也禁止启动。",
+        "HCSL-SERVER-MEMORY-WARNING" => english
+            ? "Available memory is below 4096 MiB. Confirm in the GUI/TUI or pass --allow-low-memory with CLI --start; below 3072 MiB remains blocked."
+            : "可用内存不足 4096 MiB。请在 GUI/TUI 确认，或 CLI --start 加 --allow-low-memory；低于 3072 MiB 仍禁止启动。",
         "HCSL-SERVER-PLATFORM" => english
             ? "Server lifecycle is Linux-only in this build."
             : "当前构建仅在 Linux 上提供服务器生命周期。",
@@ -94,6 +97,45 @@ public static class ServerStatusText
     };
 
     /// <summary>Second header line: real state, real map, run identity, log size.</summary>
+    public static string ConnectionAddressesLine(bool english, IEnumerable<string>? addresses, int port)
+    {
+        var values = addresses?.Select(a => a + ":" + port).ToArray() ?? [];
+        return (english ? "Local connection addresses: " : "本机连接地址：")
+            + (values.Length == 0 ? (english ? "unknown; refresh the instance list" : "未知，请刷新实例列表") : string.Join(" / ", values));
+    }
+
+    public static string NetworkLine(ServerNetworkReadiness? value, bool english)
+    {
+        value ??= new();
+        var auth = value.Authentication switch
+        {
+            SteamAuthenticationState.WaitingForSteam => english ? "waiting for Steam login" : "等待 Steam 登录",
+            SteamAuthenticationState.RequestingCertificate => english ? "requesting certificate" : "获取证书中",
+            SteamAuthenticationState.Ready => english ? "ready" : "就绪",
+            SteamAuthenticationState.Failed => english ? "failed" : "失败",
+            _ => english ? "unknown" : "未知"
+        };
+        var config = value.Configuration switch
+        {
+            SdrConfigurationState.Retrying => english ? "retrying" : "获取失败，正在重试",
+            SdrConfigurationState.Ready => english ? "loaded" : "已加载",
+            _ => english ? "unknown" : "未知"
+        };
+        return english ? $"Steam auth: {auth} · SDR config: {config}" : $"Steam 认证：{auth} · SDR 配置：{config}";
+    }
+
+    public static string? NetworkHint(ServerNetworkReadiness? value, bool english)
+    {
+        if (value is null) return null;
+        if (value.Delayed) return english
+            ? "Network authentication/configuration is still not ready after 120s of map readiness. Check Steam connectivity and redacted logs; do not disable certificate verification."
+            : "地图就绪已满 120 秒，网络认证/配置仍未就绪。请检查 Steam 网络连通性与脱敏日志；不要关闭证书校验。";
+        if (value.ClientCertificateRejected) return english
+            ? "A client certificate was rejected; this does not establish a password error or server authentication failure."
+            : "曾拒绝客户端证书；这不等于密码错误，也不直接判定服务器认证失败。";
+        return null;
+    }
+
     public static string SummaryLine(bool english, ServerState state, Guid? runId, string? logMap, string? presetMap,
         bool mapLoaded, bool truncated, int lineCount, string? pending, bool historical = false)
     {

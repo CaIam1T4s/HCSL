@@ -9,18 +9,19 @@ if (args.Contains("--help"))
     Console.WriteLine("Daemon-owned Linux single-instance lifecycle. Default: --status.\n" +
         "--start | --status | --logs | --stop | --recover\n" +
         "[--instance <UUID>] [--run <UUID>] [--after <sequence>] [--timeout 1..300] [--wait]\n" +
-        "[--settings <absolute path>] [--pipe <name>]\n" +
-        "Start requires a current offline deployment, 4096 MiB free memory and user systemd/cgroup v2.\n" +
+        "[--settings <absolute path>] [--pipe <name>] [--allow-low-memory]\n" +
+        "Start requires current deployment and systemd/cgroup v2. Below 3072 MiB is blocked; 3072..4095 MiB requires --allow-low-memory (this start only).\n" +
         "Initial mode is loopback LAN, insecure, without plugin/access-rule deployment. --stop requires --run.\n" +
         "Closing this CLI does not stop the daemon-owned server. --wait waits for map readiness/cleanup.");
     return 0;
 }
 try
 {
-    var values = new Dictionary<string, string>(); bool wait = false, actionSeen = false;
+    var values = new Dictionary<string, string>(); bool wait = false, actionSeen = false, allowLowMemory = false;
     var action = ServerAction.Status;
     for (var i = 0; i < args.Length; i++)
     {
+        if (args[i] == "--allow-low-memory" && !allowLowMemory) { allowLowMemory = true; continue; }
         if (args[i] == "--wait" && !wait) { wait = true; continue; }
         if (args[i] is "--start" or "--status" or "--logs" or "--stop" or "--recover")
         {
@@ -30,6 +31,7 @@ try
         if (args[i] is not ("--instance" or "--run" or "--after" or "--timeout" or "--settings" or "--pipe") || i + 1 >= args.Length || !values.TryAdd(args[i], args[++i]))
             throw new ArgumentException("Invalid arguments. Use --help.");
     }
+    if (allowLowMemory && action != ServerAction.Start) throw new ArgumentException("--allow-low-memory is valid only with --start.");
     Guid ParseId(string name, bool required)
     {
         if (!values.TryGetValue(name, out var text) && !required) return Guid.Empty;
@@ -56,7 +58,7 @@ try
     if (action is ServerAction.Start or ServerAction.Recover)
     { var p = LocalPaths.Defaults(values.GetValueOrDefault("--settings")); workspace = new(p.SettingsRoot, p.DataRoot, p.LibraryRoot); }
     var client = new ServerClient(daemon);
-    var snapshot = await client.SendAsync(new(action, id, run == Guid.Empty ? null : run, after, timeout), workspace);
+    var snapshot = await client.SendAsync(new(action, id, run == Guid.Empty ? null : run, after, timeout, AllowLowMemory: allowLowMemory), workspace);
     if (wait && action is ServerAction.Start or ServerAction.Stop or ServerAction.Recover)
     {
         var expected = snapshot.RunId; var clock = System.Diagnostics.Stopwatch.StartNew();

@@ -6,11 +6,11 @@ using Avalonia.Markup.Xaml;
 using HCSL.Host.Services;
 using HCSL.Host.ViewModels;
 using HCSL.Host.Views;
-using HCSL.Host.Styles.Themes;
+using HCSL.UI.Shared.Styles.Themes;
 
 namespace HCSL.Host;
 
-public partial class App : Application
+public partial class App : Avalonia.Application
 {
     public override void Initialize()
     {
@@ -23,9 +23,12 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
-            desktop.Exit += (_, _) => steamCmd.Dispose();
-            desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd) };
-            desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); };
+            var servers = new HostServerController(
+                new ServerController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
+                new InstanceClient(new DaemonClient()));
+            desktop.Exit += (_, _) => { servers.Dispose(); steamCmd.Dispose(); };
+            desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers) };
+            desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); };
         }
         base.OnFrameworkInitializationCompleted();
     }

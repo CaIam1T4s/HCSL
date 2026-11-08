@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="TKCode.Arc" Version="0.4.0-preview.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+    <ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" />
+    <ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" />
+    <ProjectReference Include="../HCSL.Infrastructure/HCSL.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

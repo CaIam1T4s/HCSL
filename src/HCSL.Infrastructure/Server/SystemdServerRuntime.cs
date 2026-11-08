@@ -75,6 +75,7 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         var unit = Unit(runId); bool mapLoaded = false, clean = true, journaled = false;
         Process? process = null; Task? stdout = null, stderr = null; int? exit = null; string code = "HCSL-SERVER-EXIT";
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var networkReadiness = new ServerNetworkReadiness();
         var parserLock = new object(); bool active = false, physics = false, players = false; long logBytes = 0, mapAt = 0;
         var logPath = Path.Combine(l.InstancesRoot, options.InstanceId.ToString("D"), "logs", "server-" + runId.ToString("N") + ".log");
         LocalPaths.RejectLink(logPath);
@@ -87,13 +88,16 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
                 text = new string(text.Where(c => !char.IsControl(c)).ToArray());
                 if (text == "HCSL_SERVER_GATE_READY") { ready.TrySetResult(); return; }
                 if (text == "HCSL_SERVER_CHILD_STARTED") { events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-PROCESS-STARTED")); return; }
+                var protocolText = text; // readiness parsing must not depend on secret redaction
+                networkReadiness = networkReadiness.Observe(protocolText);
+                text = launch.Redact(text);
                 if (Regex.IsMatch(text, @"(?i)password|token|steamaccount|gslt|secret")) text = "[redacted sensitive configuration]";
                 if (text.Length > 2048) text = text[..2048] + " [truncated]";
                 if (logBytes < 8 * 1024 * 1024) { disk.WriteLine(text); logBytes += Encoding.UTF8.GetByteCount(text) + 1; }
-                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text));
-                active |= text.Contains("ss_loading -> ss_active", StringComparison.Ordinal);
-                physics |= text.Contains("Created physics for " + launch.Map, StringComparison.Ordinal);
-                players |= Regex.IsMatch(text, @"SV:\s+\d+ player server started");
+                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text, NetworkReadiness: networkReadiness));
+                active |= protocolText.Contains("ss_loading -> ss_active", StringComparison.Ordinal);
+                physics |= protocolText.Contains("Created physics for " + launch.Map, StringComparison.Ordinal);
+                players |= Regex.IsMatch(protocolText, @"SV:\s+\d+ player server started");
                 if (!mapLoaded && active && physics && players) { Volatile.Write(ref mapAt, Stopwatch.GetTimestamp()); Volatile.Write(ref mapLoaded, true); }
             }
         }
@@ -132,7 +136,7 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
                 if (Volatile.Read(ref mapLoaded) && !publishedReady && Stopwatch.GetElapsedTime(Volatile.Read(ref mapAt)).TotalSeconds >= 2)
                 {
                     publishedReady = true;
-                    events.Report(new(ServerState.Running, "HCSL-SERVER-MAP-READY"));
+                    events.Report(new(ServerState.Running, "HCSL-SERVER-MAP-READY", Map: launch.Map));
                     // Recording must never disturb a run that already reached readiness.
                     try { ServerLastRunStore.Write(l.InstancesRoot, options.InstanceId, runId, launch.Map); }
                     catch (Exception) { }

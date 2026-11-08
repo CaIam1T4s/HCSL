@@ -3,6 +3,7 @@ using HCSL.Tui.Presentation;
 using Terminal.Gui;
 
 namespace HCSL.Tui;
+using Application = global::Terminal.Gui.Application;
 
 internal static class Program
 {

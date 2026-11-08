@@ -16,13 +16,13 @@ public sealed class NavigationItem(string id, string label, string description) 
 public sealed class ShellViewModel : ObservableObject
 {
     public SteamCmdController SteamCmd { get; }
+    public HostServerController Servers { get; }
     public IReadOnlyList<NavigationItem> Pages { get; } =
     [
         new("home", "首页", "选择实例，准备启动服务器。"),
         new("instance", "实例管理", "管理当前实例的配置、插件、地图与玩家授权。"),
         new("instances", "实例列表", "实例只保存配置与插件，共用全局最新版 CS2 服务端。"),
         new("downloads", "下载中心", "统一管理 CS2 服务端更新与插件下载。"),
-        new("network", "联机组网", "使用 EasyTier 创建网络并分享组网邀请。"),
         new("settings", "设置", "调整外观与应用偏好。")
     ];
 
@@ -77,9 +77,10 @@ public sealed class ShellViewModel : ObservableObject
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
 
-    public ShellViewModel(IThemeService themeService, SteamCmdController steamCmd)
+    public ShellViewModel(IThemeService themeService, SteamCmdController steamCmd, HostServerController servers)
     {
         SteamCmd = steamCmd;
+        Servers = servers;
         _selectedPage = Pages[0];
         _selectedPage.IsSelected = true;
         SetThemeCommand = new RelayCommand(value => { if (value is string theme) SelectedTheme = theme; });
@@ -101,7 +102,7 @@ public sealed class ShellViewModel : ObservableObject
             _selectedPage.IsSelected = false;
             _selectedPage = value;
             _selectedPage.IsSelected = true;
-            Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads)); Notify(nameof(IsNetwork));
+            Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads));
         }
     }
     public bool IsHome => SelectedPage.Id == "home";
@@ -109,7 +110,6 @@ public sealed class ShellViewModel : ObservableObject
     public bool IsInstance => SelectedPage.Id == "instance";
     public bool IsInstances => SelectedPage.Id == "instances";
     public bool IsDownloads => SelectedPage.Id == "downloads";
-    public bool IsNetwork => SelectedPage.Id == "network";
     public bool IsSystemTheme => SelectedTheme == "跟随系统";
     public bool IsLightTheme => SelectedTheme == "浅色";
     public bool IsDarkTheme => SelectedTheme == "深色";

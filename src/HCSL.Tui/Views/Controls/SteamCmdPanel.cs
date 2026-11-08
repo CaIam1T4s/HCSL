@@ -3,6 +3,7 @@ using HCSL.Frontend;
 using Terminal.Gui;
 
 namespace HCSL.Tui.Views.Controls;
+using Application = global::Terminal.Gui.Application;
 
 public sealed class SteamCmdPanel : View
 {

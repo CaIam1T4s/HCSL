@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
+using HCSL.Infrastructure.Server;
 namespace HCSL.Infrastructure.Storage;
 
 // Every mutation holds the existing cross-process workspace lease, including SteamCMD exclusion.
@@ -15,7 +16,8 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (command.Action == InstanceAction.List)
         {
             var listRoot = ListRoot(workspace);
-            return Directory.Exists(listRoot) ? Catalog(listRoot) : new InstanceCatalog([]);
+            return (Directory.Exists(listRoot) ? Catalog(listRoot) : new InstanceCatalog([]))
+                with { ConnectionAddresses = LocalServerAddresses.Discover() };
         }
         using var lease = new LocalWorkspaceManager().Acquire(workspace);
         var root = lease.Layout.InstancesRoot;
@@ -24,7 +26,7 @@ public sealed class LocalInstanceStore : IInstanceStore
             JsonSerializer.SerializeToUtf8Bytes(Catalog(root)).Length > 16000)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog capacity reached; paginated management is not implemented yet.");
         if (command.Action != InstanceAction.List) Mutate(root, command);
-        return Catalog(root);
+        return Catalog(root) with { ConnectionAddresses = LocalServerAddresses.Discover() };
     }
     /// <summary>Read-only bind address of one instance, without taking the lease a live run holds.
     /// Used by the daemon to name the address before (or without) starting a server.</summary>
@@ -84,7 +86,7 @@ public sealed class LocalInstanceStore : IInstanceStore
             InstanceRules.Preset(p); list.Add(p);
         }
         if (!list.Any(p => p.Id == d.SelectedPresetId)) throw new IOException("Selected preset is missing.");
-        return new(id, d, list.OrderBy(p => p.Name).ToArray());
+        return new(id, d, list.OrderBy(p => p.Name).ToArray(), HasPassword: InstancePasswordConfig.Read(path).Length != 0);
     }
     private static InstanceCatalog Catalog(string root)
     {
@@ -134,7 +136,12 @@ public sealed class LocalInstanceStore : IInstanceStore
     private static void Copy(string source, string destination)
     {
         Safe(source);
-        foreach (var file in Directory.GetFiles(source)) { Safe(file); File.Copy(file, Path.Combine(destination, Path.GetFileName(file))); }
+        foreach (var file in Directory.GetFiles(source))
+        {
+            // Generated per-run reference to the instance secret is never a preset asset.
+            if (Path.GetFileName(file) == InstancePasswordConfig.ExecName) continue;
+            Safe(file); File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        }
         foreach (var dir in Directory.GetDirectories(source))
         { Safe(dir); var target = Path.Combine(destination, Path.GetFileName(dir)); Directory.CreateDirectory(target); Copy(dir, target); }
     }
@@ -163,6 +170,14 @@ public sealed class LocalInstanceStore : IInstanceStore
         var d = entry.Definition!;
         CheckRevision(d.Revision, c.Revision);
         var file = Path.Combine(path, "instance.json");
+        if (c.Action == InstanceAction.SetPassword)
+        {
+            InstanceRules.Password(c.Password);
+            InstancePasswordConfig.Write(path, c.Password!);
+            // No gameplay/deployment revision change: password applies at next start,
+            // independently of preset selection and without forcing a 70GB redeploy.
+            return;
+        }
         if (c.Action == InstanceAction.Delete) { Recycle(root, path); return; }
         if (c.Action == InstanceAction.Update)
         {

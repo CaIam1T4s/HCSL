@@ -153,7 +153,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (command.Action == ServerAction.Start && operations.Snapshot().Running) throw new ServerException("HCSL-TASK-BUSY", "SteamCMD task is active.");
         var snapshot = command.Action switch
         {
-            ServerAction.Start => servers.Start(Workspace(), new(command.InstanceId, command.StartTimeoutSeconds, command.AutoDeploy)),
+            ServerAction.Start => servers.Start(Workspace(), new(command.InstanceId, command.StartTimeoutSeconds, command.AutoDeploy, command.AllowLowMemory)),
             ServerAction.Status => servers.Snapshot(hint: command.InstanceId),
             ServerAction.Logs => servers.Snapshot(command.AfterSequence, command.RunId),
             ServerAction.Stop => servers.Stop(command.RunId),

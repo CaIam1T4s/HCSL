@@ -1,6 +1,6 @@
 using Avalonia;
 using TKCode.Arc;
-using HCSL.Host.Styles.Themes;
+using HCSL.UI.Shared.Styles.Themes;
 
 namespace HCSL.Host;
 

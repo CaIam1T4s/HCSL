@@ -4,6 +4,7 @@ using HCSL.Tui.Presentation;
 using Terminal.Gui;
 
 namespace HCSL.Tui.Views;
+using Application = global::Terminal.Gui.Application;
 
 public sealed partial class ShellWindow
 {
@@ -92,28 +93,22 @@ public sealed partial class ShellWindow
         var preset = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
         var presetName = preset?.Name ?? T("无", "none");
         var presetMap = preset?.Map ?? T("无", "none");
-        var network = InstanceRules.Resolve(definition.Network);
         var zh = new List<string>
         {
             $"实例：{definition.Name}",
-            ServerStatusText.EndpointLine(false, network.BindAddress, definition.GamePort, network.Mode),
-            ServerStatusText.ConnectHint(false, network.BindAddress, definition.GamePort),
+            ServerStatusText.ConnectionAddressesLine(false, _connectionAddresses, definition.GamePort),
+            "地址仅供连接参考；访问范围由防火墙控制。",
         };
         var en = new List<string>
         {
             $"Instance: {definition.Name}",
-            ServerStatusText.EndpointLine(true, network.BindAddress, definition.GamePort, network.Mode),
-            ServerStatusText.ConnectHint(true, network.BindAddress, definition.GamePort),
+            ServerStatusText.ConnectionAddressesLine(true, _connectionAddresses, definition.GamePort),
+            "Addresses are connection hints, not firewall isolation.",
         };
-        if (network.Mode == NetworkAccessMode.Lan)
-        {
-            zh.Add(ServerStatusText.FirewallHint(false, definition.GamePort));
-            en.Add(ServerStatusText.FirewallHint(true, definition.GamePort));
-        }
-        zh.AddRange([$"预设：{presetName}   地图：{presetMap}", "VAC：关 · sv_lan 1 · 接入：" + network.Mode, "启动超时：120 秒", "",
+        zh.AddRange([$"预设：{presetName}   地图：{presetMap}", "VAC：关 · sv_lan 1 · 接入：Direct", "启动超时：120 秒", "",
             "部署缺失或已过期时，宿主会先用 reflink 重新部署再启动（旧部署改名保留，不改基础安装）。",
             "内存与进程数由宿主按 systemd 控制组限制；失败原因原样显示宿主代码。"]);
-        en.AddRange([$"Preset: {presetName}   Map: {presetMap}", "VAC: off · sv_lan 1 · access: " + network.Mode, "Start timeout: 120 s", "",
+        en.AddRange([$"Preset: {presetName}   Map: {presetMap}", "VAC: off · sv_lan 1 · access: Direct", "Start timeout: 120 s", "",
             "A missing or stale deployment is reflinked and redeployed by the daemon before the start (the old deployment is kept as .previous-<time>; the base install is untouched).",
             "Memory and process limits come from the daemon's systemd control group; failures keep the daemon's own code."]);
         var body = T(string.Join("\n", zh), string.Join("\n", en));
@@ -144,20 +139,32 @@ public sealed partial class ShellWindow
     /// afterwards in the daemon's background task. A rejection therefore arrives as a later snapshot
     /// update, so the outcome is reported from the state, not from the Start reply.
     /// </summary>
-    private Task HandleStartOutcomeAsync()
+    private async Task HandleStartOutcomeAsync()
     {
-        if (!_startInFlight) return Task.CompletedTask;
-        if (_server.State is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap) return Task.CompletedTask;
-        if (_server.State is ServerState.Running) { _startInFlight = false; return Task.CompletedTask; }
-        if (_server.State is not (ServerState.Failed or ServerState.RecoveryRequired)) { _startInFlight = false; return Task.CompletedTask; }
-        if (_server.RunId == _baselineRun && _server.State == _baselineState && _server.Code == _baselineCode)
-            return Task.CompletedTask;
+        if (!_startInFlight || _server.Busy) return;
+        if (_server.State is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap) return;
+        if (_server.State is ServerState.Running) { _startInFlight = false; return; }
+        if (_server.State is not (ServerState.Failed or ServerState.RecoveryRequired)) { _startInFlight = false; return; }
+        if (_server.RunId == _baselineRun && _server.State == _baselineState && _server.Code == _baselineCode) return;
         var signature = _server.State + "|" + _server.Code + "|" + Short(_server.RunId);
-        if (_reportedFailure == signature) return Task.CompletedTask;
+        if (_reportedFailure == signature) return;
         _reportedFailure = signature;
         _startInFlight = false;
+        if (_server.Code == "HCSL-SERVER-MEMORY-WARNING")
+        {
+            var instance = _server.Snapshot?.InstanceId;
+            if (MessageBox.Query(84, 16, T("低内存启动确认", "Confirm low-memory start"),
+                _server.DetailText + "\n\n" + T("可用内存不足 4 GiB，继续可能导致卡顿或 OOM。低于 3 GiB 仍禁止启动。服务器硬上限 2560 MiB，禁止 swap。仅本次有效。", "Less than 4 GiB is available. Proceeding may cause stalls or OOM. Below 3 GiB remains blocked. Service limit: 2560 MiB; no swap. This start only."),
+                T("取消", "Cancel"), T("仍然启动", "Start anyway")) != 1) return;
+            if (instance is not { } id) return;
+            _server.Attach(id);
+            _baselineRun = _server.RunId; _baselineState = _server.State; _baselineCode = _server.Code;
+            _startInFlight = true;
+            if (!await _server.StartAsync(autoDeploy: true, allowLowMemory: true))
+            { _startInFlight = false; ShowServerFailure(); }
+            return;
+        }
         ShowServerFailure();
-        return Task.CompletedTask;
     }
 
     private async Task StopServerAsync()
@@ -257,7 +264,7 @@ public sealed partial class ShellWindow
         _server.ConfiguredMap = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId)?.Map;
     }
 
-    /// <summary>Single writer of the two header lines: catalog facts first, daemon facts second.</summary>
+    /// <summary>Single writer of the header: catalog, lifecycle, then network readiness.</summary>
     private void RefreshServerSummary()
     {
         if (_updating || _summary is null) return;
@@ -299,17 +306,19 @@ public sealed partial class ShellWindow
         // A stale snapshot must never be presented as the current state.
         var line = _server.ConnectionUnknown
             ? (_server.English ? "State: unknown — the local daemon is unreachable." : "状态：未知 · 无法连接本机宿主。")
-            : _server.SummaryLine;
+            : _server.LifecycleSummaryLine;
         var detail = _server.DetailText;
         // The address comes from the instance; a live run on this instance wins, because the daemon resolved
         // it before launching and the stored definition may have changed since.
-        var network = InstanceRules.Resolve(displayed?.Definition?.Network);
-        var bindAddress = liveId is { } current && current == displayed?.Id && _server.Connected ? _server.BindAddress : network.BindAddress;
-        var accessMode = liveId is { } mode && mode == displayed?.Id && _server.Connected ? _server.Access : network.Mode;
+        var addresses = _server.Snapshot?.ConnectionAddresses ?? _connectionAddresses;
         var endpoint = displayed?.Definition is { } addressed
-            ? "   · " + ServerStatusText.EndpointLine(_options.English, bindAddress, addressed.GamePort, accessMode)
+            ? "   · " + ServerStatusText.ConnectionAddressesLine(_options.English, addresses, addressed.GamePort)
             : "";
-        _summary.Text = head + "\n" + line + endpoint + (detail.Length == 0 ? "" : "   · " + detail);
+        var networkLine = _server.NetworkSummaryLine;
+        if (networkLine.Length > 0 && ServerStatusText.NetworkHint(_server.NetworkReadiness, _options.English) is { } hint)
+            networkLine += " · " + hint;
+        _summary.Text = head + "\n" + line + endpoint + (detail.Length == 0 ? "" : "   · " + detail)
+            + "\n" + networkLine;
         UpdateLogView();
     }
 

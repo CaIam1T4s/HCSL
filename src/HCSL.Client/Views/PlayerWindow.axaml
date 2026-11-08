@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:shared="using:HCSL.UI.Shared.Controls" x:Class="HCSL.Client.Views.PlayerWindow" Title="HCSL · 玩家客户端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}" WindowDecorations="BorderOnly">
+  <Grid>
+    <shared:BackgroundScene x:Name="BackgroundLayer" Strength="1"/>
+    <Grid x:Name="ShellContent" RowDefinitions="44,*">
+      <Border Classes="titlebar">
+        <Grid ColumnDefinitions="*,Auto">
+          <Border Background="Transparent" PointerPressed="DragTitleBar" Padding="16,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <Path Data="{x:Static arc:ArcIcons.Server}" Classes="glyph"/>
+              <TextBlock Text="HCSL · 玩家客户端" FontSize="13" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,4,8,4">
+            <arc:Button Classes="caption" Variant="Secondary" Click="MinimizeWindow" ToolTip.Tip="最小化" AutomationProperties.Name="最小化"><Path Data="{x:Static arc:ArcIcons.Minus}" Classes="glyph"/></arc:Button>
+            <arc:Button Classes="caption" Variant="Secondary" Click="ToggleMaximizeWindow" ToolTip.Tip="最大化或还原" AutomationProperties.Name="最大化或还原"><Path Data="{x:Static arc:ArcIcons.Square}" Classes="glyph"/></arc:Button>
+            <arc:Button Classes="caption close" Variant="Secondary" Click="CloseWindow" ToolTip.Tip="关闭" AutomationProperties.Name="关闭"><Path Data="{x:Static arc:ArcIcons.X}" Classes="glyph"/></arc:Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <Grid Grid.Row="1" ColumnDefinitions="216,*">
+        <Grid>
+          <shared:BackgroundGlass Source="{Binding #BackgroundLayer}" OffsetY="-44" BlurRadius="18" TintOpacity="0.65"/>
+          <Border Classes="sidebar">
+            <Grid Margin="12,8,12,16" RowDefinitions="Auto,*,Auto">
+              <StackPanel Spacing="10">
+                <TextBlock Text="账号" Classes="section"/>
+                <Grid ColumnDefinitions="42,*" Margin="10,0,0,10">
+                  <Border Classes="avatar"><TextBlock Text="CS" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                  <StackPanel Grid.Column="1" Spacing="3"><TextBlock Text="未登录 Steam" FontWeight="SemiBold"/><TextBlock Text="账号服务待接入" Classes="muted" FontSize="11"/></StackPanel>
+                </Grid>
+              </StackPanel>
+              <StackPanel Grid.Row="1" Spacing="3">
+                <TextBlock Text="服务器" Classes="section"/>
+                <arc:Button x:Name="HomeNav" Classes="nav selected" Variant="Secondary" Click="ShowHome"><Grid ColumnDefinitions="28,*"><Path Data="{x:Static arc:ArcIcons.House}" Classes="glyph"/><TextBlock Grid.Column="1" Text="首页"/></Grid></arc:Button>
+                <arc:Button x:Name="ServersNav" Classes="nav" Variant="Secondary" Click="ShowServers"><Grid ColumnDefinitions="28,*"><Path Data="{x:Static arc:ArcIcons.List}" Classes="glyph"/><TextBlock Grid.Column="1" Text="服务器列表"/></Grid></arc:Button>
+                <TextBlock Text="通用" Classes="section"/>
+                <arc:Button x:Name="SettingsNav" Classes="nav" Variant="Secondary" Click="ShowSettings"><Grid ColumnDefinitions="28,*"><Path Data="{x:Static arc:ArcIcons.Settings}" Classes="glyph"/><TextBlock Grid.Column="1" Text="设置"/></Grid></arc:Button>
+              </StackPanel>
+              <TextBlock Grid.Row="2" Text="● IP 直连 · 开发预览" Classes="muted" FontSize="11" Margin="12,16,0,0"/>
+            </Grid>
+          </Border>
+        </Grid>
+        <Grid Grid.Column="1">
+          <Grid x:Name="HomePage" Margin="32" RowDefinitions="*,Auto">
+            <Border Grid.Row="1" Classes="launch-shadow" Width="290" HorizontalAlignment="Right">
+              <arc:Button x:Name="HomeAction" Classes="empty-launch" Variant="Secondary" Click="ShowServers" Content="选择服务器 · 前往服务器列表"/>
+            </Border>
+          </Grid>
+          <Border x:Name="ServersPage" IsVisible="False" Background="{DynamicResource ShellBackground}">
+            <ScrollViewer x:Name="ServerContent"/>
+          </Border>
+          <Border x:Name="SettingsPage" IsVisible="False" Background="{DynamicResource ShellBackground}" Padding="32">
+            <StackPanel Spacing="16">
+              <TextBlock Text="设置" Classes="page-title"/>
+              <Border Classes="panel"><StackPanel Spacing="12">
+                <TextBlock Text="外观" FontSize="18"/>
+                <TextBlock Text="与服主管理端共享主题与背景组件；外观切换仅在本次会话生效。" Classes="muted"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <arc:Button Content="跟随系统" Variant="Secondary" Click="SystemTheme"/>
+                  <arc:Button Content="浅色" Variant="Secondary" Click="LightTheme"/>
+                  <arc:Button Content="深色" Variant="Secondary" Click="DarkTheme"/>
+                </StackPanel>
+              </StackPanel></Border>
+              <TextBlock Text="连接仅校验地址格式，不提前探测服务器；密码使用系统安全存储。" Classes="muted" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Grid>
+    </Grid>
+    <Border x:Name="DialogOverlay" Classes="dialog-overlay" IsVisible="False">
+      <Border x:Name="DialogSurface" Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="560" MaxHeight="600"/>
+    </Border>
+  </Grid>
+</Window>

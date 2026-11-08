@@ -107,13 +107,18 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public string? ObservedMap { get; set; }
 
-    public string SummaryLine => ServerStatusText.SummaryLine(english, State, RunId,
+    public ServerNetworkReadiness? NetworkReadiness => snapshot?.NetworkReadiness;
+    private bool ShowNetworkReadiness => Connected && Active && State is ServerState.Starting or ServerState.LoadingMap or ServerState.Running;
+    public string NetworkSummaryLine => ShowNetworkReadiness ? ServerStatusText.NetworkLine(NetworkReadiness, english) : "";
+    public string LifecycleSummaryLine => ServerStatusText.SummaryLine(english, State, RunId,
         Map, ConfiguredMap, MapLoaded, LogsTruncated, LogLineCount, Pending, MapIsHistorical);
+    public string SummaryLine => LifecycleSummaryLine + (NetworkSummaryLine.Length > 0 ? " · " + NetworkSummaryLine : "");
 
     private bool MapIsHistorical => snapshot?.MapHistorical == true
         || (snapshot?.Map is null && ServerStatusText.MapFromLog(snapshot?.Lines) is null && ObservedMap is not null);
     public string DetailText => ServerStatusText.DetailLine(Code.Length == 0 ? null : Code,
-        string.IsNullOrWhiteSpace(snapshot?.Detail) ? null : snapshot!.Detail, error.Length == 0 ? null : error, english);
+        string.IsNullOrWhiteSpace(snapshot?.Detail) ? null : snapshot!.Detail, error.Length == 0 ? null : error, english)
+        + (ShowNetworkReadiness && ServerStatusText.NetworkHint(NetworkReadiness, english) is { } hint ? " — " + hint : "");
     public string LogText => string.Join(Environment.NewLine, logLines.Select(line => line.Text));
 
     public void Attach(Guid instanceId)
@@ -185,9 +190,9 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, logCursor), false, "", 500);
     }
 
-    public Task<bool> StartAsync(int timeoutSeconds = 120, bool autoDeploy = false) =>
+    public Task<bool> StartAsync(int timeoutSeconds = 120, bool autoDeploy = false, bool allowLowMemory = false) =>
         CanStart
-            ? SendAsync(new(ServerAction.Start, attached, null, 0, timeoutSeconds, autoDeploy), true, "start", 4000)
+            ? SendAsync(new(ServerAction.Start, attached, null, 0, timeoutSeconds, autoDeploy, allowLowMemory), true, "start", 4000)
             : Task.FromResult(false);
 
     public Task<bool> StopAsync() =>

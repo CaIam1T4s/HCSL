@@ -1,0 +1,160 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc">
+<Style Selector="Window">
+    <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource MutedText}"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+  <Style Selector="TextBlock.section">
+    <Setter Property="Foreground" Value="{DynamicResource MutedText}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="Margin" Value="12,18,0,8"/>
+  </Style>
+  <Style Selector="TextBlock.heading">
+    <Setter Property="FontSize" Value="26"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+  <Style Selector="TextBlock.subheading">
+    <Setter Property="FontSize" Value="17"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+  </Style>
+<Style Selector="Border.panel">
+    <Setter Property="Background" Value="{DynamicResource PanelBackground}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Padding" Value="24"/>
+  </Style>
+  <Style Selector="Border.notice">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Padding" Value="14"/>
+  </Style>
+  <Style Selector="Border.launch-shadow">
+    <Setter Property="BoxShadow" Value="{DynamicResource LaunchShadow}"/>
+    <Setter Property="Background" Value="{DynamicResource PanelBackground}"/>
+  </Style>
+  <Style Selector="Border.avatar">
+    <Setter Property="Width" Value="34"/>
+    <Setter Property="Height" Value="34"/>
+    <Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+  </Style>
+  <Style Selector="Border.launch-shadow">
+    <Setter Property="CornerRadius" Value="{StaticResource PillRadius}"/>
+  </Style>
+  <Style Selector="Border.sidebar">
+    <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
+    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+  </Style>
+  <Style Selector="Border.titlebar">
+    <Setter Property="Background" Value="{DynamicResource SidebarBackground}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
+    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+  </Style>
+<Style Selector="arc|Button">
+    <Setter Property="CornerRadius" Value="{StaticResource PillRadius}"/>
+  </Style>
+  <Style Selector="arc|Button[Variant=Secondary]:not(.nav):not(.caption):not(.empty-launch)">
+    <Setter Property="Size" Value="Small"/>
+    <Setter Property="MinHeight" Value="32"/>
+    <Setter Property="Height" Value="32"/>
+  </Style>
+  <Style Selector="arc|Button.compact">
+    <Setter Property="Size" Value="Small"/>
+    <Setter Property="MinHeight" Value="30"/>
+    <Setter Property="Height" Value="30"/>
+  </Style>
+  <Style Selector="arc|Button.nav">
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="MinHeight" Value="42"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+    <Setter Property="FontWeight" Value="Normal"/>
+  </Style>
+  <Style Selector="arc|Button.nav:pointerover">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+  </Style>
+  <Style Selector="arc|Button.nav.selected">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+  </Style>
+  <Style Selector="arc|Button:disabled">
+    <Setter Property="Opacity" Value="1"/>
+    <Setter Property="Background" Value="{DynamicResource DisabledBackground}"/>
+    <Setter Property="Foreground" Value="{DynamicResource DisabledText}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
+  </Style>
+  <Style Selector="arc|Button.selected">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+  </Style>
+  <Style Selector="arc|Button.caption">
+    <Setter Property="Width" Value="38"/>
+    <Setter Property="Height" Value="30"/>
+    <Setter Property="MinHeight" Value="30"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+  </Style>
+  <Style Selector="arc|Button.caption.close:pointerover">
+    <Setter Property="Background" Value="#B83B36"/>
+  </Style>
+  <Style Selector="arc|Button.empty-launch">
+    <Setter Property="Background" Value="{DynamicResource PanelBackground}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Outline}"/>
+    <Setter Property="MinHeight" Value="68"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+  </Style>
+  <Style Selector="arc|Button.empty-launch:pointerover">
+    <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+  </Style>
+  <Style Selector="arc|Button.caption.close:pointerover Path.glyph">
+    <Setter Property="Stroke" Value="{DynamicResource OnDangerText}"/>
+  </Style>
+<Style Selector="Path.glyph">
+    <Setter Property="Width" Value="16"/>
+    <Setter Property="Height" Value="16"/>
+    <Setter Property="Stretch" Value="Uniform"/>
+    <Setter Property="Stroke" Value="{DynamicResource PrimaryText}"/>
+    <Setter Property="StrokeThickness" Value="1.8"/>
+  </Style>
+  <!-- Shared Arc field/selection formats. Page code owns layout, not templates. -->
+  <Style Selector="arc|Input, arc|PasswordField">
+    <Setter Property="MinHeight" Value="36"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+  </Style>
+  <Style Selector="arc|Textarea">
+    <Setter Property="MinHeight" Value="90"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+  </Style>
+  <Style Selector="arc|Textarea.task-log">
+    <Setter Property="Height" Value="220"/>
+    <Setter Property="FrameHeight" Value="220"/>
+    <Setter Property="IsResizable" Value="False"/>
+    <Setter Property="ClipToBounds" Value="True"/>
+  </Style>
+  <Style Selector="arc|Textarea.task-log /template/ ScrollViewer">
+    <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+  </Style>
+  <Style Selector="arc|Textarea.server-log /template/ ScrollViewer">
+    <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+    <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+  </Style>
+  <Style Selector="arc|Select">
+    <Setter Property="MinHeight" Value="36"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+  </Style>
+  <Style Selector="arc|Checkbox">
+    <Setter Property="MinHeight" Value="32"/>
+  </Style>
+  <Style Selector="Border.dialog-overlay">
+    <Setter Property="Background" Value="#80000000"/>
+  </Style>
+  <Style Selector="Border.dialog-surface">
+    <Setter Property="CornerRadius" Value="16"/>
+    <Setter Property="BoxShadow" Value="{DynamicResource LaunchShadow}"/>
+  </Style>
+</Styles>
