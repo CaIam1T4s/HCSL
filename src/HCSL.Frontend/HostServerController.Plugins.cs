@@ -3,8 +3,11 @@ namespace HCSL.Frontend;
 
 public sealed partial class HostServerController
 {
+    private PresetPluginClient? plugins;
+    private PresetPluginClient Plugins => plugins ??= new(instances, Server);
+
     /// <summary>Editing is allowed only where the framework-free client allows it; no duplicated gate.</summary>
-    public bool CanEditPlugins => !Busy && new PresetPluginClient(instances, Server).CanWrite;
+    public bool CanEditPlugins => !Busy && Plugins.CanWrite;
 
     public async Task<PluginResult> PluginsAsync(PluginCommand command)
     {
@@ -13,7 +16,7 @@ public sealed partial class HostServerController
         if (!Instances.Any(i => i.Entry.Id == command.InstanceId && i.Entry.Presets.Any(p => p.Id == command.PresetId)))
             throw new IOException("HCSL-PLUGIN-PRESET: Refresh the instance catalog.");
         Busy = true; Notify();
-        try { return await new PresetPluginClient(instances, Server).ExecuteAsync(command); }
+        try { return await Plugins.ExecuteAsync(command); }
         finally { Busy = false; Notify(); }
     }
 }

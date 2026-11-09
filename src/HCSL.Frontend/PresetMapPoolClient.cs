@@ -2,7 +2,7 @@ using HCSL.Core;
 namespace HCSL.Frontend;
 public sealed class PresetMapPoolClient(InstanceClient instances, ServerController server)
 {
-    public bool CanWrite => server.Connected && !server.Busy && !server.Active && server.State != ServerState.RecoveryRequired;
+    public bool CanWrite => PresetEditGate.CanWrite(server);
     public Task<MapPoolResult> ExecuteAsync(MapPoolCommand command)
     {
         if (!server.Connected || server.Busy || (command.Action != MapPoolAction.Read &&

@@ -4,7 +4,7 @@ namespace HCSL.Frontend;
 /// <summary>Plugin selection is edited locally and saved with the manifest hash returned by the host.</summary>
 public sealed class PresetPluginClient(InstanceClient instances, ServerController server)
 {
-    public bool CanWrite => server.Connected && !server.Busy && !server.Active && server.State != ServerState.RecoveryRequired;
+    public bool CanWrite => PresetEditGate.CanWrite(server);
     public Task<PluginResult> ExecuteAsync(PluginCommand command)
     {
         if (!server.Connected || server.Busy || (command.Action != PluginAction.List &&

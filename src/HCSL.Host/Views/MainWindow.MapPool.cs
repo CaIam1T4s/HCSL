@@ -35,7 +35,7 @@ public partial class MainWindow
                 try
                 {
                     if (choice == 6) { if (await Discard()) await Load(); continue; }
-                    if (model.Server.Active || model.Server.State == ServerState.RecoveryRequired || !model.CanCreate)
+                    if (!model.CanEditMapPool)
                         throw new IOException("HCSL-MAPPOOL-BUSY: 请先停服并完成恢复/工具任务。");
                     var index = list.SelectedIndex;
                     switch (choice)

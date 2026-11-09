@@ -38,6 +38,8 @@ public partial class MainWindow
                 if (choice <= 0) { if (windowClosed || await Discard()) break; else continue; }
                 try
                 {
+                    if (choice is >= 3 and <= 6 && !model.CanEditCfg)
+                        throw new IOException("HCSL-CFG-BUSY: 请先停服并完成恢复/工具任务。");
                     switch (choice)
                     {
                         case 1: await Refresh(); status.Text = "列表已刷新；当前草稿与已加载版本保持不变。"; break;

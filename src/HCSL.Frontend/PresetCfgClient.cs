@@ -4,11 +4,12 @@ namespace HCSL.Frontend;
 /// <summary>Framework-independent CFG operations shared by the desktop and terminal host.</summary>
 public sealed class PresetCfgClient(InstanceClient instances, ServerController server)
 {
+    public bool CanWrite => PresetEditGate.CanWrite(server);
+
     public Task<PresetCfgResult> ExecuteAsync(PresetCfgCommand command)
     {
         if (!server.Connected) throw new IOException("HCSL-CFG-BUSY: Host is disconnected.");
-        if (command.Action is not (PresetCfgAction.List or PresetCfgAction.Read) &&
-            (server.Active || server.Busy || server.State == ServerState.RecoveryRequired))
+        if (command.Action is not (PresetCfgAction.List or PresetCfgAction.Read) && !CanWrite)
             throw new IOException("HCSL-CFG-BUSY: Stop the server and complete recovery before editing CFG.");
         return instances.CfgAsync(command);
     }
