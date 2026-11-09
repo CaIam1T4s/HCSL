@@ -18,7 +18,7 @@ public static class DevCommandLine
     ];
 
     private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--yes", "--keep", "--force", "--enable"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -31,7 +31,7 @@ public static class DevCommandLine
           plan                   Validate a deployment without writing anything (add --explain).
           deploy                 Deploy the selected preset (auto reflink/full copy, add --explain).
           recover                Recover an interrupted deployment journal.
-          start | stop           Start/stop the daemon-owned server (start waits with --wait).
+          start | stop           Start/stop the daemon-owned server (start --wait blocks until Running/Failed).
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
@@ -50,13 +50,13 @@ public static class DevCommandLine
           --explain              Explain what will change and why, before doing it.
           --dry-run              With deploy: same as plan, never writes.
           --full-copy|--reflink  Force the copy mode (default: probe the library filesystem).
+          --wait                 start: wait until Running or failed/needs recovery.
           --confirm-write        exec: acknowledge a command that can change server state.
           --version <v>          test mms: package version (default 2.0.0).
           --enable               test mms: add the package to the selected preset.
           --force                test mms/gc: overwrite an existing package version.
           --allow-low-memory     start: allow 3072..4095 MiB free memory.
           --follow --after <n>   logs: stream new lines / start after a sequence.
-          --keep                 gc/doctor: keep diagnostic folders instead of deleting.
 
         Examples:
           hcsl status

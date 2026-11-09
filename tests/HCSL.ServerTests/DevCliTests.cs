@@ -41,6 +41,11 @@ public static class DevCliTests
 
         var deploy = DevCommandLine.Parse(["deploy", "--dry-run", "--explain"]);
         Check(deploy.Has("--dry-run") && deploy.Has("--explain"), "deploy flags lost.");
+        var start = DevCommandLine.Parse(["start", "--wait", "--allow-low-memory"]);
+        Check(start.Has("--wait") && start.Has("--allow-low-memory"), "start flags lost.");
+        // Every flag the usage text advertises must parse; regression for --wait being documented but rejected.
+        foreach (var flag in new[] { "--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable" })
+            Check(DevCommandLine.Parse(["doctor", flag]).Has(flag), "documented flag rejected: " + flag);
 
         Check(DevHints.For("HCSL-DEPLOY-RECOVERY")!.Contains("hcsl recover"), "recovery hint missing.");
         Check(DevHints.For("HCSL-CONSOLE-STATE")!.Contains("hcsl start"), "console hint missing.");
