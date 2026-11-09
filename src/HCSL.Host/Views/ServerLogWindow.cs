@@ -68,16 +68,24 @@ public sealed class ServerLogWindow : Window
         Opened += (_, _) =>
         {
             scroll = text.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
-            if (scroll is not null) scroll.ScrollChanged += (_, e) =>
+            if (scroll is not null)
             {
-                if (closed || projecting) return;
-                // Content growth changes Extent only. Treating that as "the reader scrolled away"
-                // is what stopped following during fast output; only an offset/viewport change is intent.
-                if (e.ExtentDelta.Y != 0) return;
-                if (e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
-                following = IsAtBottom(scroll);
-                if (following) reading.Reset();
-            };
+                scroll.ScrollChanged += (_, e) =>
+                {
+                    if (closed || projecting) return;
+                    // Pure content growth changes Extent only and is not reader intent; a user scroll
+                    // (or a layout clamp) always moves the offset or the viewport.
+                    if (e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
+                    following = IsAtBottom(scroll);
+                    if (following) reading.Reset();
+                };
+                // Layout can finish after the dispatcher posts below; pin again without fighting
+                // inertial scrolling (that already cleared `following` through ScrollChanged).
+                scroll.LayoutUpdated += (_, _) =>
+                {
+                    if (!closed && following && !projecting && !IsAtBottom(scroll)) ApplyBottom();
+                };
+            }
             Update();
         };
         Grid.SetRow(tools, 2); grid.Children.Add(tools);
@@ -141,7 +149,7 @@ public sealed class ServerLogWindow : Window
     /// <summary>Programmatic scroll to the end; ScrollChanged must not read this as user intent.</summary>
     private void ApplyBottom()
     {
-        if (scroll is null) return;
+        if (scroll is null || IsAtBottom(scroll)) return;
         var wasProjecting = projecting;
         projecting = true;
         try { scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height)); }
@@ -203,7 +211,6 @@ public sealed class ServerLogWindow : Window
             // Extent is stale until the new text is measured: apply now, then again after layout.
             ApplyBottom();
             Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Loaded);
-            Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Background);
             return;
         }
         var restored = reading.Restore(rows);
