@@ -37,6 +37,7 @@ catch (OperationCanceledException) { Console.Error.WriteLine("hcsl: cancelled.")
 static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct) => invocation.Command switch
 {
     "status" => await StatusAsync(invocation, json, ct),
+    "instances" => Instances(invocation, json),
     "plan" => Plan(invocation, json),
     "deploy" => Deploy(invocation, json, ct),
     "recover" => Recover(invocation),
@@ -69,24 +70,29 @@ static Guid ParseId(string value, string option)
 static (InstanceEntry Entry, PresetDefinition Preset) Target(WorkspaceRequest workspace, DevInvocation invocation)
 {
     var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
-    InstanceEntry entry;
-    if (invocation.Get("--instance") is { } text)
-    {
-        var id = ParseId(text, "--instance");
-        entry = catalog.Instances.FirstOrDefault(i => i.Id == id)
-            ?? throw new DevUsageException($"Instance {id:D} was not found in {workspace.DataRoot}/instances.");
-    }
-    else if (catalog.Instances.Length == 1) entry = catalog.Instances[0];
-    else
-        throw new DevUsageException("Several instances exist; pass --instance <UUID>. Known: "
-            + string.Join(", ", catalog.Instances.Select(i => (i.Definition?.Name ?? "?") + "=" + i.Id.ToString("D"))));
+    var entry = DevTargets.Resolve(catalog.Instances, invocation.Get("--instance"));
     if (entry.Definition is null) throw new DevUsageException($"Instance {entry.Id:D} has no readable definition: {entry.Error}");
-    var preset = invocation.Get("--preset") is { } presetText
-        ? entry.Presets.FirstOrDefault(p => p.Id == ParseId(presetText, "--preset"))
-            ?? throw new DevUsageException($"Preset {presetText} does not belong to instance {entry.Id:D}.")
-        : entry.Presets.FirstOrDefault(p => p.Id == entry.Definition.SelectedPresetId)
-            ?? throw new DevUsageException($"Instance {entry.Id:D} has no selected preset.");
-    return (entry, preset);
+    return (entry, DevTargets.ResolvePreset(entry, invocation.Get("--preset")));
+}
+
+static int Instances(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var workspace = Workspace(invocation);
+    var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(catalog, json)); return 0; }
+    if (catalog.Instances.Length == 0) { Console.WriteLine("no instances; create one in the GUI/TUI"); return 0; }
+    foreach (var entry in catalog.Instances)
+    {
+        var definition = entry.Definition;
+        var preset = entry.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
+        var runtime = Path.Combine(workspace.LibraryRoot, "runtime", entry.Id.ToString("D"));
+        var deployed = File.Exists(Path.Combine(runtime, "deployment.json")) ? "deployed" : "not deployed";
+        Console.WriteLine((definition?.Name ?? "?") + "  " + entry.Id.ToString("D"));
+        Console.WriteLine("  preset     " + (preset?.Name ?? "—") + "  port " + (definition?.GamePort.ToString() ?? "—"));
+        Console.WriteLine("  runtime    " + runtime + "  (" + deployed + ")");
+        if (entry.Definition is null) Console.WriteLine("  error      " + entry.Error);
+    }
+    return 0;
 }
 
 static DeploymentOptions Deployment(WorkspaceRequest workspace, DevInvocation invocation, Guid instanceId)

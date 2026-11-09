@@ -85,7 +85,27 @@ public static class DevCliTests
         Check(pluginText.Contains("metamod") && pluginText.Contains("rejected   1") && pluginText.Contains("HCSL-PLUGIN-PACKAGE"), "plugin projection lost fields.");
         Check(DevFormat.ExplainPlugins(result).Contains("1 enabled"), "plugin explain summary wrong.");
 
-        Console.WriteLine("PASS dev.cli-parse-hints-projections-and-paths");
+        // Instance/preset selectors: UUID, exact name, unique prefix; ambiguous selections list candidates.
+        var presetA = new PresetDefinition(1, Guid.NewGuid(), 1, "Default");
+        var presetB = new PresetDefinition(1, Guid.NewGuid(), 1, "Practice");
+        var dust = new InstanceEntry(Guid.NewGuid(), new(1, Guid.NewGuid(), 1, "cs_test_dust_", 27015, presetA.Id), [presetA, presetB]);
+        var inferno = new InstanceEntry(Guid.NewGuid(), new(1, Guid.NewGuid(), 1, "cs_test_inferno_", 27016, presetA.Id), [presetA]);
+        var catalog = new[] { dust, inferno };
+        Check(DevTargets.Resolve([dust], null).Id == dust.Id, "single instance should resolve without a selector.");
+        Reject("Several instances", () => DevTargets.Resolve(catalog, null));
+        Check(DevTargets.Resolve(catalog, dust.Id.ToString("D")).Id == dust.Id, "UUID selector failed.");
+        Check(DevTargets.Resolve(catalog, "cs_test_dust_").Id == dust.Id, "name selector failed.");
+        Check(DevTargets.Resolve(catalog, "CS_TEST_INFERNO_").Id == inferno.Id, "name selector must ignore case.");
+        Check(DevTargets.Resolve(catalog, "inferno").Id == inferno.Id, "unique prefix selector failed.");
+        Reject("matches several", () => DevTargets.Resolve(catalog, "cs_test_"));
+        Reject("was not found", () => DevTargets.Resolve(catalog, "nope"));
+        Check(DevTargets.ResolvePreset(dust, "practice").Id == presetB.Id, "preset name selector failed.");
+        Check(DevTargets.ResolvePreset(dust, presetA.Id.ToString("D")).Id == presetA.Id, "preset UUID selector failed.");
+        Check(DevTargets.ResolvePreset(dust, null).Id == presetA.Id, "selected preset fallback failed.");
+        Reject("unknown", () => DevTargets.ResolvePreset(dust, "missing"));
+        Reject("does not belong", () => DevTargets.ResolvePreset(inferno, presetB.Id.ToString("D")));
+
+        Console.WriteLine("PASS dev.cli-parse-hints-projections-paths-and-selectors");
     }
 
     private sealed class FakeDaemon(WorkspacePaths defaults) : IDaemonClient

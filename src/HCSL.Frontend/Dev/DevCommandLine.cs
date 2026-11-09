@@ -14,7 +14,7 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "gc", "test"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "gc", "test"
     ];
 
     private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version"];
@@ -27,6 +27,7 @@ public static class DevCommandLine
 
         Commands:
           status                 Show workspace, instance, run state and connection addresses.
+          instances              List instances (name, UUID, selected preset, port, deployment).
           plan                   Validate a deployment without writing anything (add --explain).
           deploy                 Deploy the selected preset (auto reflink/full copy, add --explain).
           recover                Recover an interrupted deployment journal.
@@ -40,7 +41,7 @@ public static class DevCommandLine
           test plugins           Run the plugin/deployment test suites in this repository.
 
         Options:
-          --instance <UUID>      Instance to target (default: the only instance, or an error listing them).
+          --instance <UUID|name> Instance to target (UUID, exact name or unique prefix; default: the only instance).
           --preset <UUID>        Preset override (default: the instance's selected preset).
           --settings <path>      Settings root override.
           --data <path>          Data root override.
@@ -103,7 +104,7 @@ public static class DevCommandLine
 
         if (command == "exec" && positionals.Count == 0)
             throw new DevUsageException("exec needs a command. Example: hcsl exec \"meta version\"");
-        if (command is "status" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "plugins" or "gc" && positionals.Count > 0)
+        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "plugins" or "gc" && positionals.Count > 0)
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
         return new(command, [.. positionals], options);
     }
