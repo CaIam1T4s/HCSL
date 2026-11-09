@@ -248,14 +248,32 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
-    private static bool IsUnder(string path, string root) =>
-        path.Equals(root, LocalPaths.Comparison) || path.StartsWith(root + "/", LocalPaths.Comparison);
     private static void RejectReservedPluginPath(string relative)
     {
-        if (IsUnder(relative, "csgo/cfg") || IsUnder(relative, "csgo/logs") || IsUnder(relative, "csgo/recordings"))
+        if (PluginRules.IsReservedDeploymentPath(relative))
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin packages may not write preset CFG, logs or recordings.");
-        if (relative.Equals("csgo/addons", LocalPaths.Comparison))
+        if (PluginRules.IsAddonsRoot(relative))
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "A plugin package file may not replace the addons directory.");
+    }
+    /// <summary>Probes whether the target filesystem supports reflink copies. Never writes into an existing deployment.</summary>
+    public static DeploymentCopyMode ProbeCopyMode(string directory)
+    {
+        var source = Path.Combine(directory, ".hcsl-reflink-probe-" + Guid.NewGuid().ToString("N"));
+        var copy = source + ".copy";
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(source, "probe");
+            DeploymentFiles.Copy(source, copy, DeploymentCopyMode.Reflink);
+            return DeploymentCopyMode.Reflink;
+        }
+        catch (Exception e) when (e is DeploymentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        { return DeploymentCopyMode.FullCopy; }
+        finally
+        {
+            try { if (File.Exists(source)) File.Delete(source); } catch (IOException) { }
+            try { if (File.Exists(copy)) File.Delete(copy); } catch (IOException) { }
+        }
     }
     private sealed record PluginAddonFile(string RelativePath, string SourcePath, string Sha256);
     /// <summary>Persistent addon changes prepared during staging and applied once, with an on-disk backup for rollback.</summary>
@@ -368,7 +386,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 foreach (var file in package.Files)
                 {
                     RejectReservedPluginPath(file.RelativePath);
-                    if (IsUnder(file.RelativePath, "csgo/addons"))
+                    if (PluginRules.IsAddonFile(file.RelativePath))
                     {
                         writes.Add(new(file.RelativePath, file.FullPath, file.Sha256));
                         keep.Add(file.RelativePath);
@@ -383,7 +401,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             {
                 foreach (var file in oldPackage.Files ?? [])
                 {
-                    if (keep.Contains(file.Path) || !IsUnder(file.Path, "csgo/addons")) continue;
+                    if (keep.Contains(file.Path) || !PluginRules.IsAddonFile(file.Path)) continue;
                     string destination;
                     try { destination = AddonsPath(addons, file.Path["csgo/addons/".Length..]); }
                     catch (DeploymentException) { continue; }

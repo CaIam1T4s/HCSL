@@ -18,6 +18,9 @@
   <Project Path="tests/HCSL.BootstrapTests/HCSL.BootstrapTests.csproj" />
   <Project Path="src/HCSL.Core/HCSL.Core.csproj" />
   <Project Path="tests/HCSL.InstanceTests/HCSL.InstanceTests.csproj" />
+  <Folder Name="/build/">
+    <Project Path="build/HCSL.Dev/HCSL.Dev.csproj" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">
     <Project Path="tests/HCSL.HostTests/HCSL.HostTests.csproj" />

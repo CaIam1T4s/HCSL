@@ -25,7 +25,7 @@ Arc 为预览依赖，升级前需要验证 API 与主题兼容性。
 - 设置支持背景显示强度、侧栏着色不透明度和应用内背景模糊；窗口保持不透明。次级按钮与小按钮采用紧凑高度。
 - MVVM 结构与可替换的主题服务；下载中心已接入本机宿主的 SteamCMD 工具探测，其他服务器业务待接入。
 
-实例持久化、Linux 单实例生命周期与 TUI 服务器控制已实现；GUI HOST 管服尚待对齐，玩家 Steam 身份认证及插件尚未实现。组网已取消；独立玩家客户端已实现服务器列表、IP/域名格式校验、系统密码存储、Steam 连接请求与手动命令后备（真实 Steam/CS2 联动待验收），见 [玩家客户端](docs/player-client.md)。运行：`dotnet run --project src/HCSL.Client`。
+实例持久化、Linux 单实例生命周期、GUI/TUI 服务器控制、本地插件包与 CFG/地图池管理已实现；玩家 Steam 身份认证尚待对齐。组网已取消；独立玩家客户端已实现服务器列表、IP/域名格式校验、系统密码存储、Steam 连接请求与手动命令后备（真实 Steam/CS2 联动待验收），见 [玩家客户端](docs/player-client.md)。运行：`dotnet run --project src/HCSL.Client`。
 没有真实或模拟的成功启动行为。实例将只管理配置和插件，CS2 安装及版本由全局服务管理。
 
 ## 结构
@@ -66,4 +66,4 @@ TUI 使用与 GUI 对应的五项一级导航、左侧二级菜单、共享服�
 
 Linux 实例离线部署的预检、部署与中断恢复见 [部署说明](docs/deployment/offline-deployment.md)。不启动 CS2；TUI F5 开服仍待接入。
 
-Daemon 单实例启动、日志、停服与会话恢复已有 [Linux 命令行验证入口](docs/server-lifecycle.md)。目前限定回环 LAN 验证模式，GUI/TUI 服务器控制仍待接入。真实 CS2 的端到端验收步骤与检查项见 [单实例验收清单](docs/acceptance/real-cs2-single-instance.md)；本轮只完成脚本与清单，尚未对真实 CS2 执行。
+Daemon 单实例启动、日志、停服与会话恢复已有 [Linux 命令行验证入口](docs/server-lifecycle.md)。 日常调试与插件/部署诊断优先使用 [hcsl 开发命令行](docs/dev-cli.md)。目前限定回环 LAN 验证模式，GUI/TUI 服务器控制仍待接入。真实 CS2 的端到端验收步骤与检查项见 [单实例验收清单](docs/acceptance/real-cs2-single-instance.md)；本轮只完成脚本与清单，尚未对真实 CS2 执行。

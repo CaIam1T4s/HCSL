@@ -73,4 +73,22 @@ public static class PluginRules
             throw new InstanceException("HCSL-PLUGIN-PATH", "Package files must stay under the game content roots.");
         return string.Join('/', parts);
     }
+
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    /// <summary>True for the root itself or a path below it, using platform path-case rules.</summary>
+    public static bool IsPathUnder(string path, string root) =>
+        path.Equals(root, PathComparison) || path.StartsWith(root + "/", PathComparison);
+
+    /// <summary>Mapped persistent directories that a package may never write.</summary>
+    public static bool IsReservedDeploymentPath(string path) =>
+        IsPathUnder(path, "csgo/cfg") || IsPathUnder(path, "csgo/logs") || IsPathUnder(path, "csgo/recordings");
+
+    /// <summary>True for a file inside csgo/addons (not the addons root itself).</summary>
+    public static bool IsAddonFile(string path) =>
+        IsPathUnder(path, "csgo/addons") && !path.Equals("csgo/addons", PathComparison);
+
+    /// <summary>A file cannot take the place of the mapped addons directory.</summary>
+    public static bool IsAddonsRoot(string path) => path.Equals("csgo/addons", PathComparison);
 }

@@ -1,0 +1,356 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using HCSL.Application.Abstractions;
+using HCSL.Contracts;
+using HCSL.Core;
+using HCSL.Frontend;
+using HCSL.Frontend.Dev;
+using HCSL.Infrastructure.Deployment;
+using HCSL.Infrastructure.Storage;
+
+var json = new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
+using var cancel = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
+
+try
+{
+    var invocation = DevCommandLine.Parse(args);
+    if (invocation.Command == "help") { Console.WriteLine(DevCommandLine.Usage); return 0; }
+    return await RunAsync(invocation, json, cancel.Token);
+}
+catch (DevUsageException e)
+{
+    Console.Error.WriteLine("hcsl: " + e.Message);
+    Console.Error.WriteLine("Run: hcsl help");
+    return 2;
+}
+catch (DeploymentException e) { Console.Error.WriteLine(DevHints.With(e.Code + ": " + e.Message, e.Code)); return 2; }
+catch (InstanceException e) { Console.Error.WriteLine(DevHints.With(e.Code + ": " + e.Message, e.Code)); return 2; }
+catch (ServerException e) { Console.Error.WriteLine(DevHints.With(e.Code + ": " + e.Message, e.Code)); return 2; }
+catch (WorkspaceException e) { Console.Error.WriteLine(DevHints.With(e.Code + ": " + e.Message, e.Code)); return e.Code == "HCSL-LOCK" ? 3 : 2; }
+catch (IOException e) { Console.Error.WriteLine(DevHints.With(e.Message, ExtractCode(e.Message))); return 2; }
+catch (OperationCanceledException) { Console.Error.WriteLine("hcsl: cancelled."); return 130; }
+
+static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct) => invocation.Command switch
+{
+    "status" => await StatusAsync(invocation, json, ct),
+    "plan" => Plan(invocation, json),
+    "deploy" => Deploy(invocation, json, ct),
+    "recover" => Recover(invocation),
+    "start" => await StartAsync(invocation, json, ct),
+    "stop" => await StopAsync(invocation, json, ct),
+    "exec" => await ExecAsync(invocation, json, ct),
+    "logs" => await LogsAsync(invocation, json, ct),
+    "doctor" => Doctor(invocation, json),
+    "plugins" => Plugins(invocation, json),
+    "gc" => Gc(invocation),
+    _ => throw new DevUsageException("Unknown command. Run: hcsl help")
+};
+
+static WorkspaceRequest Workspace(DevInvocation invocation)
+{
+    var defaults = LocalPaths.Defaults(invocation.Get("--settings"));
+    return new(invocation.Get("--settings") ?? defaults.SettingsRoot,
+               invocation.Get("--data") ?? defaults.DataRoot,
+               invocation.Get("--library") ?? defaults.LibraryRoot);
+}
+
+static Guid ParseId(string value, string option)
+{
+    if (!Guid.TryParseExact(value, "D", out var id) || id == Guid.Empty)
+        throw new DevUsageException($"{option} must be a nonempty D-format UUID. Example: hcsl deploy --instance 565653a2-28fe-4fce-8bb6-6e231d55ac61");
+    return id;
+}
+
+static (InstanceEntry Entry, PresetDefinition Preset) Target(WorkspaceRequest workspace, DevInvocation invocation)
+{
+    var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
+    InstanceEntry entry;
+    if (invocation.Get("--instance") is { } text)
+    {
+        var id = ParseId(text, "--instance");
+        entry = catalog.Instances.FirstOrDefault(i => i.Id == id)
+            ?? throw new DevUsageException($"Instance {id:D} was not found in {workspace.DataRoot}/instances.");
+    }
+    else if (catalog.Instances.Length == 1) entry = catalog.Instances[0];
+    else
+        throw new DevUsageException("Several instances exist; pass --instance <UUID>. Known: "
+            + string.Join(", ", catalog.Instances.Select(i => (i.Definition?.Name ?? "?") + "=" + i.Id.ToString("D"))));
+    if (entry.Definition is null) throw new DevUsageException($"Instance {entry.Id:D} has no readable definition: {entry.Error}");
+    var preset = invocation.Get("--preset") is { } presetText
+        ? entry.Presets.FirstOrDefault(p => p.Id == ParseId(presetText, "--preset"))
+            ?? throw new DevUsageException($"Preset {presetText} does not belong to instance {entry.Id:D}.")
+        : entry.Presets.FirstOrDefault(p => p.Id == entry.Definition.SelectedPresetId)
+            ?? throw new DevUsageException($"Instance {entry.Id:D} has no selected preset.");
+    return (entry, preset);
+}
+
+static DeploymentOptions Deployment(WorkspaceRequest workspace, DevInvocation invocation, Guid instanceId)
+{
+    var mode = invocation.Has("--full-copy") ? DeploymentCopyMode.FullCopy
+        : invocation.Has("--reflink") ? DeploymentCopyMode.Reflink
+        : RuntimeDeploymentService.ProbeCopyMode(Path.Combine(workspace.LibraryRoot, "runtime"));
+    return new DeploymentOptions(instanceId, mode);
+}
+
+static (InstanceEntry Entry, PresetDefinition Preset, DeploymentPlan Plan) Prepare(DevInvocation invocation, WorkspaceRequest workspace)
+{
+    var (entry, preset) = Target(workspace, invocation);
+    var options = Deployment(workspace, invocation, entry.Id);
+    var plan = new RuntimeDeploymentService().Plan(workspace, options, CancellationToken.None);
+    return (entry, preset, plan);
+}
+
+static void PrintPlan(DevInvocation invocation, WorkspaceRequest workspace, InstanceEntry entry, PresetDefinition preset, DeploymentPlan plan)
+{
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(plan, new JsonSerializerOptions { WriteIndented = true, Converters = { new JsonStringEnumConverter() } })); return; }
+    Console.WriteLine(DevFormat.Plan(plan, entry, preset));
+    var plugins = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id));
+    Console.WriteLine(DevFormat.ExplainPlugins(plugins));
+}
+
+static int Plan(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var workspace = Workspace(invocation);
+    var (entry, preset, plan) = Prepare(invocation, workspace);
+    if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(plan, json));
+    else PrintPlan(invocation, workspace, entry, preset, plan);
+    return 0;
+}
+
+static int Deploy(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, preset) = Target(workspace, invocation);
+    var options = Deployment(workspace, invocation, entry.Id);
+    var service = new RuntimeDeploymentService();
+    var plan = service.Plan(workspace, options, ct);
+    if (!invocation.Has("--json")) PrintPlan(invocation, workspace, entry, preset, plan);
+    if (invocation.Has("--dry-run")) { if (!invocation.Has("--json")) Console.WriteLine("dry-run    nothing was written"); return 0; }
+    if (invocation.Has("--explain") && !invocation.Has("--json"))
+        Console.WriteLine("deploying  persistent addons are backed up first; a failed publication restores them");
+    var receipt = service.Deploy(workspace, options, new Progress(), ct);
+    if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(receipt, json));
+    else Console.WriteLine("deployed   " + receipt.Status + " · " + receipt.CopyMode + " · preset rev " + receipt.PresetRevision);
+    return 0;
+}
+
+static int Recover(DevInvocation invocation)
+{
+    var workspace = Workspace(invocation);
+    var (entry, _) = Target(workspace, invocation);
+    Console.WriteLine(new RuntimeDeploymentService().Recover(workspace, entry.Id));
+    return 0;
+}
+
+static async Task<(DaemonClient Daemon, ServerClient Client)> ConnectAsync(DevInvocation invocation, CancellationToken ct)
+{
+    string? pipe = null;
+    var daemon = new DaemonClient(pipe);
+    try
+    {
+        using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probe.CancelAfter(TimeSpan.FromMilliseconds(500));
+        await daemon.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Status), probe.Token);
+    }
+    catch (Exception e) when (e is IOException or OperationCanceledException)
+    {
+        await new DaemonBootstrapper(pipe).EnsureRunningAsync(ct);
+    }
+    return (daemon, new ServerClient(daemon));
+}
+
+static WorkspacePaths Paths(WorkspaceRequest workspace) => new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+
+static async Task<int> StatusAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (_, client) = await ConnectAsync(invocation, ct);
+    var snapshot = await client.SendAsync(new(ServerAction.Status), Paths(workspace), ct);
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(snapshot, json)); return 0; }
+    InstanceEntry? entry = null; PresetDefinition? preset = null;
+    try
+    {
+        var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
+        var requestedId = invocation.Get("--instance") is { } text ? ParseId(text, "--instance") : snapshot.InstanceId;
+        entry = requestedId is { } id ? catalog.Instances.FirstOrDefault(i => i.Id == id) : null;
+        if (entry?.Definition is not null) preset = entry.Presets.FirstOrDefault(p => p.Id == entry.Definition.SelectedPresetId);
+    }
+    catch (Exception e) when (e is InstanceException or WorkspaceException or DevUsageException) { }
+    Console.WriteLine(DevFormat.Status(snapshot, entry, preset));
+    return 0;
+}
+
+static async Task<int> StartAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, _) = Target(workspace, invocation);
+    var (daemon, client) = await ConnectAsync(invocation, ct);
+    {
+        var snapshot = await client.SendAsync(new(ServerAction.Start, entry.Id, StartTimeoutSeconds: 120,
+            AutoDeploy: true, AllowLowMemory: invocation.Has("--allow-low-memory")), Paths(workspace), ct);
+        if (invocation.Has("--wait"))
+        {
+            var expected = snapshot.RunId;
+            while (snapshot.Active && snapshot.State is not (ServerState.Running or ServerState.Failed or ServerState.RecoveryRequired))
+            {
+                if (!invocation.Has("--json")) Console.Error.WriteLine("starting   " + snapshot.State + " · " + snapshot.Code);
+                await Task.Delay(500, ct);
+                snapshot = await client.SendAsync(new(ServerAction.Status), Paths(workspace), ct);
+                if (snapshot.RunId != expected) throw new IOException("HCSL-SERVER-RUN-CHANGED: the run changed while waiting; query status.");
+            }
+        }
+        if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(snapshot, json));
+        else Console.WriteLine("started    " + snapshot.State + " · " + snapshot.Code + " · run " + (snapshot.RunId?.ToString("D") ?? "—"));
+        return snapshot.State is ServerState.Failed or ServerState.RecoveryRequired ? 2 : 0;
+    }
+}
+
+static async Task<int> StopAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (daemon, client) = await ConnectAsync(invocation, ct);
+    {
+        var status = await client.SendAsync(new(ServerAction.Status), Paths(workspace), ct);
+        var run = invocation.Get("--run") is { } text ? ParseId(text, "--run") : status.RunId
+            ?? throw new DevUsageException("No current run to stop. Use: hcsl status");
+        var snapshot = await client.SendAsync(new(ServerAction.Stop, RunId: run), Paths(workspace), ct);
+        if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(snapshot, json));
+        else Console.WriteLine("stopped    " + snapshot.State + " · " + snapshot.Code);
+        return 0;
+    }
+}
+
+static async Task<int> ExecAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var text = string.Join(' ', invocation.Positionals);
+    var (daemon, client) = await ConnectAsync(invocation, ct);
+    {
+        var status = await client.SendAsync(new(ServerAction.Status), Paths(workspace), ct);
+        var run = invocation.Get("--run") is { } raw ? ParseId(raw, "--run") : status.RunId
+            ?? throw new ServerException("HCSL-CONSOLE-STATE", "No current run.");
+        var receipt = await client.SendConsoleAsync(new(run, Guid.NewGuid(), text, invocation.Has("--confirm-write")), ct);
+        if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(receipt, json));
+        else Console.WriteLine(receipt.Delivery + " · " + (receipt.Code ?? receipt.CommandId.ToString("D")));
+        if (receipt.Delivery != ConsoleDelivery.Written)
+            Console.Error.WriteLine(DevHints.With("console not written (" + receipt.Code + ")", receipt.Code));
+        return receipt.Delivery == ConsoleDelivery.Written ? 0 : 2;
+    }
+}
+
+static async Task<int> LogsAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (daemon, client) = await ConnectAsync(invocation, ct);
+    {
+        var after = long.TryParse(invocation.Get("--after"), out var parsed) ? parsed : 0;
+        while (true)
+        {
+            var snapshot = await client.SendAsync(new(ServerAction.Logs, AfterSequence: after), Paths(workspace), ct);
+            if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(snapshot, json));
+            else foreach (var line in snapshot.Lines) Console.WriteLine(line.Text);
+            after = snapshot.NextSequence;
+            if (!invocation.Has("--follow")) return 0;
+            await Task.Delay(500, ct);
+        }
+    }
+}
+
+static int Plugins(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var workspace = Workspace(invocation);
+    var (entry, preset) = Target(workspace, invocation);
+    var result = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id));
+    Console.WriteLine(invocation.Has("--json") ? JsonSerializer.Serialize(result, json) : DevFormat.Plugins(result));
+    return 0;
+}
+
+static int Doctor(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var workspace = Workspace(invocation);
+    var problems = new List<string>();
+    var lines = new List<string>();
+    void Ok(string text) => lines.Add("ok         " + text);
+    void Warn(string text) { lines.Add("warn       " + text); problems.Add(text); }
+    Ok("settings   " + workspace.SettingsRoot);
+    Ok("data       " + workspace.DataRoot);
+    Ok("library    " + workspace.LibraryRoot);
+    if (!Directory.Exists(workspace.LibraryRoot)) { Warn("library root does not exist; run the GUI/daemon once to initialize it"); return Report(); }
+    var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
+    Ok("instances  " + catalog.Instances.Length);
+    var (entry, preset) = Target(workspace, invocation);
+    var addons = Path.Combine(workspace.DataRoot, "instances", entry.Id.ToString("D"), "presets", preset.Id.ToString("D"), "addons");
+    try
+    {
+        Directory.CreateDirectory(addons);
+        var probe = Path.Combine(addons, ".hcsl-doctor-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(probe, "probe"); File.Delete(probe);
+        Ok("addons     writable");
+    }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Warn("addons is not writable (" + e.GetType().Name + "); fix with: chmod -R u+w " + addons); }
+    var plugins = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id));
+    Ok("plugins    " + plugins.Available.Length + " available, " + plugins.Selected.Count(s => s.Enabled) + " enabled");
+    foreach (var rejected in plugins.Rejected ?? []) Warn("package rejected: " + rejected.Id + " " + rejected.Version + " (" + rejected.Code + ")");
+    foreach (var missing in plugins.Selected.Where(s => s.Enabled && !s.Available)) Warn("enabled package missing: " + missing.Id + " " + missing.Version);
+    try { var plan = new RuntimeDeploymentService().Plan(workspace, new DeploymentOptions(entry.Id, RuntimeDeploymentService.ProbeCopyMode(Path.Combine(workspace.LibraryRoot, "runtime")))); Ok("plan       valid (" + plan.CopyMode + ", " + plan.FileCount + " files)"); }
+    catch (DeploymentException e) { Warn("plan failed: " + e.Code + " " + e.Message); }
+    catch (WorkspaceException e) when (e.Code == "HCSL-LOCK") { Warn("workspace is busy (GUI/TUI/daemon); plan/deploy checks were skipped"); }
+    var journal = Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + entry.Id.ToString("D") + ".json");
+    if (File.Exists(journal)) Warn("interrupted deployment journal present; run: hcsl recover");
+    var runtimeRoot = Path.Combine(workspace.LibraryRoot, "runtime");
+    var previous = Directory.Exists(runtimeRoot) ? Directory.GetDirectories(runtimeRoot, ".previous-" + entry.Id + "-*").Length : 0;
+    var staging = Directory.Exists(runtimeRoot) ? Directory.GetDirectories(runtimeRoot, ".staging-" + entry.Id + "-*").Length : 0;
+    if (previous + staging > 0) Warn("stale deployments: " + previous + " previous, " + staging + " staging; run: hcsl gc --yes");
+    var runtime = Path.Combine(runtimeRoot, entry.Id.ToString("D"));
+    if (Directory.Exists(runtime))
+    {
+        var gameinfo = Path.Combine(runtime, "game", "csgo", "gameinfo.gi");
+        var wantsMetamod = plugins.Selected.Any(s => s.Enabled && s.Id.Equals("metamod", StringComparison.OrdinalIgnoreCase));
+        if (wantsMetamod && File.Exists(gameinfo) && !File.ReadAllText(gameinfo).Contains("csgo/addons/metamod", StringComparison.Ordinal))
+            Warn("metamod is enabled but runtime gameinfo.gi does not reference csgo/addons/metamod; run: hcsl deploy");
+        Ok("runtime    " + runtime);
+    }
+    else Warn("no runtime deployment; run: hcsl deploy");
+    return Report();
+    int Report()
+    {
+        if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(new { ok = problems.Count == 0, problems, checks = lines }, json)); return problems.Count == 0 ? 0 : 2; }
+        foreach (var line in lines) Console.WriteLine(line);
+        Console.WriteLine(problems.Count == 0 ? "result     no problems found" : "result     " + problems.Count + " problem(s) listed above");
+        return problems.Count == 0 ? 0 : 2;
+    }
+}
+
+static int Gc(DevInvocation invocation)
+{
+    var workspace = Workspace(invocation);
+    var (entry, _) = Target(workspace, invocation);
+    var runtimeRoot = Path.Combine(workspace.LibraryRoot, "runtime");
+    if (!Directory.Exists(runtimeRoot)) { Console.WriteLine("gc         nothing to collect"); return 0; }
+    var targets = Directory.GetDirectories(runtimeRoot, ".previous-" + entry.Id + "-*")
+        .Concat(Directory.GetDirectories(runtimeRoot, ".staging-" + entry.Id + "-*")).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+    if (targets.Length == 0) { Console.WriteLine("gc         nothing to collect"); return 0; }
+    foreach (var target in targets) Console.WriteLine("candidate  " + target);
+    if (!invocation.Has("--yes"))
+    {
+        Console.WriteLine("gc         dry run: pass --yes to delete " + targets.Length + " directory(ies)");
+        return 0;
+    }
+    foreach (var target in targets) Directory.Delete(target, true);
+    Console.WriteLine("gc         removed " + targets.Length + " directory(ies)");
+    return 0;
+}
+
+static string? ExtractCode(string message)
+{
+    var index = message.IndexOf("HCSL-", StringComparison.Ordinal);
+    if (index < 0) return null;
+    var end = message.IndexOfAny([':', ' ', ')'], index);
+    return end < 0 ? message[index..] : message[index..end];
+}
+
+sealed class Progress : IProgress<DeploymentEvent>
+{
+    public void Report(DeploymentEvent e) => Console.Error.WriteLine("progress   " + e.Stage + " " + e.FilesCompleted + "/" + e.TotalFiles);
+}

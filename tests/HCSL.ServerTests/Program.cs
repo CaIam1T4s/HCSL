@@ -45,6 +45,12 @@ if (only is null or "plugins")
     if (only is "plugins") { Console.WriteLine("PASS only plugins"); return 0; }
 }
 
+if (only is null or "dev")
+{
+    HCSL.ServerTests.DevCliTests.Run();
+    if (only is "dev") { Console.WriteLine("PASS only dev"); return 0; }
+}
+
 if (only is null or "console")
 {
     await HCSL.ServerTests.ServerConsoleTests.RunAsync();
@@ -61,7 +67,7 @@ if (only is null or "controller")
 
 if (only is not null && only is not "daemon")
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use maps, network, instance, cfg, plugins, console, controller, daemon or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use maps, network, instance, cfg, plugins, dev, console, controller, daemon or all.");
     return 2;
 }
 

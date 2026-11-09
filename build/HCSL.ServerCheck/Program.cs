@@ -2,6 +2,7 @@ using System.Text.Json;
 using HCSL.Contracts;
 using HCSL.Core;
 using HCSL.Frontend;
+using HCSL.Frontend.Dev;
 using HCSL.Infrastructure.Storage;
 
 if (args.Contains("--help"))
@@ -12,7 +13,8 @@ if (args.Contains("--help"))
         "[--settings <absolute path>] [--pipe <name>] [--allow-low-memory]\n" +
         "Start requires current deployment and systemd/cgroup v2. Below 3072 MiB is blocked; 3072..4095 MiB requires --allow-low-memory (this start only).\n" +
         "Initial mode is loopback LAN, insecure, without plugin/access-rule deployment. --stop requires --run.\n" +
-        "Closing this CLI does not stop the daemon-owned server. --wait waits for map readiness/cleanup.");
+        "Closing this CLI does not stop the daemon-owned server. --wait waits for map readiness/cleanup.\n" +
+        "Examples: --status | --query \"meta version\" (current run) | --start --instance <UUID> --wait | --stop --run current");
     return 0;
 }
 try
@@ -29,8 +31,12 @@ try
             if (actionSeen) throw new ArgumentException("Choose one action."); actionSeen = true;
             action = Enum.Parse<ServerAction>(args[i][2..], true); continue;
         }
-        if (args[i] is not ("--query" or "--instance" or "--run" or "--after" or "--timeout" or "--settings" or "--pipe") || i + 1 >= args.Length || !values.TryAdd(args[i], args[++i]))
-            throw new ArgumentException("Invalid arguments. Use --help.");
+        if (args[i] is not ("--query" or "--instance" or "--run" or "--after" or "--timeout" or "--settings" or "--pipe"))
+            throw new ArgumentException($"Unknown option '{args[i]}'. Known options: --query --instance --run --after --timeout --settings --pipe. See --help.");
+        if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+            throw new ArgumentException($"Option {args[i]} needs a value. Example: --query \"meta version\" or --run current.");
+        if (!values.TryAdd(args[i], args[++i]))
+            throw new ArgumentException($"Duplicate option {args[i - 1]}.");
     }
     var query = values.GetValueOrDefault("--query");
     if (query is not null && (actionSeen || wait || allowLowMemory)) throw new ArgumentException("--query cannot be combined with lifecycle actions, --wait or --allow-low-memory.");
@@ -43,7 +49,9 @@ try
         if (!Guid.TryParseExact(text, "D", out var id) || id == Guid.Empty) throw new ArgumentException(name + " requires a nonempty UUID."); return id;
     }
     var id = ParseId("--instance", action is ServerAction.Start or ServerAction.Recover);
-    var run = ParseId("--run", action == ServerAction.Stop || query is not null);
+    // --run is optional for --query/--stop: resolve the current run from the daemon instead of failing.
+    var run = values.TryGetValue("--run", out var runText) && !runText.Equals("current", StringComparison.OrdinalIgnoreCase)
+        ? ParseId("--run", false) : Guid.Empty;
     if (values.TryGetValue("--after", out var rawCursor) && !long.TryParse(rawCursor, out _)) throw new ArgumentException("Invalid log cursor.");
     if (values.TryGetValue("--timeout", out var rawTimeout) && !int.TryParse(rawTimeout, out _)) throw new ArgumentException("Invalid startup timeout.");
     long after = values.TryGetValue("--after", out var a) && long.TryParse(a, out var n) ? n : 0;
@@ -63,10 +71,20 @@ try
     if (action is ServerAction.Start or ServerAction.Recover)
     { var p = LocalPaths.Defaults(values.GetValueOrDefault("--settings")); workspace = new(p.SettingsRoot, p.DataRoot, p.LibraryRoot); }
     var client = new ServerClient(daemon);
+    if (query is not null || action == ServerAction.Stop)
+    {
+        if (run == Guid.Empty)
+        {
+            var current = await client.SendAsync(new(ServerAction.Status));
+            run = current.RunId ?? throw new ArgumentException("No current run. Start a server or pass --run <UUID>.");
+        }
+    }
     if (query is not null)
     {
         var receipt = await client.SendConsoleAsync(new(run, Guid.NewGuid(), query, confirmWrite));
         Console.WriteLine(JsonSerializer.Serialize(receipt, new JsonSerializerOptions { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } }));
+        if (receipt.Delivery != ConsoleDelivery.Written)
+            Console.Error.WriteLine(DevHints.With("console not written (" + receipt.Code + ")", receipt.Code));
         return receipt.Delivery == ConsoleDelivery.Written ? 0 : 2;
     }
     var snapshot = await client.SendAsync(new(action, id, run == Guid.Empty ? null : run, after, timeout, AllowLowMemory: allowLowMemory), workspace);
@@ -84,4 +102,8 @@ try
     return snapshot.State is ServerState.Failed or ServerState.RecoveryRequired ? 2 : 0;
 }
 catch (Exception e) when (e is ServerException or IOException or ArgumentException or HCSL.Application.Abstractions.WorkspaceException or DaemonStartupException or OperationCanceledException or DaemonProtocolException)
-{ Console.Error.WriteLine("HCSL-SERVER-CHECK: " + e.Message); return 2; }
+{
+    var code = e switch { ServerException s => s.Code, HCSL.Application.Abstractions.WorkspaceException w => w.Code, _ => null };
+    Console.Error.WriteLine("HCSL-SERVER-CHECK: " + DevHints.With(e.Message, code));
+    return 2;
+}
