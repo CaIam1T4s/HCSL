@@ -1,4 +1,6 @@
+using HCSL.Contracts;
 using HCSL.Core;
+using HCSL.Frontend;
 using HCSL.Frontend.Dev;
 
 namespace HCSL.ServerTests;
@@ -15,6 +17,7 @@ public static class DevCliTests
 
     public static void Run()
     {
+        var instanceId = Guid.NewGuid(); var presetId = Guid.NewGuid();
         var status = DevCommandLine.Parse(["status"]);
         Check(status.Command == "status" && status.Positionals.Length == 0, "status parse failed.");
         Check(DevCommandLine.Parse(["help"]).Command == "help" && DevCommandLine.Parse(["--help"]).Command == "help", "help parse failed.");
@@ -41,12 +44,26 @@ public static class DevCliTests
 
         Check(DevHints.For("HCSL-DEPLOY-RECOVERY")!.Contains("hcsl recover"), "recovery hint missing.");
         Check(DevHints.For("HCSL-CONSOLE-STATE")!.Contains("hcsl start"), "console hint missing.");
+        Check(DevHints.For("HCSL-DEPLOY-PLUGINS")!.Contains("hcsl doctor"), "plugin deploy hint missing.");
+
+        var import = DevCommandLine.Parse(["test", "mms", "/tmp/mms.tar.gz", "--version", "2.0.0", "--enable", "--force"]);
+        Check(import.Command == "test" && import.Positionals[1] == "/tmp/mms.tar.gz"
+            && import.Get("--version") == "2.0.0" && import.Has("--enable") && import.Has("--force"), "test mms parse failed.");
+        Check(DevCommandLine.Parse(["test", "plugins"]).Positionals[0] == "plugins", "test plugins parse failed.");
+
+        // The desktop/TUI share these path projections; a missing directory is reported by the caller.
+        var fake = new FakeDaemon(new("/s", "/d", "/l"));
+        var client = new InstanceClient(fake);
+        var addons = client.PresetDirectoryAsync(instanceId, presetId, "addons").GetAwaiter().GetResult();
+        Check(addons == Path.Combine("/d", "instances", instanceId.ToString("D"), "presets", presetId.ToString("D"), "addons"), "preset addons path wrong.");
+        Check(client.RuntimeDirectoryAsync(instanceId).GetAwaiter().GetResult() == Path.Combine("/l", "runtime", instanceId.ToString("D")), "runtime path wrong.");
+        try { client.PresetDirectoryAsync(instanceId, presetId, "../escape").GetAwaiter().GetResult(); throw new Exception("Unknown preset directory accepted."); }
+        catch (IOException e) when (e.Message.Contains("HCSL-PRESET-DIR", StringComparison.Ordinal)) { }
         Check(DevHints.For("HCSL-NOT-A-CODE") is null, "unknown code must not invent a hint.");
         Check(DevHints.With("boom", "HCSL-DEPLOY-PLUGINS").Contains("next:"), "hint not appended.");
 
         Check(DevFormat.Bytes(0) == "0 B" && DevFormat.Bytes(1024) == "1.0 KiB", "byte formatting changed.");
 
-        var instanceId = Guid.NewGuid(); var presetId = Guid.NewGuid();
         var plan = new DeploymentPlan(instanceId, 12, presetId, 2, "26445667", "/tmp/runtime", DeploymentCopyMode.Reflink,
             3140, 73L * 1024 * 1024 * 1024, 1024, 2048,
             [new("game/csgo/addons", "/tmp/addons")], ["note one"], "group", "ABCDEF", null, "0123456789ABCDEF");
@@ -68,6 +85,12 @@ public static class DevCliTests
         Check(pluginText.Contains("metamod") && pluginText.Contains("rejected   1") && pluginText.Contains("HCSL-PLUGIN-PACKAGE"), "plugin projection lost fields.");
         Check(DevFormat.ExplainPlugins(result).Contains("1 enabled"), "plugin explain summary wrong.");
 
-        Console.WriteLine("PASS dev.cli-parse-hints-and-projections");
+        Console.WriteLine("PASS dev.cli-parse-hints-projections-and-paths");
+    }
+
+    private sealed class FakeDaemon(WorkspacePaths defaults) : IDaemonClient
+    {
+        public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: defaults));
     }
 }

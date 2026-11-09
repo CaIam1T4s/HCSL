@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Formats.Tar;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HCSL.Application.Abstractions;
@@ -44,6 +47,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "doctor" => Doctor(invocation, json),
     "plugins" => Plugins(invocation, json),
     "gc" => Gc(invocation),
+    "test" => await TestAsync(invocation, json, ct),
     _ => throw new DevUsageException("Unknown command. Run: hcsl help")
 };
 
@@ -348,6 +352,143 @@ static string? ExtractCode(string message)
     if (index < 0) return null;
     var end = message.IndexOfAny([':', ' ', ')'], index);
     return end < 0 ? message[index..] : message[index..end];
+}
+
+
+static async Task<int> TestAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    if (invocation.Positionals.Length == 0)
+        throw new DevUsageException("test needs a target. Example: hcsl test mms ~/Downloads/mmsource-2.0.0-linux.tar.gz");
+    var target = invocation.Positionals[0];
+    if (target == "plugins") return await RunSuitesAsync(ct);
+    if (target == "mms")
+    {
+        var source = invocation.Positionals.ElementAtOrDefault(1)
+            ?? throw new DevUsageException("test mms needs a release directory or .tar.gz. Example: hcsl test mms ~/Downloads/mmsource-2.0.0-linux.tar.gz");
+        return await ImportMmsAsync(invocation, source);
+    }
+    throw new DevUsageException($"Unknown test target '{target}'. Use: mms <dir|tar.gz> or plugins.");
+}
+
+static async Task<int> RunSuitesAsync(CancellationToken ct)
+{
+    var root = RepositoryRoot() ?? throw new IOException("HCSL-REPO: run this from inside the repository (Hello_Counter_Strike_Launcher.slnx not found).");
+    var suites = new[]
+    {
+        new[] { "run", "--project", Path.Combine(root, "tests/HCSL.ServerTests"), "--", "--only", "plugins" },
+        new[] { "run", "--project", Path.Combine(root, "tests/HCSL.DeploymentTests") }
+    };
+    foreach (var arguments in suites)
+    {
+        Console.WriteLine("run        dotnet " + string.Join(' ', arguments));
+        var start = new ProcessStartInfo("dotnet") { UseShellExecute = false };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start) ?? throw new IOException("HCSL-REPO: cannot start dotnet.");
+        await process.WaitForExitAsync(ct);
+        if (process.ExitCode != 0) return process.ExitCode;
+    }
+    return 0;
+}
+
+static string? RepositoryRoot()
+{
+    var directory = new DirectoryInfo(Environment.CurrentDirectory);
+    while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Hello_Counter_Strike_Launcher.slnx")))
+        directory = directory.Parent;
+    return directory?.FullName;
+}
+
+static async Task<int> ImportMmsAsync(DevInvocation invocation, string source)
+{
+    var workspace = Workspace(invocation);
+    var version = invocation.Get("--version") ?? "2.0.0";
+    PluginRules.Version(version);
+    var temp = Path.Combine(Path.GetTempPath(), "hcsl-mms-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        string root;
+        if (Directory.Exists(source)) root = Path.GetFullPath(source);
+        else if (File.Exists(source) && (source.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)))
+        {
+            Directory.CreateDirectory(temp);
+            await using var file = File.OpenRead(source);
+            await using var gzip = new GZipStream(file, CompressionMode.Decompress);
+            TarFile.ExtractToDirectory(gzip, temp, overwriteFiles: true);
+            root = temp;
+        }
+        else throw new DevUsageException("test mms expects an extracted directory or a .tar.gz archive. Example: hcsl test mms ~/Downloads/mmsource-2.0.0-linux.tar.gz");
+
+        var metamod = FindMetamod(root) ?? throw new DevUsageException("No addons/metamod directory with a bin folder was found. Check the archive layout.");
+        var cs2Binary = Directory.EnumerateFiles(metamod, "metamod.2.*.so", SearchOption.AllDirectories)
+            .FirstOrDefault(path => path.Replace('\\', '/').Contains("/linuxsteamrt64/", StringComparison.Ordinal));
+        if (cs2Binary is null)
+            Console.Error.WriteLine("warning    no linuxsteamrt64/metamod.2.*.so found; this may be a CS:GO-era package and will not load in CS2");
+
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", version);
+        if (Directory.Exists(package) && !invocation.Has("--force"))
+            throw new DevUsageException($"Package already exists: {package}. Pass --force to replace it, or --version <other>.");
+        if (Directory.Exists(package)) Directory.Delete(package, true);
+        var files = Path.Combine(package, "files", "csgo", "addons");
+        Directory.CreateDirectory(files);
+        CopyDirectory(metamod, Path.Combine(files, "metamod"));
+
+        var baseGameInfo = Path.Combine(workspace.LibraryRoot, "server", "game", "csgo", "gameinfo.gi");
+        if (!File.Exists(baseGameInfo)) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Base gameinfo.gi is missing; install CS2 before importing Metamod.");
+        var overlay = Path.Combine(package, "files", "csgo", "gameinfo.gi");
+        var lines = File.ReadAllLines(baseGameInfo).ToList();
+        if (!lines.Any(line => line.Contains("csgo/addons/metamod", StringComparison.OrdinalIgnoreCase)))
+        {
+            var index = lines.FindIndex(line => line.TrimStart().StartsWith("Game", StringComparison.Ordinal) && line.TrimEnd().EndsWith("csgo", StringComparison.Ordinal));
+            if (index < 0) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Could not find a 'Game csgo' SearchPath line in gameinfo.gi.");
+            var indent = lines[index][..(lines[index].Length - lines[index].TrimStart().Length)];
+            lines.Insert(index, indent + "Game\tcsgo/addons/metamod");
+        }
+        File.WriteAllLines(overlay, lines);
+        File.WriteAllText(Path.Combine(package, "plugin.json"),
+            "{\"FormatVersion\":1,\"Id\":\"metamod\",\"Name\":\"Metamod:Source\",\"Version\":\"" + version + "\"}");
+
+        var count = Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories).Count();
+        var bytes = Directory.EnumerateFiles(package, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length);
+        if (count > PluginRules.MaxPackageFiles || bytes > PluginRules.MaxPackageBytes)
+            throw new DevUsageException($"Package exceeds limits ({count} files, {DevFormat.Bytes(bytes)}); trim legacy engines under addons/metamod/bin/.");
+
+        Console.WriteLine("package    " + package);
+        Console.WriteLine("version    " + version + " · " + count + " files · " + DevFormat.Bytes(bytes));
+        Console.WriteLine("gameinfo   overlay " + (cs2Binary is null ? "CHECK (no cs2 binary)" : "csgo/addons/metamod present"));
+        if (invocation.Has("--enable"))
+        {
+            var (entry, preset) = Target(workspace, invocation);
+            var store = new LocalPluginStore();
+            var current = store.Execute(workspace, new(PluginAction.List, entry.Id, preset.Id));
+            var selection = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).Where(s => s.Id != "metamod").Append(new("metamod", version, true)).ToArray();
+            var saved = store.Execute(workspace, new(PluginAction.Save, entry.Id, preset.Id, entry.Definition!.Revision, current.Hash, selection));
+            Console.WriteLine("selected   metamod " + version + " in preset " + preset.Name + " (revision " + saved.Revision + ")");
+        }
+        Console.WriteLine("next       hcsl doctor && hcsl deploy --explain");
+        return 0;
+    }
+    finally
+    {
+        try { if (Directory.Exists(temp)) Directory.Delete(temp, true); } catch (IOException) { }
+    }
+}
+
+static string? FindMetamod(string root)
+{
+    if (Path.GetFileName(root).Equals("metamod", StringComparison.OrdinalIgnoreCase) && Directory.Exists(Path.Combine(root, "bin"))) return root;
+    foreach (var directory in Directory.EnumerateDirectories(root, "metamod", SearchOption.AllDirectories))
+        if (Path.GetFileName(Path.GetDirectoryName(directory) ?? "").Equals("addons", StringComparison.OrdinalIgnoreCase)
+            && Directory.Exists(Path.Combine(directory, "bin"))) return directory;
+    return null;
+}
+
+static void CopyDirectory(string source, string destination)
+{
+    foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+        Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
+    Directory.CreateDirectory(destination);
+    foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)), overwrite: true);
 }
 
 sealed class Progress : IProgress<DeploymentEvent>

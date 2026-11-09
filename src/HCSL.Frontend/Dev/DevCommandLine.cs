@@ -14,11 +14,11 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "gc"
+        "status", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "gc", "test"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--yes", "--keep"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--yes", "--keep", "--force", "--enable"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -36,6 +36,8 @@ public static class DevCommandLine
           plugins                List available/selected/rejected plugin packages.
           doctor                 Check workspace, permissions, packages, leftovers and report fixes.
           gc                     Delete stale .previous-*/.staging-* deployments (needs --yes).
+          test mms <dir|tar.gz>  Import a Metamod:Source release as a plugin package (--enable to select it).
+          test plugins           Run the plugin/deployment test suites in this repository.
 
         Options:
           --instance <UUID>      Instance to target (default: the only instance, or an error listing them).
@@ -48,6 +50,9 @@ public static class DevCommandLine
           --dry-run              With deploy: same as plan, never writes.
           --full-copy|--reflink  Force the copy mode (default: probe the library filesystem).
           --confirm-write        exec: acknowledge a command that can change server state.
+          --version <v>          test mms: package version (default 2.0.0).
+          --enable               test mms: add the package to the selected preset.
+          --force                test mms/gc: overwrite an existing package version.
           --allow-low-memory     start: allow 3072..4095 MiB free memory.
           --follow --after <n>   logs: stream new lines / start after a sequence.
           --keep                 gc/doctor: keep diagnostic folders instead of deleting.
@@ -61,6 +66,7 @@ public static class DevCommandLine
           hcsl doctor
           hcsl plugins --json
           hcsl gc --yes
+          hcsl test mms ~/Downloads/mmsource-2.0.0-dev-linux.tar.gz --enable
         """;
 
     public static DevInvocation Parse(string[] args)
