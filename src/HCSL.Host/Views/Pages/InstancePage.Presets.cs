@@ -101,4 +101,14 @@ public partial class InstancePage
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
         if (!await m.OpenPresetCfgAsync(instance.Id, p.Id)) await owner.ChooseAsync("无法打开 CFG 目录", m.Error, "返回");
     });
+    private async void OpenPresetAddons(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
+        if (!await m.OpenPresetDirectoryAsync(instance.Id, p.Id, "addons")) await owner.ChooseAsync("无法打开预设 addons", m.Error, "返回");
+    });
+    private async void OpenRuntime(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance) return;
+        if (!await m.OpenRuntimeDirectoryAsync(instance.Id)) await owner.ChooseAsync("无法打开运行目录", m.Error, "返回");
+    });
 }

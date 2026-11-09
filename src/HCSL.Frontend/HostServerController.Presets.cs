@@ -49,4 +49,33 @@ public sealed partial class HostServerController
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Error = e.Message; return false; }
         finally { Busy = false; Notify(); }
     }
+
+    /// <summary>Opens a preset-owned directory after verifying it belongs to the current catalog.</summary>
+    public async Task<bool> OpenPresetDirectoryAsync(Guid instanceId, Guid presetId, string subdirectory)
+    {
+        if (Busy || !Server.Connected || directoryOpener is null ||
+            !Instances.Any(i => i.Entry.Id == instanceId && i.Entry.Presets.Any(p => p.Id == presetId)))
+        { Error = "HCSL-PRESET-DIR: 请连接宿主并选择有效预设；当前文件管理器入口不可用。"; Notify(); return false; }
+        Busy = true; Error = ""; Notify();
+        try { await directoryOpener.OpenAsync(await instances.PresetDirectoryAsync(instanceId, presetId, subdirectory)); return true; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Error = e.Message; return false; }
+        finally { Busy = false; Notify(); }
+    }
+
+    /// <summary>Opens the runtime directory; a missing deployment is reported instead of being created.</summary>
+    public async Task<bool> OpenRuntimeDirectoryAsync(Guid instanceId)
+    {
+        if (Busy || !Server.Connected || directoryOpener is null || !Instances.Any(i => i.Entry.Id == instanceId))
+        { Error = "HCSL-RUNTIME-DIR: 请连接宿主并选择有效实例；当前文件管理器入口不可用。"; Notify(); return false; }
+        Busy = true; Error = ""; Notify();
+        try
+        {
+            var path = await instances.RuntimeDirectoryAsync(instanceId);
+            if (!Directory.Exists(path)) throw new IOException("HCSL-RUNTIME-DIR: 该实例尚未部署；先部署或启动一次。");
+            await directoryOpener.OpenAsync(path);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Error = e.Message; return false; }
+        finally { Busy = false; Notify(); }
+    }
 }

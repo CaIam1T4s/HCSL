@@ -105,6 +105,54 @@ public static class ServerStatusText
         "HCSL-INSTANCE-BIND" => english
             ? "Instance bind address is invalid: use an IPv4 literal that belongs to this host."
             : "实例绑定地址不合法：请填写属于本机的 IPv4 地址。",
+        "HCSL-DEPLOY-RECOVERY" => english
+            ? "An interrupted deployment must be recovered first: hcsl recover"
+            : "有中断的部署需要先恢复：hcsl recover",
+        "HCSL-DEPLOY-PLUGINS" => english
+            ? "Plugin addon files could not be applied. Check package paths and that the preset addons directory is writable: hcsl doctor"
+            : "插件 addons 文件未能写入。检查包路径与预设 addons 目录权限：hcsl doctor",
+        "HCSL-DEPLOY-RUNNING" => english
+            ? "Stop the server before deploying: hcsl stop"
+            : "部署前先停服：hcsl stop",
+        "HCSL-DEPLOY-STALE" => english
+            ? "Deployment is stale: hcsl deploy"
+            : "部署已过期：hcsl deploy",
+        "HCSL-DEPLOY-BASELINE" or "HCSL-DEPLOY-FILES" => english
+            ? "The shared CS2 installation does not match the verified build."
+            : "共享 CS2 安装与已验证构建不一致。",
+        "HCSL-DEPLOY-SPACE" => english
+            ? "Not enough free space on the library/data roots."
+            : "内容库或数据目录可用空间不足。",
+        "HCSL-DEPLOY-ROTATION" => english
+            ? "The map pool and gamemodes_server.txt disagree; fix the pool or merge the file."
+            : "地图池与 gamemodes_server.txt 冲突；调整图池或手工合并文件。",
+        "HCSL-DEPLOY-MAP" => english
+            ? "The selected map (or Workshop seed map) is missing from the shared installation."
+            : "所选地图（或工坊种子地图）不在共享安装中。",
+        "HCSL-CONSOLE-STATE" => english
+            ? "The server is not Starting/LoadingMap/Running: hcsl start --wait"
+            : "服务器不在启动/加载/运行状态：hcsl start --wait",
+        "HCSL-CONSOLE-STALE" => english
+            ? "The run changed; refresh the status and retry."
+            : "运行会话已变化，刷新状态后重试。",
+        "HCSL-PLUGIN-CONFLICT" => english
+            ? "The plugin manifest changed externally; reload before saving."
+            : "插件清单被外部修改，请重读后再保存。",
+        "HCSL-PLUGIN-PACKAGE" => english
+            ? "A selected package is missing or invalid: hcsl plugins"
+            : "选中的包缺失或不合法：hcsl plugins",
+        "HCSL-PLUGIN-LIMIT" => english
+            ? "The selection or a package exceeds a documented limit."
+            : "清单或插件包超出文档规定的上限。",
+        "HCSL-LOCK" => english
+            ? "Another HCSL process holds the workspace lease; close it and retry."
+            : "其他 HCSL 进程占用工作区租约；关闭后重试。",
+        "HCSL-INSTANCE-STALE" => english
+            ? "The instance changed; refresh the catalog and retry."
+            : "实例已变化；刷新列表后重试。",
+        "HCSL-IPC-VERSION" => english
+            ? "GUI/CLI and daemon versions differ; restart the daemon or session."
+            : "界面/命令行与宿主版本不一致；重启宿主或会话。",
         _ => null
     };
 

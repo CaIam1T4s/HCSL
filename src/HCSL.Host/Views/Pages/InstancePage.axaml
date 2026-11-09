@@ -33,6 +33,8 @@
           <arc:Button x:Name="EditCfgButton" Content="CFG 管理" Variant="Secondary" Click="EditPresetCfg" Margin="0,0,8,8"/>
           <arc:Button x:Name="PluginsButton" Content="插件" Variant="Secondary" Click="EditPresetPlugins" Margin="0,0,8,8"/>
           <arc:Button x:Name="OpenCfgButton" Content="打开 CFG 目录" Variant="Secondary" Click="OpenPresetCfg" Margin="0,0,8,8"/>
+          <arc:Button x:Name="OpenAddonsButton" Content="打开预设 addons" Variant="Secondary" Click="OpenPresetAddons" Margin="0,0,8,8"/>
+          <arc:Button x:Name="OpenRuntimeButton" Content="打开运行目录" Variant="Secondary" Click="OpenRuntime" Margin="0,0,8,8"/>
         </WrapPanel>
         <TextBlock Classes="muted" TextWrapping="Wrap" Text="下拉框只浏览；点击“设为当前所选”才保存。运行或恢复检查期间禁止修改。CFG 目录属于此实例的此预设；外部编辑可能影响正在运行的服务器，请先停服。"/>
       </StackPanel></Border>
