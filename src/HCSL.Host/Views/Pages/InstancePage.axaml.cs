@@ -24,6 +24,7 @@ public partial class InstancePage : UserControl
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => { if (subscribed is not null) subscribed.PropertyChanged -= Changed; subscribed = null; };
         InstanceSelect.SelectionChanged += (_, _) => { if (!updating && Model is { } m) m.Selected = InstanceSelect.SelectedItem as HostInstanceItem; };
+        PresetSelect.SelectionChanged += (_, _) => { if (!updatingPresets) UpdatePresetButtons(); };
     }
     private void Subscribe()
     {
@@ -43,12 +44,14 @@ public partial class InstancePage : UserControl
         RefreshButton.IsEnabled = !operating && !m.Busy;
         StartButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
         StopButton.IsEnabled = !operating && m.Server.CanStop;
+        ChangeMapButton.IsEnabled = !operating && m.Server.CanSendConsole && !m.Server.Busy;
         RecoverButton.IsEnabled = !operating && m.Server.CanRecover;
         PasswordButton.IsEnabled = !operating && !watchingStart && m.CanMutate;
         SelectionText.Text = m.SelectionText;
         StateText.Text = m.Server.Connected ? m.Server.SummaryLine : "状态未知：宿主未连接";
         DetailText.Text = m.Server.DetailText;
         ErrorText.Text = m.Error;
+        UpdatePresets();
     }
     private async Task RunAsync(Func<Task> action)
     {
@@ -69,10 +72,11 @@ public partial class InstancePage : UserControl
         var text = m.SelectionText + "\n\n" + m.ConnectionEndpoints(d.GamePort) +
             "\n必要时先进行 reflink 部署，再启动（超时 120 秒）。实际 VAC 当前关闭。" +
             "\n本机地址为自动识别的连接参考；访问范围由防火墙控制，不提供公网可达性保证。";
-        if (await owner.ChooseAsync("启动服务器", text, "取消", "启动") != 1 || m.Selected?.Entry.Id != d.Id) return;
+        var confirmation = await owner.ConfirmStartAsync(text);
+        if (!confirmation.Confirmed || m.Selected?.Entry.Id != d.Id) return;
         startTarget = d.Id;
         baselineRun = m.Server.RunId; baselineApplied = m.Server.Applied; watchingStart = true;
-        if (await m.StartAsync()) ShowLogs();
+        if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory)) ShowLogs();
         else { watchingStart = false; await owner.ChooseAsync("启动未提交", m.Server.DetailText, "返回"); }
     });
     private async Task CheckStartOutcomeAsync()
@@ -100,6 +104,15 @@ public partial class InstancePage : UserControl
         }
         finally { handlingOutcome = false; Update(); }
     }
+    private async void ChangeMap(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Server.Snapshot is not { RunId: { } run, InstanceId: { } id }) return;
+        var target = await owner.MapTargetAsync();
+        if (target is null) return;
+        if (await owner.ChooseAsync("确认即时换图", $"运行实例：{id}\nRunId：{run}\n目标：{ServerMapRules.Label(target)}\n{ServerMapRules.ChangeCommand(target)}\n会影响当前玩家，不修改预设；投递不代表加载成功。", "取消", "换图") != 1) return;
+        try { var receipt = await new ServerMapClient(m.Server).ChangeAsync(id, run, target); await owner.ChooseAsync("换图投递结果", ServerMapClient.ReceiptText(receipt), "返回"); }
+        catch (IOException e) { await owner.ChooseAsync("换图未完成", e.Message, "返回"); }
+    });
     private async void StopServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner) return;

@@ -21,6 +21,7 @@
   <Folder Name="/src/" />
   <Folder Name="/tests/">
     <Project Path="tests/HCSL.HostTests/HCSL.HostTests.csproj" />
+    <Project Path="tests/HCSL.TuiTests/HCSL.TuiTests.csproj" />
   </Folder>
   <Project Path="build/HCSL.DeploymentCheck/HCSL.DeploymentCheck.csproj" />
   <Project Path="tests/HCSL.DeploymentTests/HCSL.DeploymentTests.csproj" />

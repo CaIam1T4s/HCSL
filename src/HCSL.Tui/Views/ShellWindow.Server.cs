@@ -57,6 +57,25 @@ public sealed partial class ShellWindow
     }
 
     /// <summary>Shared by F5 and the manage page; never optimistically claims a running server.</summary>
+    private (bool Confirmed, bool AllowLowMemory) ConfirmServerStart(string body)
+    {
+        var dialog = new Dialog(T("启动服务器", "Start server"), 80, 23);
+        dialog.Add(new Label(body) { X = 1, Y = 0, Width = Dim.Fill(2), Height = Dim.Fill(6) });
+        var consent = new CheckBox(T("本次调试跳过低内存确认（3–4 GiB）", "Skip low-memory confirmation for this start (3–4 GiB)"), false)
+            { X = 1, Y = Pos.AnchorEnd(5) };
+        dialog.Add(consent);
+        dialog.Add(new Label(T("低于 3 GiB 仍拒绝；控制组限额与 OOM 风险不变。", "Below 3 GiB remains blocked; cgroup limits and OOM risks are unchanged."))
+            { X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2) });
+        var confirmed = false;
+        var cancel = new Button(T("取消", "Cancel")); cancel.Clicked += () => Application.RequestStop();
+        var start = new Button(T("启动", "Start")); start.Clicked += () => { confirmed = true; Application.RequestStop(); };
+        dialog.AddButton(cancel); dialog.AddButton(start);
+        Application.Run(dialog);
+        var result = (confirmed, confirmed && consent.Checked);
+        dialog.Dispose();
+        return result;
+    }
+
     private async Task StartSelectedAsync()
     {
         if (!_server.Connected)
@@ -92,7 +111,7 @@ public sealed partial class ShellWindow
         }
         var preset = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
         var presetName = preset?.Name ?? T("无", "none");
-        var presetMap = preset?.Map ?? T("无", "none");
+        var presetMap = preset is null ? T("无", "none") : ServerMapRules.Label(new(preset.MapKind, preset.Map));
         var zh = new List<string>
         {
             $"实例：{definition.Name}",
@@ -112,7 +131,8 @@ public sealed partial class ShellWindow
             "A missing or stale deployment is reflinked and redeployed by the daemon before the start (the old deployment is kept as .previous-<time>; the base install is untouched).",
             "Memory and process limits come from the daemon's systemd control group; failures keep the daemon's own code."]);
         var body = T(string.Join("\n", zh), string.Join("\n", en));
-        if (MessageBox.Query(80, 20, T("启动服务器", "Start server"), body, T("取消", "Cancel"), T("启动", "Start")) != 1) return;
+        var confirmation = ConfirmServerStart(body);
+        if (!confirmation.Confirmed) return;
         _server.Attach(definition.Id);
         _startInFlight = true;
         _reportedFailure = "";
@@ -125,7 +145,7 @@ public sealed partial class ShellWindow
         _status.Text = T("已提交启动请求，等待地图就绪…", "Start requested; waiting for map readiness…");
         // One press is enough: the daemon deploys first when the deployment is missing or stale, so the
         // operator never has to discover a refusal and press again to accept the same fix.
-        if (!await _server.StartAsync(autoDeploy: true))
+        if (!await _server.StartAsync(autoDeploy: true, allowLowMemory: confirmation.AllowLowMemory))
         {
             _startInFlight = false;
             ShowServerFailure();
@@ -241,11 +261,13 @@ public sealed partial class ShellWindow
 
     private void InitializeServerControl()
     {
+        InitializeConsole();
         _server.English = _options.English;
         _server.PropertyChanged += (_, _) =>
         {
             RefreshServerSummary();
             RefreshServerButtons();
+            RefreshConsole();
             _ = HandleStartOutcomeAsync();
         };
         RefreshServerSummary();
@@ -261,7 +283,8 @@ public sealed partial class ShellWindow
         var entry = CurrentInstance;
         if (entry?.Definition is not { } definition) return;
         _server.Attach(definition.Id);
-        _server.ConfiguredMap = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId)?.Map;
+        var configured = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
+        _server.ConfiguredMap = configured is null ? null : ServerMapRules.Label(new(configured.MapKind, configured.Map));
     }
 
     /// <summary>Single writer of the header: catalog, lifecycle, then network readiness.</summary>
@@ -284,7 +307,7 @@ public sealed partial class ShellWindow
         var displayed = selected ?? running;
         var definition = displayed?.Definition;
         var preset = definition is null ? null : displayed!.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
-        if (definition is not null) _server.ConfiguredMap = preset?.Map;
+        if (definition is not null) _server.ConfiguredMap = preset is null ? null : ServerMapRules.Label(new(preset.MapKind, preset.Map));
         // Keep naming the map of the last run after a stop or a daemon restart, instead of silently
         // reverting to "（预设）" as if that map had never loaded.
         if (_server.Map is { } observed && _server.State is ServerState.Running or ServerState.Stopping)
@@ -293,7 +316,7 @@ public sealed partial class ShellWindow
         var instance = definition?.Name
             ?? (liveId is { } pending ? pending.ToString("N")[..8] : T("未选择实例", "no instance"));
         var presetName = preset?.Name ?? T("未选择", "none");
-        var presetMap = preset?.Map ?? T("未选择", "none");
+        var presetMap = preset is null ? T("未选择", "none") : ServerMapRules.Label(new(preset.MapKind, preset.Map));
         var vac = !_server.Connected ? T("未知", "unknown")
             : (_server.EffectiveVac ? T("开", "on") : T("关", "off")) + " · " + _server.Mode;
         var head = $"{T("实例", "Instance")}: {instance}   {T("预设", "Preset")}: {presetName}   " +
@@ -320,48 +343,71 @@ public sealed partial class ShellWindow
         _summary.Text = head + "\n" + line + endpoint + (detail.Length == 0 ? "" : "   · " + detail)
             + "\n" + networkLine;
         UpdateLogView();
+        RefreshMapPage();
+        RefreshPluginPage();
     }
 
     /// <summary>
     /// Renders the daemon's paged log. Following keeps the newest line visible; the operator can stop
     /// following to read history without the next poll yanking the view back to the end.
     /// </summary>
+    private IReadOnlyList<ConsoleLogRow> _visibleLogRows = Array.Empty<ConsoleLogRow>();
+    private readonly ConsoleLogViewport _logReading = new();
+    private int _lastLogTop;
+    private Guid? _visibleLogRun;
     private void UpdateLogView()
     {
         if (_content is null || _pageId != "logs") return;
-        var text = _server.LogText;
-        if (text.Length == 0) text = T("（暂无日志；服务器启动后这里会显示宿主返回的最近日志）", "(no log lines yet; the daemon's recent log appears here once a server starts)");
-        var truncated = _server.LogsTruncated ? T("日志已截断，只显示最近 2000 行\n", "older lines were dropped; showing the newest 2000\n") : "";
-        var next = truncated + text;
-        if (_content.Text?.ToString() == next)
+        _content.WordWrap = false;
+        _content.Height = Dim.Fill(6);
+        if (_visibleLogRun != _server.RunId)
         {
-            if (_logFollow) _content.MoveEnd();
-            return;
+            _visibleLogRun = _server.RunId; _visibleLogRows = Array.Empty<ConsoleLogRow>();
+            _logReading.Reset(); _logFollow = true; _lastLogTop = _content.TopRow;
         }
-        // Replacing Text resets the caret, so a paused reader would be thrown back to the first line.
-        var top = _content.TopRow;
-        var row = _content.CurrentRow;
-        _content.Text = next;
-        if (_logFollow) { _content.MoveEnd(); return; }
-        var count = _content.Lines;
-        if (count == 0) return;
-        // CursorPosition is a Point(col,row); CurrentRow/CurrentColumn are read-only and Lines is a count.
-        _content.CursorPosition = new Point(0, Math.Min(row, count - 1));
-        _content.TopRow = Math.Min(top, Math.Max(0, count - 1));
+        // A viewport move since our last projection belongs to the reader, not to incoming text.
+        if (_content.TopRow != _lastLogTop)
+        {
+            _logFollow = _content.TopRow + _content.Bounds.Height >= _content.Lines;
+            if (_logFollow) _logReading.Reset();
+        }
+        var rows = _server.ConsoleRows;
+        var next = string.Join("\n", rows.Select(r => r.Text));
+        if (_content.Text?.ToString() != next || !_visibleLogRows.Select(r => r.Id).SequenceEqual(rows.Select(r => r.Id)))
+        {
+            var top = _content.TopRow;
+            var relative = _content.CurrentRow - top;
+            if (!_logFollow) _logReading.Capture(_visibleLogRows, top);
+            _visibleLogRows = rows;
+            var restored = _logFollow ? 0 : _logReading.Restore(rows);
+            _content.Text = next;
+            if (_logFollow) _content.MoveEnd();
+            else if (_content.Lines > 0)
+            {
+                _content.CursorPosition = new Point(0, Math.Clamp(restored + relative, 0, _content.Lines - 1));
+                _content.TopRow = restored;
+            }
+        }
+        _lastLogTop = _content.TopRow;
+        if (_logReading.ReadingPositionLost)
+            _consoleStatus.Text = T("较早日志已移出缓冲区；定位最早保留记录。End 跳到最新。", "Reading position evicted; earliest retained record shown. End: latest.");
+        RefreshHotkeys();
     }
 
     /// <summary>Space pauses/resumes following; End jumps back to the newest line and re-follows.</summary>
     private void ToggleLogFollow()
     {
         _logFollow = !_logFollow;
-        if (_logFollow) _content?.MoveEnd();
+        if (_logFollow) { _logReading.Reset(); _content?.MoveEnd(); _lastLogTop = _content?.TopRow ?? 0; }
         RefreshHotkeys();
     }
 
     private void JumpToNewestLog()
     {
         _logFollow = true;
+        _logReading.Reset();
         _content?.MoveEnd();
+        _lastLogTop = _content?.TopRow ?? 0;
         RefreshHotkeys();
     }
 

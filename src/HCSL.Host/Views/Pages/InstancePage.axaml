@@ -10,6 +10,7 @@
         <arc:Button x:Name="StopButton" Content="停服" Variant="Secondary" Click="StopServer" Margin="0,0,8,8"/>
         <arc:Button x:Name="RecoverButton" Content="恢复检查" Variant="Secondary" Click="RecoverServer" Margin="0,0,8,8"/>
         <arc:Button Content="进度 / 日志" Variant="Secondary" Click="OpenLogs" Margin="0,0,8,8"/>
+        <arc:Button x:Name="ChangeMapButton" Content="即时换图" Variant="Secondary" Click="ChangeMap" Margin="0,0,8,8"/>
         <arc:Button x:Name="PasswordButton" Content="实例入服密码" Variant="Secondary" Click="EditPassword" Margin="0,0,8,8"/>
       </WrapPanel>
       <Border Classes="panel"><StackPanel Spacing="12">
@@ -18,10 +19,27 @@
         <TextBlock x:Name="DetailText" TextWrapping="Wrap"/>
         <TextBlock x:Name="ErrorText" TextWrapping="Wrap"/>
       </StackPanel></Border>
+      <Border Classes="panel"><StackPanel Spacing="12">
+        <TextBlock Classes="subheading" Text="配置预设"/>
+        <TextBlock x:Name="PresetStatusText" TextWrapping="Wrap"/>
+        <arc:Select x:Name="PresetSelect" Placeholder="浏览配置预设（不立即切换）"/>
+        <WrapPanel>
+          <arc:Button x:Name="CreatePresetButton" Content="新建预设" Variant="Secondary" Click="CreatePreset" Margin="0,0,8,8"/>
+          <arc:Button x:Name="CopyPresetButton" Content="复制预设" Variant="Secondary" Click="CopyPreset" Margin="0,0,8,8"/>
+          <arc:Button x:Name="EditPresetButton" Content="编辑预设" Variant="Secondary" Click="EditPreset" Margin="0,0,8,8"/>
+          <arc:Button x:Name="SelectPresetButton" Content="设为当前所选" Variant="Secondary" Click="SelectPreset" Margin="0,0,8,8"/>
+          <arc:Button x:Name="DeletePresetButton" Content="删除预设" Variant="Secondary" Click="DeletePreset" Margin="0,0,8,8"/>
+          <arc:Button x:Name="MapPoolButton" Content="地图池" Variant="Secondary" Click="EditPresetMapPool" Margin="0,0,8,8"/>
+          <arc:Button x:Name="EditCfgButton" Content="CFG 管理" Variant="Secondary" Click="EditPresetCfg" Margin="0,0,8,8"/>
+          <arc:Button x:Name="PluginsButton" Content="插件" Variant="Secondary" Click="EditPresetPlugins" Margin="0,0,8,8"/>
+          <arc:Button x:Name="OpenCfgButton" Content="打开 CFG 目录" Variant="Secondary" Click="OpenPresetCfg" Margin="0,0,8,8"/>
+        </WrapPanel>
+        <TextBlock Classes="muted" TextWrapping="Wrap" Text="下拉框只浏览；点击“设为当前所选”才保存。运行或恢复检查期间禁止修改。CFG 目录属于此实例的此预设；外部编辑可能影响正在运行的服务器，请先停服。"/>
+      </StackPanel></Border>
       <TextBlock Classes="muted" TextWrapping="Wrap" Text="启动可能先自动部署；预检、低内存提示和清理结果均以宿主快照为准。启动失败不等于清理完成。"/>
       <Border Classes="panel"><StackPanel Spacing="8">
         <TextBlock Classes="subheading" Text="尚未接入的 GUI 编辑功能"/>
-        <TextBlock Classes="muted" TextWrapping="Wrap" Text="实例创建、编辑、删除请前往“实例列表”；预设 CRUD、CFG、插件和参赛授权编辑尚未接入此界面，可使用 TUI 的已实现入口。VAC 与 GSLT 继续延后。本界面不提供交互式服务器控制台。"/>
+        <TextBlock Classes="muted" TextWrapping="Wrap" Text="实例创建、编辑、删除请前往“实例列表”；预设与 CFG 管理见上方（保存与 exec 分离）；插件版本/启用清单见“插件”；参赛授权编辑尚未接入此界面。VAC 与 GSLT 继续延后。日志窗口支持本机服主通用单行命令、exec、alias、命令链与换图；不逐条确认，回执不代表引擎执行成功。"/>
       </StackPanel></Border>
     </StackPanel>
   </ScrollViewer>

@@ -122,6 +122,9 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (source != null)
         {
             Copy(Path.Combine(source, "cfg"), Path.Combine(stage, "cfg"));
+            var maps = Path.Combine(source, "maps.json"); Safe(maps);
+            LocalPresetMapPoolStore.ValidateForCopy(maps);
+            if (File.Exists(maps)) File.Copy(maps, Path.Combine(stage, "maps.json"));
             foreach (var name in new[] { "plugins.json", "authorization.json" })
             { var file = Path.Combine(source, name); Safe(file); File.Copy(file, Path.Combine(stage, name)); }
         }
@@ -190,8 +193,10 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (c.Action == InstanceAction.CreatePreset)
         {
             InstanceRules.Name(c.Name);
+            var initial = c.Preset ?? new PresetDefinition(1, Guid.Empty, 1, c.Name!.Trim());
+            InstanceRules.Preset(initial);
             Write(file, d with { Revision = d.Revision + 1 });
-            var pid = Guid.NewGuid(); CreatePreset(Path.Combine(parent, Id(pid)), new(1, pid, 1, c.Name!.Trim()));
+            var pid = Guid.NewGuid(); CreatePreset(Path.Combine(parent, Id(pid)), initial with { FormatVersion = 1, Id = pid, Revision = 1, Name = c.Name!.Trim() });
         }
         else
         {

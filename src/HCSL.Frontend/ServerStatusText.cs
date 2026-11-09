@@ -72,6 +72,18 @@ public static class ServerStatusText
         "HCSL-SERVER-UNAVAILABLE" or "HCSL-DAEMON-ACCESS" or "HCSL-DAEMON-PLATFORM" => english
             ? "The local daemon is unreachable. Retry connecting."
             : "无法联系本机宿主，请重试连接。",
+        "HCSL-SERVER-MAP-EMPTY" => english
+            ? "CS2 requested an empty map change; HCSL is attempting one explicit transition to the intended map."
+            : "CS2 发出了空地图换图请求；HCSL 正在尝试一次明确的目标地图切换。",
+        "HCSL-SERVER-MAP-RECOVERY-FAILED" => english
+            ? "The empty map change could not be recovered automatically; inspect server output."
+            : "空地图换图未能自动恢复，请检查服务器输出。",
+        "HCSL-SERVER-MAP-SEED" => english
+            ? "The built-in seed map loaded; waiting for the Workshop collection to download and switch. This is not final readiness."
+            : "工坊合集的内置种子地图已加载，正在等待合集下载并切换；这还不是最终就绪。",
+        "HCSL-SERVER-MAP-UNCONFIRMED" => english
+            ? "The new map has not provided complete readiness evidence; its state is uncertain. Inspect server output."
+            : "新地图未提供完整就绪证据，当前状态不确定，请检查服务器输出。",
         "HCSL-SERVER-START-TIMEOUT" => english
             ? "Waited for map readiness for too long; check the log."
             : "等待地图就绪超时，请查看日志。",

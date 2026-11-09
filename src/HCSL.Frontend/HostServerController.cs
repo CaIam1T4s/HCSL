@@ -11,15 +11,15 @@ public sealed record HostInstanceItem(InstanceEntry Entry)
 }
 
 /// <summary>Desktop-host orchestration over the same server controller and instance IPC as TUI.</summary>
-public sealed class HostServerController : INotifyPropertyChanged, IDisposable
+public sealed partial class HostServerController : INotifyPropertyChanged, IDisposable
 {
     private readonly InstanceClient instances;
     private HostInstanceItem? selected;
     private bool disposed, userSelected;
     private int logConsumers;
-    public HostServerController(ServerController server, InstanceClient instances)
+    public HostServerController(ServerController server, InstanceClient instances, HCSL.Application.Abstractions.ILocalDirectoryOpener? directoryOpener = null)
     {
-        Server = server; this.instances = instances;
+        Server = server; this.instances = instances; this.directoryOpener = directoryOpener;
         Server.PropertyChanged += ServerChanged;
     }
     public ServerController Server { get; }
@@ -43,7 +43,8 @@ public sealed class HostServerController : INotifyPropertyChanged, IDisposable
     {
         if (value == selected) return;
         selected = value;
-        Server.ConfiguredMap = value?.Entry.Presets.FirstOrDefault(p => p.Id == value.Entry.Definition?.SelectedPresetId)?.Map;
+        var configured = value?.Entry.Presets.FirstOrDefault(p => p.Id == value.Entry.Definition?.SelectedPresetId);
+        Server.ConfiguredMap = configured is null ? null : ServerMapRules.Label(new(configured.MapKind, configured.Map));
         Server.Attach(value?.Entry.Id ?? Guid.Empty);
         Notify();
     }
@@ -72,7 +73,7 @@ public sealed class HostServerController : INotifyPropertyChanged, IDisposable
             var preset = entry!.Presets.FirstOrDefault(p => p.Id == d.SelectedPresetId);
             var live = Server.LiveInstanceId;
             var running = live is { } id ? Instances.FirstOrDefault(x => x.Entry.Id == id)?.ToString() ?? id.ToString("D") : "无";
-            return $"所选：{d.Name} · 预设：{preset?.Name} · 预设地图：{preset?.Map}\n" +
+            return $"所选：{d.Name} · 预设：{preset?.Name} · 预设地图：{(preset is null ? "—" : ServerMapRules.Label(new(preset.MapKind, preset.Map)))}\n" +
                 $"{ConnectionEndpoints(d.GamePort)} · 入服密码：{(entry.HasPassword ? "已设置" : "无")}\n" +
                 $"运行实例：{running} · VAC：{(Server.Connected ? (Server.EffectiveVac ? "开启" : "关闭") : "未知")} · 模式：{Server.Mode}";
         }

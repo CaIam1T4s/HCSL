@@ -35,6 +35,8 @@ public sealed class ServerOperations : IAsyncDisposable
  private bool closing, active; private Guid? runId, instanceId;
     private ServerState state; private string code = "HCSL-SERVER-IDLE"; private bool loaded, clean = true; private int? exit; private string? detail, map;
     private ServerNetworkReadiness networkReadiness = new();
+    private ServerPresetIdentity? preset;
+    private ServerMapProgress mapProgress = new(ServerMapPhase.None);
     private long? networkWaitSince;
     private long sequence, lastBusy = Stopwatch.GetTimestamp(); private readonly Queue<ServerLogLine> logs = new();
     // A page must stay well inside the 64 KiB IPC frame even with long lines, and the ring must be
@@ -61,7 +63,7 @@ public sealed class ServerOperations : IAsyncDisposable
                 after != null && logs.Count > 0 && logs.Peek().Sequence > after + 1, page, detail,
                 Mode: "Direct", Map: reported, MapHistorical: historical,
                 BindAddress: addresses[0], Access: addresses[0] == "127.0.0.1" ? NetworkAccessMode.Loopback : NetworkAccessMode.Lan,
-                ConnectionAddresses: addresses,
+                ConnectionAddresses: addresses, Preset: preset, MapProgress: active ? mapProgress : new(ServerMapPhase.None),
                 NetworkReadiness: active && state is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap or ServerState.Running
                     ? networkReadiness.WithElapsed(networkWaitSince is { } since ? Stopwatch.GetElapsedTime(since) : TimeSpan.Zero) : new());
         }
@@ -83,7 +85,7 @@ public sealed class ServerOperations : IAsyncDisposable
     {
         if (closing || active || pending is { IsCompleted: false }) throw new ServerException("HCSL-SERVER-BUSY", "A server is active, cleaning up, or the daemon is stopping.");
         if (id == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
-        networkReadiness = new(); networkWaitSince = null;
+        networkReadiness = new(); networkWaitSince = null; preset = null; mapProgress = new(ServerMapPhase.None);
         cancellation?.Dispose(); cancellation = new(); runId = Guid.NewGuid(); instanceId = id;
         loaded = false; clean = false; exit = null; map = null; active = true; state = ServerState.Preparing; code = "HCSL-SERVER-PREPARING"; logs.Clear(); sequence = 0; detail = null;
     }
@@ -118,6 +120,19 @@ public sealed class ServerOperations : IAsyncDisposable
                 finally { lock (sync) { active = !clean; lastBusy = Stopwatch.GetTimestamp(); } }
             });
             return Snapshot();
+        }
+    }
+    public Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
+    {
+        ServerConsoleRules.ValidateConfirmed(command);
+        lock (sync)
+        {
+            if (command.CommandId == Guid.Empty || command.RunId == Guid.Empty || command.RunId != runId)
+                return Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-STALE"));
+            if (closing || !active || state is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running) || cancellation?.IsCancellationRequested == true)
+                return Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-STATE"));
+            // Admission is synchronous up to the runtime's first await; stop marks cancellation before any later write.
+            return service.SendConsoleAsync(command, ct);
         }
     }
     public ServerSnapshot Stop(Guid? expected)
@@ -156,6 +171,7 @@ public sealed class ServerOperations : IAsyncDisposable
                 if (owner.runId != run) return;
                 if (owner.cancellation?.IsCancellationRequested != true && e.NetworkReadiness is { } readiness)
                     owner.networkReadiness = readiness;
+                if (owner.cancellation?.IsCancellationRequested != true && e.MapProgress is { } progress) owner.mapProgress = progress;
                 if (e.Log != null)
                 {
                     var line = e.Log.Length > 512 ? e.Log[..512] : e.Log;
@@ -167,7 +183,9 @@ public sealed class ServerOperations : IAsyncDisposable
                     return;
                 }
                 if (owner.cancellation?.IsCancellationRequested == true) return;
+                if (e.Preset is { } preparedPreset) owner.preset = preparedPreset;
                 if (e.Map is { } actualMap && ServerLastRunStore.IsMapName(actualMap)) owner.map = actualMap;
+                if (e.State == ServerState.LoadingMap) { owner.loaded = false; owner.map = null; }
                 owner.state = e.State; owner.code = e.Code;
                 if (e.State == ServerState.Running)
                 {

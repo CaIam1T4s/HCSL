@@ -25,7 +25,7 @@ public partial class App : Avalonia.Application
             var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
             var servers = new HostServerController(
                 new ServerController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
-                new InstanceClient(new DaemonClient()));
+                new InstanceClient(new DaemonClient()), new HCSL.Infrastructure.Storage.LocalDirectoryOpener());
             desktop.Exit += (_, _) => { servers.Dispose(); steamCmd.Dispose(); };
             desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers) };
             desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); };

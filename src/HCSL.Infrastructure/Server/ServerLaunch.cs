@@ -12,6 +12,7 @@ internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, st
     internal IWorkspaceLease Workspace { get; } = workspace;
     internal string Runtime { get; } = runtime;
     internal string Map { get; } = map;
+    internal ServerPresetIdentity? Preset { get; init; }
     internal string Executable { get; } = executable;
     internal string[] Arguments { get; } = arguments;
     internal string Redact(string text) => password?.Redact(text) ?? text;
@@ -40,11 +41,12 @@ internal static class ServerPreparation
             // AutoDeploy is the operator's explicit "redeploy and start" choice, made in the UI after a
             // DEPLOYMENT/STALE rejection; it is never implied. The deploy reuses this session's lease,
             // because a second lease in the same process is refused with HCSL-LOCK.
-            var receipt = RuntimeDeploymentService.ValidateExisting(lease, options.InstanceId, plan.RuntimePath);
-            if (options.AutoDeploy && (receipt is null || IsStale(receipt, plan)))
+            var receipt = RuntimeDeploymentService.ValidateExisting(lease, options.InstanceId, plan.RuntimePath, verifyRotation: false);
+            var rotationMissing = receipt is not null && !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath);
+            if (options.AutoDeploy && (receipt is null || IsStale(receipt, plan) || rotationMissing))
                 receipt = deployment.Deploy(lease, deploymentOptions, cancellationToken: ct);
             if (receipt is null) throw new ServerException("HCSL-SERVER-DEPLOYMENT", "Deploy this instance before starting it.");
-            if (IsStale(receipt, plan))
+            if (IsStale(receipt, plan) || !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath))
                 throw new ServerException("HCSL-SERVER-STALE", "Deployment is stale. Redeploy after changing instance or preset settings.");
             deployment.VerifyBaseline(plan.RuntimePath, ct);
             var entry = LocalInstanceStore.Load(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), options.InstanceId);
@@ -62,11 +64,16 @@ internal static class ServerPreparation
                 socket.Bind(new IPEndPoint(bind, entry.Definition.GamePort));
             }
             var preset = entry.Presets.Single(p => p.Id == plan.PresetId);
+            var mapArgs = plan.RotationCollection is not null
+                ? ServerMapRules.StartupArguments(new(ServerMapKind.WorkshopCollection, plan.RotationCollection))
+                : ServerMapRules.StartupArguments(new(preset.MapKind, preset.Map), plan.RotationGroup);
+            var startupMap = plan.RotationCollection ?? preset.Map;
+            var startupKind = plan.RotationCollection is null ? preset.MapKind : ServerMapKind.WorkshopCollection;
             CheckMemory(options.AllowLowMemory);
             password = InstancePasswordConfig.Bind(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), plan.PresetId.ToString("D"));
-            var launch = new ServerLaunch(lease, plan.RuntimePath, preset.Map, "/bin/bash",
+            var launch = new ServerLaunch(lease, plan.RuntimePath, startupMap, "/bin/bash",
                 [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-port", entry.Definition.GamePort.ToString(),
-                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, "+map", preset.Map], ports, access, password);
+                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, .. mapArgs], ports, access, password) { Preset = new(preset.Id, preset.Revision, preset.Name, startupMap, startupKind) };
             password = null;
             access = null;
             return launch;
@@ -81,7 +88,11 @@ internal static class ServerPreparation
     }
     private static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId
-        || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision;
+        || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision
+        || !string.Equals(receipt.RotationGroup, plan.RotationGroup, StringComparison.Ordinal)
+        || !string.Equals(receipt.RotationHash, plan.RotationHash, StringComparison.Ordinal)
+        || !string.Equals(receipt.RotationCollection, plan.RotationCollection, StringComparison.Ordinal)
+        || !string.Equals(receipt.PluginSetHash, plan.PluginSetHash, StringComparison.Ordinal);
     internal static void CheckMemory(bool allowLowMemory = false)
     {
         long available = long.Parse(File.ReadLines("/proc/meminfo").First(l => l.StartsWith("MemAvailable:", StringComparison.Ordinal)).Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]) * 1024;

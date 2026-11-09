@@ -124,6 +124,13 @@ public static class ServerLastRunStore
         return IsMapName(name) ? name : null;
     }
 
-    public static bool IsMapName(string? map) =>
-        !string.IsNullOrEmpty(map) && map.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+    public static bool IsMapName(string? map)
+    {
+        if (string.IsNullOrEmpty(map) || map.Length > 240 || map.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('_' or '-' or '/' or '.'))) return false;
+        var parts = map.Split('/');
+        if (parts.Any(p => p.Length == 0 || p is "." or "..")) return false;
+        if (parts.Length == 1) return true;
+        var offset = parts[0] == "maps" ? 1 : 0;
+        return parts.Length == offset + 3 && parts[offset] == "workshop" && parts[offset + 1].All(char.IsAsciiDigit);
+    }
 }

@@ -161,18 +161,25 @@ public sealed partial class ShellWindow
         var row = list.SelectedItem; dialog.Dispose();
         if (!chosen || row < 0 || row >= entry.Presets.Length) return;
         var p = entry.Presets[row];
+        if (index == 5)
+        {
+            using var cfgDialog = new CfgEditorDialog(new PresetCfgClient(_instanceClient, _server), _server, d, p, _options.English);
+            cfgDialog.Ready += cfgDialog.Initialize;
+            Application.Run(cfgDialog);
+            return;
+        }
         if (index is 1 or 2)
         {
             var values = index == 1
                 ? Form(T("复制预设", "Copy preset"), (T("名称", "Name"), p.Name + " copy"))
-                : Form(T("编辑预设", "Edit preset"), (T("名称", "Name"), p.Name), (T("地图", "Map"), p.Map), ("game_type", p.GameType.ToString()), ("game_mode", p.GameMode.ToString()), ("VAC (true/false)", p.VacPreferred.ToString()));
+                : Form(T("编辑预设", "Edit preset"), (T("名称", "Name"), p.Name), (T("地图", "Map"), p.Map), ("game_type", p.GameType.ToString()), ("game_mode", p.GameMode.ToString()), ("VAC (true/false)", p.VacPreferred.ToString()), ("standard/workshop", p.MapKind == ServerMapKind.Workshop ? "workshop" : "standard"));
             if (values == null) return;
             if (index == 1) _ = RefreshInstancesAsync(new(InstanceAction.CopyPreset, d.Id, p.Id, d.Revision, values[0]));
             else
             {
                 if (!int.TryParse(values[2], out var type) || !int.TryParse(values[3], out var mode) || !bool.TryParse(values[4], out var vac))
                 { MessageBox.ErrorQuery("HCSL", T("模式需为整数，VAC 为 true/false。", "Modes must be integers; VAC must be true/false."), "OK"); return; }
-                _ = RefreshInstancesAsync(new(InstanceAction.UpdatePreset, d.Id, p.Id, d.Revision, Preset: p with { Name = values[0], Map = values[1], GameType = type, GameMode = mode, VacPreferred = vac }));
+                _ = RefreshInstancesAsync(new(InstanceAction.UpdatePreset, d.Id, p.Id, d.Revision, Preset: p with { Name = values[0], Map = values[1], MapKind = values[5].Trim().ToLowerInvariant() switch { "standard" => ServerMapKind.Standard, "workshop" => ServerMapKind.Workshop, _ => (ServerMapKind)(-1) }, GameType = type, GameMode = mode, VacPreferred = vac }));
             }
         }
         else if (index == 4) _ = RefreshInstancesAsync(new(InstanceAction.SelectPreset, d.Id, p.Id, d.Revision));

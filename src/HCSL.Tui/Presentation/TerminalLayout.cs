@@ -35,7 +35,8 @@ public static class TerminalLayout
         if (logs)
             labels = [.. labels,
                 english ? (following ? "Space Pause" : "Space Follow") : (following ? "空格 暂停" : "空格 跟随"),
-                english ? "End Newest" : "End 最新"];
+                english ? "End Newest" : "End 最新", english ? "F2 Input" : "F2 输入",
+                english ? "F3/F4 Page" : "F3/F4 翻页"];
         var gap = columns >= 100 ? "   │   " : "   ";
         return " " + string.Join(gap, labels);
     }

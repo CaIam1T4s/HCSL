@@ -41,6 +41,63 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         server = new ServerClient(client);
     }
 
+    private int consoleBusy;
+    private readonly List<string> consoleHistory = new();
+    public IReadOnlyList<string> ConsoleHistory => consoleHistory;
+    private bool historyEnabled = true;
+    public bool ConsoleHistoryEnabled { get => historyEnabled; set { historyEnabled = value; if (!value) consoleHistory.Clear(); Notify(); } }
+    public void ClearConsoleHistory() { consoleHistory.Clear(); Notify(); }
+    private readonly List<(Guid Id, long Anchor, string Text)> inputMarkers = new();
+    public IReadOnlyList<ConsoleLogRow> ConsoleRows
+    {
+        get
+        {
+            var first = logLines.FirstOrDefault()?.Sequence ?? 0;
+            inputMarkers.RemoveAll(m => m.Anchor < first - 1);
+            return logLines.Select(l => (Order: l.Sequence, Kind: 0, Row: new ConsoleLogRow("log:" + l.Sequence, l.Text)))
+                .Concat(inputMarkers.Select(m => (Order: m.Anchor, Kind: 1, Row: new ConsoleLogRow("input:" + m.Id, "> " + m.Text))))
+                .OrderBy(x => x.Order).ThenBy(x => x.Kind).Select(x => x.Row).TakeLast(2000).ToArray();
+        }
+    }
+    public string ConsoleStatus { get; private set; } = "";
+    /// <summary>The PTY exists once the run is active; commands such as host_workshop_collection may be
+    /// needed before a map is published as ready. A map change still requires Running.</summary>
+    public bool CanInputConsole => Connected && Active && State is ServerState.Starting or ServerState.LoadingMap or ServerState.Running;
+    public bool CanSendConsole => CanInputConsole && consoleBusy == 0;
+    public async Task<ServerConsoleReceipt?> SendConsoleAsync(Guid expectedRun, string text, bool confirmMutation = false)
+    {
+        string query;
+        try { query = ServerConsoleRules.ValidateConfirmed(new(expectedRun, Guid.Empty, text, confirmMutation)); }
+        catch (ServerException e) { ConsoleStatus = e.Code + ": " + e.Message; Notify(); return null; }
+        if (!CanSendConsole || RunId != expectedRun || Interlocked.CompareExchange(ref consoleBusy, 1, 0) != 0)
+        { ConsoleStatus = "HCSL-CONSOLE-STATE: 当前运行不可发送 / run changed or unavailable."; Notify(); return null; }
+        var current = generation;
+        var anchor = logCursor;
+        ConsoleStatus = "发送中 / Sending"; Notify();
+        var receipt = await server.SendConsoleAsync(new(expectedRun, Guid.NewGuid(), query, confirmMutation), life.Token);
+        Interlocked.Exchange(ref consoleBusy, 0);
+        Post(() =>
+        {
+            if (RunId != expectedRun) return;
+            ConsoleStatus = receipt.Code + ": " + (receipt.Delivery switch
+            {
+                ConsoleDelivery.Written => English ? "Written to PTY; inspect logs, execution is not confirmed." : "已写入服务器输入通道；请查看输出，不代表执行成功。",
+                ConsoleDelivery.Rejected => English ? "Rejected; not sent." : "已拒绝，未发送。",
+                _ => English ? "Delivery unknown. Not retried automatically." : "结果未知；未自动重发。"
+            });
+            var display = receipt.DisplayText ?? "[命令显示未获确认 / command display unavailable]";
+            inputMarkers.Add((receipt.CommandId, anchor, display));
+            if (inputMarkers.Count > 200) inputMarkers.RemoveAt(0);
+            if (receipt.Delivery != ConsoleDelivery.Rejected && ConsoleHistoryEnabled && display == query && !ServerConsoleRules.IsSensitive(query))
+            {
+                consoleHistory.Add(query);
+                if (consoleHistory.Count > 50) consoleHistory.RemoveAt(0);
+            }
+            Notify();
+        }, current);
+        return receipt;
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ServerSnapshot? Snapshot => snapshot;
@@ -65,7 +122,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public bool MapLoaded => snapshot?.MapLoaded == true;
     /// <summary>Map the daemon observed for this instance, falling back to a scan of the returned log page.
     /// A daemon that restarted reports the recorded map of the last run instead.</summary>
-    public string? Map => snapshot?.Map ?? ServerStatusText.MapFromLog(snapshot?.Lines) ?? ObservedMap;
+    public string? Map => State == ServerState.LoadingMap ? snapshot?.Map : snapshot?.Map ?? ServerStatusText.MapFromLog(snapshot?.Lines) ?? ObservedMap;
     public bool CleanupConfirmed => snapshot?.CleanupConfirmed == true;
     /// <summary>Ticket of the last snapshot applied to this controller; a monotonically rising view counter.</summary>
     public long Applied => applied;
@@ -74,7 +131,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// <summary>Newest lines the daemon returned, oldest first. Bounded so a chatty server cannot grow the UI.</summary>
     public IReadOnlyList<ServerLogLine> LogLines => logLines;
     /// <summary>True when the daemon dropped history, or when the local ring dropped lines.</summary>
-    public bool LogsTruncated => logsTruncated || HistoryTruncated;
+    public bool LogsTruncated => logsTruncated || HistoryTruncated || logLines.Count + inputMarkers.Count > LogCapacity;
     /// <summary>Next sequence to ask for; also the cursor the daemon validates against the run.</summary>
     public long LogCursor => logCursor;
     public ServerSeverity Severity => ServerStatusText.Severity(State);
@@ -114,11 +171,12 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         Map, ConfiguredMap, MapLoaded, LogsTruncated, LogLineCount, Pending, MapIsHistorical);
     public string SummaryLine => LifecycleSummaryLine + (NetworkSummaryLine.Length > 0 ? " · " + NetworkSummaryLine : "");
 
-    private bool MapIsHistorical => snapshot?.MapHistorical == true
-        || (snapshot?.Map is null && ServerStatusText.MapFromLog(snapshot?.Lines) is null && ObservedMap is not null);
+    private bool MapIsHistorical => State != ServerState.LoadingMap && (snapshot?.MapHistorical == true
+        || (snapshot?.Map is null && ServerStatusText.MapFromLog(snapshot?.Lines) is null && ObservedMap is not null));
     public string DetailText => ServerStatusText.DetailLine(Code.Length == 0 ? null : Code,
         string.IsNullOrWhiteSpace(snapshot?.Detail) ? null : snapshot!.Detail, error.Length == 0 ? null : error, english)
-        + (ShowNetworkReadiness && ServerStatusText.NetworkHint(NetworkReadiness, english) is { } hint ? " — " + hint : "");
+        + (ShowNetworkReadiness && ServerStatusText.NetworkHint(NetworkReadiness, english) is { } hint ? " — " + hint : "")
+        + (ServerMapClient.ProgressText(snapshot?.MapProgress, english) is { Length: > 0 } mapHint ? " — " + mapHint : "");
     public string LogText => string.Join(Environment.NewLine, logLines.Select(line => line.Text));
 
     public void Attach(Guid instanceId)
@@ -270,12 +328,17 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 {
                     var ticket = Interlocked.Increment(ref issued);
                     var result = await server.SendAsync(new(ServerAction.Status), null, ct);
-                    Post(() => { Apply(result, ticket); Notify(); }, current);
+                    Post(() =>
+                    {
+                        Apply(result, ticket);
+                        if (error.Contains("Log cursor belongs to another run.", StringComparison.Ordinal)) error = "";
+                        Notify();
+                    }, current);
                     // Page the log only while the operator is looking at it; the cursor keeps it incremental.
-                    if (logsVisible && snapshot?.RunId is { } run && !ct.IsCancellationRequested)
+                    if (logsVisible && result.RunId is { } run && !ct.IsCancellationRequested)
                     {
                         var pageTicket = Interlocked.Increment(ref issued);
-                        var page = await server.SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, logCursor), null, ct);
+                        var page = await server.SendAsync(new(ServerAction.Logs, result.InstanceId ?? attached, run, run == logRun ? logCursor : 0), null, ct);
                         Post(() => { Apply(page, pageTicket); Notify(); }, current);
                     }
                 }
@@ -298,6 +361,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     {
         if (ticket < applied) return;
         applied = ticket;
+        if (snapshot?.RunId != value.RunId) { consoleHistory.Clear(); inputMarkers.Clear(); ConsoleStatus = ""; }
         snapshot = value;
         AppendLogs(value);
     }
@@ -341,6 +405,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     {
         if (disposed) return;
         disposed = true;
+        consoleHistory.Clear(); inputMarkers.Clear(); ConsoleStatus = "";
         Interlocked.Increment(ref generation);
         life.Cancel();
         life.Dispose();

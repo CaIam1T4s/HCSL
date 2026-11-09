@@ -34,6 +34,18 @@ public partial class MainWindow : Window
         };
     }
 
+    public async Task<(bool Confirmed, bool AllowLowMemory)> ConfirmStartAsync(string text)
+    {
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(new TextBlock { Text = "启动服务器", FontSize = 20 });
+        content.Children.Add(new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        var consent = new TKCode.Arc.Checkbox { Content = "本次调试跳过低内存确认（3–4 GiB）", IsChecked = false };
+        content.Children.Add(consent);
+        content.Children.Add(new TextBlock { Text = "仅本次有效；低于 3 GiB 仍禁止启动，控制组限额与 OOM 风险不变。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        var result = await ShowOverlayAsync(content, ["取消", "启动"]);
+        return (result == 1, result == 1 && consent.IsChecked == true);
+    }
+
     public Task<int> ChooseAsync(string title, string text, params string[] choices)
     {
         var content = new StackPanel { Spacing = 12 };

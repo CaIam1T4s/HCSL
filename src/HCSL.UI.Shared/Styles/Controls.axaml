@@ -1,4 +1,4 @@
-<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc">
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:ui="using:HCSL.UI.Shared.Services">
 <Style Selector="Window">
     <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
   </Style>
@@ -122,6 +122,9 @@
     <Setter Property="StrokeThickness" Value="1.8"/>
   </Style>
   <!-- Shared Arc field/selection formats. Page code owns layout, not templates. -->
+  <Style Selector="arc|Input, arc|PasswordField, arc|Textarea">
+    <Setter Property="ui:InputPointerPlacement.Enabled" Value="True"/>
+  </Style>
   <Style Selector="arc|Input, arc|PasswordField">
     <Setter Property="MinHeight" Value="36"/>
     <Setter Property="HorizontalAlignment" Value="Stretch"/>

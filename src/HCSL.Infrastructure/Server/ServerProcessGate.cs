@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using System.Text.Json;
+using HCSL.Core;
 namespace HCSL.Infrastructure.Server;
 
-public sealed record ServerGateCommand(int OwnerPid, long OwnerStartTicks, string PidNamespace, string Executable, string[] Arguments, string WorkingDirectory, long MemoryMaxBytes);
+public sealed record ServerGateCommand(int OwnerPid, long OwnerStartTicks, string PidNamespace, string Executable, string[] Arguments, string WorkingDirectory, long MemoryMaxBytes, Guid RunId = default);
 /// <summary>Runs as the main process of a systemd service. Parent EOF/loss ends the gate, so systemd drains its cgroup.</summary>
 public static class ServerProcessGate
 {
@@ -41,7 +42,7 @@ public static class ServerProcessGate
         if (!LimitsMatch(command)) { Console.Error.WriteLine("HCSL_SERVER_GATE_LIMITS_MISMATCH"); return 125; }
         static string Quote(string text) => "'" + text.Replace("'", "'\"'\"'") + "'";
         var start = new ProcessStartInfo("/usr/bin/script") { WorkingDirectory = command.WorkingDirectory, UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "--quiet", "--return", "--flush", "--command", "exec " + Quote(command.Executable) + " " + string.Join(" ", command.Arguments.Select(Quote)), "/dev/null" }) start.ArgumentList.Add(arg);
+        foreach (var arg in new[] { "--quiet", "--return", "--flush", "--command", "/usr/bin/stty -icanon -echo min 1 time 0 && exec " + Quote(command.Executable) + " " + string.Join(" ", command.Arguments.Select(Quote)), "/dev/null" }) start.ArgumentList.Add(arg);
         using var child = Process.Start(start)!;
         Console.WriteLine("HCSL_SERVER_CHILD_STARTED"); Console.Out.Flush();
         var stdout = child.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
@@ -51,6 +52,27 @@ public static class ServerProcessGate
         {
             var winner = await Task.WhenAny(exited, input, Task.Delay(500));
             if (winner == exited) break;
+            if (winner == input && OwnerAlive(command))
+            {
+                var raw = await input;
+                if (raw is not null && raw != "STOP")
+                {
+                    try
+                    {
+                        if (raw.Length > 65536) throw new JsonException();
+                        var query = JsonSerializer.Deserialize<ServerConsoleCommand>(raw);
+                        if (query is null || query.RunId != command.RunId || query.CommandId == Guid.Empty) throw new JsonException();
+                        var text = ServerConsoleRules.ValidateConfirmed(query);
+                        using var writeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                        await child.StandardInput.WriteLineAsync(text.AsMemory(), writeTimeout.Token); await child.StandardInput.FlushAsync(writeTimeout.Token);
+                        Console.WriteLine("HCSL_CONSOLE_ACK:" + query.CommandId.ToString("D")); Console.Out.Flush();
+                    }
+                    catch (Exception e) when (e is JsonException or ServerException) { /* Invalid control messages never reach CS2. */ }
+                    catch (Exception e) when (e is IOException or OperationCanceledException) { return 124; }
+                    input = control.ReadLineAsync();
+                    continue;
+                }
+            }
             if (winner == input || !OwnerAlive(command))
             {
                 try { await child.StandardInput.WriteLineAsync("quit"); await child.StandardInput.FlushAsync(); } catch (IOException) { }

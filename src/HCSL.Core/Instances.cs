@@ -9,7 +9,7 @@ public enum NetworkAccessMode { Loopback, Lan }
 public sealed record ServerNetwork(NetworkAccessMode Mode = NetworkAccessMode.Loopback, string BindAddress = "127.0.0.1");
 
 public sealed record InstanceDefinition(int FormatVersion, Guid Id, long Revision, string Name, int GamePort, Guid SelectedPresetId, ServerNetwork? Network = null);
-public sealed record PresetDefinition(int FormatVersion, Guid Id, long Revision, string Name, string Map = "de_dust2", int GameType = 0, int GameMode = 1, bool VacPreferred = true);
+public sealed record PresetDefinition(int FormatVersion, Guid Id, long Revision, string Name, string Map = "de_dust2", int GameType = 0, int GameMode = 1, bool VacPreferred = true, ServerMapKind MapKind = ServerMapKind.Standard);
 public sealed record InstanceEntry(Guid Id, InstanceDefinition? Definition, PresetDefinition[] Presets, string? Error = null, bool HasPassword = false);
 public sealed record InstanceCatalog(InstanceEntry[] Instances, string[]? ConnectionAddresses = null);
 public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword }
@@ -36,7 +36,11 @@ public static class InstanceRules
     public static void Preset(PresetDefinition p)
     {
         Name(p.Name);
-        if (string.IsNullOrWhiteSpace(p.Map) || p.Map.Length > 100 || p.Map.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '_') || p.GameType is < 0 or > 10 || p.GameMode is < 0 or > 100)
+        if (p.MapKind == ServerMapKind.WorkshopCollection)
+            throw new InstanceException("HCSL-PRESET-INVALID", "A workshop collection belongs in the map pool, not in the startup map field.");
+        try { ServerMapRules.Validate(new(p.MapKind, p.Map)); }
+        catch (InstanceException e) { throw new InstanceException("HCSL-PRESET-INVALID", e.Message); }
+        if (p.GameType is < 0 or > 10 || p.GameMode is < 0 or > 100)
             throw new InstanceException("HCSL-PRESET-INVALID", "Invalid map or game mode.");
     }
     /// <summary>Syntax and mode rules only: whether the address exists on this host is decided at

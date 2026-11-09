@@ -14,6 +14,7 @@ never bypasses the 4096 MiB memory gate, and never claims a pass without
 observing the evidence it records.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -70,6 +71,11 @@ def mib(value):
 # --------------------------------------------------------------------------- #
 # Pure helpers (covered by build/validation/test_accept_real_cs2.py)
 # --------------------------------------------------------------------------- #
+
+def baseline_mode_matches(snapshot):
+    """Current daemon baseline is direct LAN access, not loopback isolation."""
+    return snapshot.get('Mode') == 'Direct' and snapshot.get('EffectiveVac') is False
+
 
 def unit_name(run_id):
     """systemd unit name used by HCSL.Infrastructure.Server.SystemdServerRuntime."""
@@ -259,9 +265,9 @@ def plan_problems(plan, install, instance, preset, plugins, authorization,
     if not plan.get('RuntimePath'):
         problems.append('plan has no runtime path')
     if plugins.get('Plugins'):
-        problems.append('preset declares plugins; LoopbackLanValidation does not deploy them')
+        problems.append('preset declares plugins; the direct LAN baseline does not deploy them')
     if authorization.get('Rules'):
-        problems.append('preset declares access rules; LoopbackLanValidation does not deploy them')
+        problems.append('preset declares access rules; the direct LAN baseline does not deploy them')
     return problems
 
 
@@ -282,6 +288,32 @@ def receipt_problems(receipt, plan, install, instance):
         problems.append('receipt CopyMode differs from the plan')
     if len(receipt.get('PersistentMappings') or []) != len(MAPPINGS):
         problems.append('receipt does not declare six persistent mappings')
+    return problems
+
+
+def rotation_problems(receipt, plan, runtime):
+    """A managed map group must be byte-identical to the receipt and never exist by accident."""
+    problems = []
+    group = receipt.get('RotationGroup')
+    digest = receipt.get('RotationHash')
+    collection = receipt.get('RotationCollection')
+    if group != plan.get('RotationGroup') or digest != plan.get('RotationHash') or collection != plan.get('RotationCollection'):
+        problems.append('receipt map rotation differs from the plan')
+    if (group is None) != (digest is None):
+        problems.append('receipt has an incomplete map group identity')
+    if collection is not None and group is not None:
+        problems.append('receipt mixes a workshop collection with a map group')
+    path = Path(runtime) / 'game' / 'csgo' / 'gamemodes_server.txt'
+    if collection is not None:
+        if path.exists():
+            problems.append('workshop collection must not have a managed map group file')
+        return problems
+    if group is None:
+        return problems
+    if not path.is_file():
+        problems.append('managed map group file is missing')
+    elif hashlib.sha256(path.read_bytes()).hexdigest().upper() != digest:
+        problems.append('managed map group file does not match the receipt hash')
     return problems
 
 
@@ -751,7 +783,8 @@ def phase_preflight(context, entry, args, report):
           and data_free >= int(plan.get('MinimumDataFreeBytes') or 0),
           f'library={library_free} data={data_free}')
     report['Limitations'] = [
-        'LoopbackLanValidation only: 127.0.0.1, sv_lan=1, -insecure, EffectiveVac=false, no GSLT.',
+        'Direct LAN baseline: wildcard listening (not loopback-isolated), sv_lan=1, '
+        '-insecure, EffectiveVac=false, no GSLT. Use firewall isolation for testing.',
         'No plugins, access rules, public exposure, Windows or non-reflink deployment are covered.',
         'A pass here does not prove stability under player load or multi-instance concurrency.',
     ]
@@ -835,6 +868,9 @@ def phase_deploy(context, entry, args, report):
           else 'first deployment')
     base_after = tree_manifest(context['ServerRoot'] / 'game')
     diff = manifest_diff(base_before, base_after)
+    rotation = rotation_problems(receipt, plan, runtime)
+    check(checks, 'D5-managed-map-group', not rotation,
+          '; '.join(rotation) or (f"Group={receipt.get('RotationGroup')}" if receipt.get('RotationGroup') else f"Collection={receipt.get('RotationCollection')}" if receipt.get('RotationCollection') else 'no native map group (empty/workshop/mixed pool)'))
     check(checks, 'D4-base-install-unchanged',
           not (diff['Added'] or diff['Removed'] or diff['Modified']),
           f"added={len(diff['Added'])} removed={len(diff['Removed'])} modified={len(diff['Modified'])}")
@@ -918,8 +954,7 @@ def start_once(context, entry, args, report, label):
           f"State={snapshot.get('State')} Code={snapshot.get('Code')} Detail={snapshot.get('Detail')}")
     check(checks, f'{label}-map-ready', bool(snapshot.get('MapLoaded')),
           f"MapLoaded={snapshot.get('MapLoaded')} Code={snapshot.get('Code')}")
-    check(checks, f'{label}-mode', snapshot.get('Mode') == 'LoopbackLanValidation'
-          and snapshot.get('EffectiveVac') is False,
+    check(checks, f'{label}-mode', baseline_mode_matches(snapshot),
           f"Mode={snapshot.get('Mode')} EffectiveVac={snapshot.get('EffectiveVac')}")
     check(checks, f'{label}-runid', bool(run_id), str(run_id))
     log_path = server_log_path(context['DataRoot'], context['Instance']['Id'], run_id)

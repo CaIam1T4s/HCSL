@@ -7,6 +7,10 @@ project references, or shared CS2 launcher behavior, read and apply
 This is a repository-local skill stored outside `.agents` because that directory
 is read-only in the development environment. It is not installed as a global skill.
 
+For non-trivial investigation and change work, and when auditing why a session
+spent time on builds, tests, documentation, or context compression, read and
+apply [audit-before-change](skills/audit-before-change/SKILL.md).
+
 Keep scaffold directories separate from implemented projects: only add a project
 to the solution when its project file and implementation exist. Report build and
 runtime verification limits accurately.

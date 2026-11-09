@@ -99,7 +99,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             {
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
                 LocalResponse response;
-                try { response = Dispatch(request); }
+                try { response = request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token) : Dispatch(request); }
                 catch (ServerException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (InstanceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (WorkspaceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
@@ -117,6 +117,15 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             }
         }
     }
+    private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
+        var command = JsonSerializer.Deserialize<ServerConsoleCommand>(request.ServerConsoleJson ?? "null")
+            ?? throw new ServerException("HCSL-CONSOLE-INPUT", "Console query required.");
+        var receipt = await servers.SendConsoleAsync(command, ct);
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipt));
+    }
     private LocalResponse Dispatch(LocalRequest request)
     {
         if (request.Version != LocalProtocol.Version)
@@ -125,6 +134,9 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         {
             RequestKind.Hello => Hello(request),
             RequestKind.Instances => Instances(request),
+            RequestKind.PresetCfg => PresetCfg(request),
+            RequestKind.MapPool => MapPool(request),
+            RequestKind.Plugin => Plugin(request),
             RequestKind.Server => Server(request),
             RequestKind.Status => new(LocalProtocol.Version, request.Id, true, Snapshot: operations.Snapshot()),
             RequestKind.StartProbe => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request)),
@@ -161,6 +173,48 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             _ => throw new ServerException("HCSL-SERVER-OPTIONS", "Unknown server action.")
         };
         return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+    }
+    private LocalResponse MapPool(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<MapPoolCommand>(request.MapPoolJson ?? "null")
+            ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool command is required.");
+        if (command.Action != MapPoolAction.Read &&
+            (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
+            throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing maps.");
+        var result = new LocalPresetMapPoolStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result));
+        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
+        return response;
+    }
+    private LocalResponse Plugin(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<PluginCommand>(request.PluginJson ?? "null")
+            ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin command is required.");
+        if (command.Action != PluginAction.List &&
+            (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
+            throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before editing plugins.");
+        var result = new LocalPluginStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PluginResultJson: JsonSerializer.Serialize(result));
+        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin response exceeds the IPC limit.");
+        return response;
+    }
+    private LocalResponse PresetCfg(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<PresetCfgCommand>(request.PresetCfgJson ?? "null")
+            ?? throw new InstanceException("HCSL-CFG-REQUEST", "CFG command is required.");
+        if (command.Action is not (PresetCfgAction.List or PresetCfgAction.Read) &&
+            (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
+            throw new InstanceException("HCSL-CFG-BUSY", "Stop the server/SteamCMD and complete recovery before editing CFG.");
+        var result = new LocalPresetCfgStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PresetCfgResultJson: JsonSerializer.Serialize(result));
+        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            throw new InstanceException("HCSL-CFG-LIMIT", "CFG response exceeds the IPC limit.");
+        return response;
     }
     private static LocalResponse Instances(LocalRequest request)
     {

@@ -1,0 +1,209 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using HCSL.Application.Abstractions;
+using HCSL.Core;
+namespace HCSL.Infrastructure.Storage;
+
+/// <summary>
+/// Validates package folders under &lt;library&gt;/plugin-packages and the preset's plugins.json.
+/// Package files are game-root relative (for example csgo/addons/metamod/...). This store never
+/// executes a plugin and never reads package contents into the UI.
+/// </summary>
+public sealed class LocalPluginStore : IPluginStore
+{
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
+    private static readonly string[] Roots = ["csgo", "core", "csgo_lv"];
+
+    internal sealed record PackageFile(string RelativePath, string FullPath, string Sha256, long Bytes);
+    internal sealed record Package(string Id, string Name, string Version, string Root, PackageFile[] Files, string Hash, long Bytes);
+
+    public PluginResult Execute(WorkspaceRequest workspace, PluginCommand command)
+    {
+        if (!Enum.IsDefined(command.Action) || command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)
+            throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin action and stable instance/preset IDs are required.");
+        try
+        {
+            if (command.Action == PluginAction.List)
+            {
+                var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
+                LocalPaths.ValidateRoots(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot);
+                return ExecuteRoot(Path.Combine(paths.DataRoot, "instances"), Path.Combine(paths.LibraryRoot, "plugin-packages"), command);
+            }
+            using var lease = new LocalWorkspaceManager().Acquire(workspace);
+            if (File.Exists(Path.Combine(lease.Layout.LibraryRoot, ".hcsl", "server-session.json")))
+                throw new InstanceException("HCSL-SERVER-RECOVERY", "Recover the previous server session before editing plugins.");
+            return ExecuteRoot(lease.Layout.InstancesRoot, Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"), command);
+        }
+        catch (InstanceException) { throw; }
+        catch (WorkspaceException) { throw; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        { throw new InstanceException("HCSL-PLUGIN-IO", "Plugin storage failed; no file content is logged."); }
+    }
+
+    internal static Package LoadPackage(string packagesRoot, string id, string version)
+    {
+        PluginRules.Id(id); PluginRules.Version(version);
+        var root = SafePath(Path.Combine(packagesRoot, id, version));
+        var manifestPath = SafePath(Path.Combine(root, "plugin.json"));
+        if (!File.Exists(manifestPath)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin package manifest is missing.");
+        if (new FileInfo(manifestPath).Length > PluginRules.MaxManifestBytes) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is too large.");
+        var manifest = JsonSerializer.Deserialize<PackageManifest>(File.ReadAllText(manifestPath), Json)
+            ?? throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is empty.");
+        if (manifest.FormatVersion != 1 || manifest.Id != id || manifest.Version != version || string.IsNullOrWhiteSpace(manifest.Name) || manifest.Name.Length > 100 || manifest.Name.Any(char.IsControl))
+            throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest identity does not match its folder.");
+        var filesRoot = SafeRelative(manifest.FilesRoot ?? "files");
+        var source = SafePath(Path.Combine(root, filesRoot));
+        if (!Directory.Exists(source)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin files directory is missing.");
+        var files = new List<PackageFile>();
+        long bytes = 0;
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            SafePath(file);
+            var relative = PluginRules.RelativePath(Path.GetRelativePath(source, file).Replace(Path.DirectorySeparatorChar, '/'));
+            var info = new FileInfo(file);
+            if (info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Package links are not accepted.");
+            bytes = checked(bytes + info.Length);
+            if (files.Count >= PluginRules.MaxPackageFiles || bytes > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin package is too large.");
+            files.Add(new(relative, file, Hash(file), info.Length));
+        }
+        var hash = PackageHash(files);
+        return new(id, manifest.Name, version, source, files.OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToArray(), hash, bytes);
+    }
+
+    private static PluginResult ExecuteRoot(string instancesRoot, string packagesRoot, PluginCommand c)
+    {
+        SafePath(instancesRoot);
+        var instance = SafePath(Path.Combine(instancesRoot, c.InstanceId.ToString("D")));
+        var entry = LocalInstanceStore.Load(instance, c.InstanceId);
+        if (entry.Definition is null || entry.Presets.All(p => p.Id != c.PresetId))
+            throw new InstanceException("HCSL-PLUGIN-PRESET", "The instance or preset no longer exists.");
+        var preset = SafePath(Path.Combine(instance, "presets", c.PresetId.ToString("D")));
+        var file = SafePath(Path.Combine(preset, "plugins.json"));
+        var (manifest, hash) = ReadManifest(file);
+        var (available, rejected) = Catalog(packagesRoot);
+        var listed = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
+        if (c.Action == PluginAction.List) return Result(manifest, hash, listed, rejected);
+        if (entry.Definition.Revision != c.InstanceRevision)
+            throw new InstanceException("HCSL-INSTANCE-STALE", "Instance revision changed. Refresh before editing plugins.");
+        PluginRules.Validate(c.Plugins);
+        var next = c.Plugins ?? [];
+        foreach (var plugin in next.Where(p => p.Enabled))
+            if (!listed.Any(p => p.Id == plugin.Id && p.Version == plugin.Version))
+                throw new InstanceException("HCSL-PLUGIN-PACKAGE", "An enabled plugin package is not available in this library.");
+        var current = File.Exists(file) ? Hash(file) : null;
+        if (!string.Equals(current, c.ExpectedHash, StringComparison.Ordinal))
+            throw new InstanceException("HCSL-PLUGIN-CONFLICT", "Plugin manifest changed. Reload before saving; your draft was not written.");
+        var saved = new PluginManifest(1, manifest.Revision + 1, next);
+        Write(file, saved);
+        var (written, writtenHash) = ReadManifest(file);
+        return Result(written, writtenHash, listed, rejected);
+    }
+
+    private static PluginResult Result(PluginManifest manifest, string hash, PluginPackageInfo[] available, PluginPackageRejection[] rejected)
+    {
+        var selected = manifest.Plugins.Select(p =>
+        {
+            var package = available.FirstOrDefault(a => a.Id == p.Id && a.Version == p.Version);
+            return new PluginSelectionInfo(p.Id, package?.Name, p.Version, p.Enabled, package is not null,
+                package is null ? "HCSL-PLUGIN-PACKAGE" : null);
+        }).ToArray();
+        return new(available, selected, manifest.Revision, hash, rejected);
+    }
+
+    internal static PluginManifest ReadManifestForDeployment(string file) => ReadManifest(file).Manifest;
+
+    private static (PluginManifest Manifest, string Hash) ReadManifest(string file)
+    {
+        SafePath(file);
+        if (!File.Exists(file)) return (new(1, 0, []), "");
+        if (new FileInfo(file).Length > PluginRules.MaxManifestBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin manifest is too large.");
+        var manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(file), Json)
+            ?? throw new InstanceException("HCSL-PLUGIN-STATE", "Plugin manifest is empty.");
+        if (manifest.FormatVersion != 1) throw new InstanceException("HCSL-PLUGIN-STATE", "Unknown plugin manifest format.");
+        var plugins = manifest.Plugins ?? [];
+        PluginRules.Validate(plugins);
+        return (new(1, manifest.Revision, plugins), Hash(file));
+    }
+
+    private static (PluginPackageInfo[] Available, PluginPackageRejection[] Rejected) Catalog(string packagesRoot)
+    {
+        SafePath(packagesRoot);
+        if (!Directory.Exists(packagesRoot)) return ([], []);
+        var result = new List<PluginPackageInfo>();
+        var rejected = new List<PluginPackageRejection>();
+        foreach (var plugin in Directory.EnumerateDirectories(packagesRoot))
+        {
+            if (!Directory.Exists(plugin)) continue;
+            var id = Path.GetFileName(plugin);
+            try { PluginRules.Id(id); }
+            catch (InstanceException e)
+            {
+                rejected.Add(new(id, "", e.Code));
+                continue;
+            }
+            foreach (var versionDir in Directory.EnumerateDirectories(plugin))
+            {
+                var version = Path.GetFileName(versionDir);
+                try
+                {
+                    var package = LoadPackage(packagesRoot, id, version);
+                    result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes));
+                }
+                catch (InstanceException e) { rejected.Add(new(id, version, e.Code)); }
+                catch (WorkspaceException e) { rejected.Add(new(id, version, e.Code)); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException)
+                { rejected.Add(new(id, version, "HCSL-PLUGIN-IO")); }
+            }
+        }
+        return (result.ToArray(), rejected.OrderBy(r => r.Id, StringComparer.Ordinal).ThenBy(r => r.Version, StringComparer.Ordinal).ToArray());
+    }
+
+    private static string PackageHash(IEnumerable<PackageFile> files)
+    {
+        using var sha = SHA256.Create();
+        foreach (var file in files.OrderBy(f => f.RelativePath, StringComparer.Ordinal))
+        {
+            var line = Encoding.UTF8.GetBytes(file.RelativePath + "\0" + file.Sha256 + "\0" + file.Bytes + "\n");
+            sha.TransformBlock(line, 0, line.Length, null, 0);
+        }
+        sha.TransformFinalBlock([], 0, 0);
+        return Convert.ToHexString(sha.Hash!);
+    }
+
+    private static string Hash(string file)
+    {
+        using var stream = File.OpenRead(file);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    private static void Write(string file, PluginManifest manifest)
+    {
+        var temp = file + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            { JsonSerializer.Serialize(stream, manifest, Json); stream.Flush(true); }
+            File.Move(temp, file, true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
+    private static string SafePath(string path)
+    {
+        for (var item = new DirectoryInfo(Path.GetFullPath(path)); item is not null; item = item.Parent)
+            LocalPaths.RejectLink(item.FullName);
+        return path;
+    }
+
+    private static string SafeRelative(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) || path.Contains('\\') || path.Any(char.IsControl))
+            throw new InstanceException("HCSL-PLUGIN-PATH", "Invalid package directory.");
+        var parts = path.Split('/');
+        if (parts.Any(p => p is "" or "." or "..")) throw new InstanceException("HCSL-PLUGIN-PATH", "Invalid package directory.");
+        return string.Join('/', parts);
+    }
+
+    private sealed record PackageManifest(int FormatVersion, string? Id, string? Name, string? Version, string? FilesRoot);
+}

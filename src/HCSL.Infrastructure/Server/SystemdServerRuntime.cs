@@ -8,7 +8,7 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 namespace HCSL.Infrastructure.Server;
 
-public sealed class SystemdServerRuntime : IServerRuntimeService
+public sealed partial class SystemdServerRuntime : IServerRuntimeService
 {
     private readonly string assembly;
     private readonly Func<WorkspaceRequest, ServerStartOptions, CancellationToken, Task<ServerLaunch>> prepare;
@@ -18,6 +18,16 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
     { assembly = Path.GetFullPath(gateAssembly); this.prepare = prepare; this.memoryMiB = memoryMiB; }
     internal sealed record Session(int FormatVersion, Guid RunId, Guid InstanceId, Guid DataId, Guid LibraryId, int OwnerPid, long OwnerStartTicks, string PidNamespace);
     private static string Unit(Guid id) => "hcsl-server-" + id.ToString("N") + ".service";
+    internal static bool IsWorkshopMap(string? map) =>
+        map is not null && (map.StartsWith("workshop/", StringComparison.Ordinal) || map.StartsWith("maps/workshop/", StringComparison.Ordinal));
+
+    /// <summary>
+    /// A collection launch starts on a built-in seed map. Once CS2 accepts the collection it
+    /// switches the active mapgroup to "workshop" and may report the workshop map by its bare
+    /// internal name; that map must no longer be mistaken for the seed.
+    /// </summary>
+    internal static bool IsSeedOnly(bool collectionStart, bool workshopContext, string? map) =>
+        collectionStart && !workshopContext && !IsWorkshopMap(map);
     private static string Journal(WorkspaceLayout l) => Path.Combine(l.LibraryRoot, ".hcsl", "server-session.json");
     private static string Marker(string runtime) => Path.Combine(runtime, ".hcsl-running.json");
     private static ProcessStartInfo Command(string executable, params string[] args)
@@ -75,8 +85,15 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         var unit = Unit(runId); bool mapLoaded = false, clean = true, journaled = false;
         Process? process = null; Task? stdout = null, stderr = null; int? exit = null; string code = "HCSL-SERVER-EXIT";
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ConsoleSession? console = null;
         var networkReadiness = new ServerNetworkReadiness();
-        var parserLock = new object(); bool active = false, physics = false, players = false; long logBytes = 0, mapAt = 0;
+        var parserLock = new object(); var maps = new ServerMapTracker(); bool publishedReady = false, everReady = false, mapWaitReported = false, seedReadyReported = false; long logBytes = 0, mapAt = 0, mapWaitSince = 0, downloadSince = 0;
+        var collectionStart = launch.Preset?.MapKind == ServerMapKind.WorkshopCollection;
+        var workshopContext = false; var workshopContextSignal = false;
+        // A first Workshop collection download can exceed the normal 120-second start budget;
+        // the seed map proves the server booted but is deliberately not published as final readiness.
+        var startupLimit = collectionStart ? Math.Max(options.StartTimeoutSeconds, 600) : options.StartTimeoutSeconds;
+        string? emptyChangeTarget = null; long emptyChangeAt = 0; bool emptyChangeRecoveryTried = false;
         var logPath = Path.Combine(l.InstancesRoot, options.InstanceId.ToString("D"), "logs", "server-" + runId.ToString("N") + ".log");
         LocalPaths.RejectLink(logPath);
         using var disk = new StreamWriter(LocalPaths.CreateFile(logPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
@@ -84,21 +101,73 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         {
             lock (parserLock)
             {
+                if (raw.StartsWith("HCSL_CONSOLE_ACK:", StringComparison.Ordinal)
+                    && Guid.TryParse(raw[17..], out var ack) && console?.Acks.TryGetValue(ack, out var confirmation) == true)
+                { confirmation.TrySetResult(true); return; }
                 var text = Regex.Replace(raw, @"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))", "");
                 text = new string(text.Where(c => !char.IsControl(c)).ToArray());
                 if (text == "HCSL_SERVER_GATE_READY") { ready.TrySetResult(); return; }
                 if (text == "HCSL_SERVER_CHILD_STARTED") { events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-PROCESS-STARTED")); return; }
                 var protocolText = text; // readiness parsing must not depend on secret redaction
+                if (collectionStart && (protocolText.Contains("Setting mapgroup to 'workshop'", StringComparison.Ordinal)
+                    || protocolText.Contains("host_workshop_collection", StringComparison.Ordinal)))
+                {
+                    workshopContextSignal = true;
+                    // Do not let an echoed startup argument mark the seed itself as the collection map.
+                    if (seedReadyReported) workshopContext = true;
+                }
                 networkReadiness = networkReadiness.Observe(protocolText);
                 text = launch.Redact(text);
                 if (Regex.IsMatch(text, @"(?i)password|token|steamaccount|gslt|secret")) text = "[redacted sensitive configuration]";
                 if (text.Length > 2048) text = text[..2048] + " [truncated]";
                 if (logBytes < 8 * 1024 * 1024) { disk.WriteLine(text); logBytes += Encoding.UTF8.GetByteCount(text) + 1; }
-                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text, NetworkReadiness: networkReadiness));
-                active |= protocolText.Contains("ss_loading -> ss_active", StringComparison.Ordinal);
-                physics |= protocolText.Contains("Created physics for " + launch.Map, StringComparison.Ordinal);
-                players |= Regex.IsMatch(protocolText, @"SV:\s+\d+ player server started");
-                if (!mapLoaded && active && physics && players) { Volatile.Write(ref mapAt, Stopwatch.GetTimestamp()); Volatile.Write(ref mapLoaded, true); }
+                var loading = maps.Observe(protocolText);
+                var emptyChange = maps.ObserveEmptyChangeLevel(protocolText);
+                if (maps.Progress.Phase == ServerMapPhase.DownloadObserved) downloadSince = downloadSince == 0 ? Stopwatch.GetTimestamp() : downloadSince;
+                else downloadSince = 0;
+                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text, NetworkReadiness: networkReadiness, MapProgress: maps.Progress));
+                if (emptyChange is not null)
+                {
+                    // CS2 may queue Changelevel () after printing the intended map when the
+                    // end-match vote did not write nextlevel. Surface it immediately instead
+                    // of waiting for the generic 120-second readiness timeout.
+                    emptyChangeTarget = emptyChange; emptyChangeAt = Stopwatch.GetTimestamp(); emptyChangeRecoveryTried = false;
+                    maps.BeginTransition(); mapLoaded = false; publishedReady = false; mapAt = 0; seedReadyReported = false;
+                    mapWaitSince = Stopwatch.GetTimestamp(); mapWaitReported = false;
+                    events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-MAP-EMPTY", MapProgress: maps.Progress));
+                }
+                if (loading)
+                {
+                    emptyChangeTarget = null; emptyChangeAt = 0;
+                    mapLoaded = false; publishedReady = false; mapAt = 0; seedReadyReported = false;
+                    mapWaitSince = Stopwatch.GetTimestamp(); mapWaitReported = false;
+                    events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-MAP-LOADING"));
+                }
+                if (!mapLoaded && maps.Complete)
+                {
+                    // A collection launch seeds the game server with a built-in map. That seed is not the
+                    // collection result: publishing it as Ready would hide a stalled/failed workshop download.
+                    if (IsSeedOnly(collectionStart, workshopContext, maps.Map))
+                    {
+                        if (!seedReadyReported)
+                        {
+                            seedReadyReported = true; mapWaitSince = 0; mapWaitReported = false;
+                            if (workshopContextSignal) workshopContext = true;
+                            events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-MAP-SEED", MapProgress: maps.Progress));
+                        }
+                    }
+                    else { mapAt = Stopwatch.GetTimestamp(); mapLoaded = true; }
+                }
+            }
+        }
+        void RecoveryFailed()
+        {
+            lock (parserLock)
+            {
+                // A late rejection must not downgrade a map that already became ready.
+                if (maps.Complete || maps.Progress.Phase == ServerMapPhase.Ready) return;
+                maps.Unconfirmed(); mapWaitReported = true;
+                events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-MAP-RECOVERY-FAILED", MapProgress: maps.Progress));
             }
         }
         async Task Pump(StreamReader stream)
@@ -120,9 +189,11 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
                 "-p", "KillMode=control-group", "-p", "KillSignal=SIGINT", "-p", "TimeoutStopSec=5", "-p", "SendSIGKILL=yes", "-p", "MemoryAccounting=yes",
                 "-p", "MemoryHigh=" + Math.Max(32, memoryMiB * 4 / 5) + "M", "-p", "MemoryMax=" + memoryMiB + "M", "-p", "MemorySwapMax=0", "-p", "TasksMax=128", "-p", "CPUQuota=100%", "-p", "LimitCORE=0", "-p", "OOMPolicy=stop",
                 "/usr/bin/env", "-i", "HOME=" + Path.Combine(launch.Runtime, "home"), "USRLOCALcsgo=" + Path.Combine(launch.Runtime, "userdata"), "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "/usr/bin/dotnet", assembly, "--server-gate");
-            events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING"));
-            process = Process.Start(start)!; stdout = Pump(process.StandardOutput); stderr = Pump(process.StandardError);
-            var exited = process.WaitForExitAsync(); var clock = Stopwatch.StartNew(); bool released = false, publishedReady = false;
+            events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING", Preset: launch.Preset));
+            process = Process.Start(start)!;
+            console = new ConsoleSession(process, stop, launch.Redact); consoleSessions[runId] = console;
+            stdout = Pump(process.StandardOutput); stderr = Pump(process.StandardError);
+            var exited = process.WaitForExitAsync(); var clock = Stopwatch.StartNew(); bool released = false;
             while (!exited.IsCompleted)
             {
                 if (stdout.IsFaulted || stderr.IsFaulted) throw new IOException("Server output could not be drained.");
@@ -130,24 +201,71 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
                 if (ready.Task.IsCompleted && !released)
                 {
                     launch.ReleasePorts();
-                    var command = new ServerGateCommand(session.OwnerPid, session.OwnerStartTicks, session.PidNamespace, launch.Executable, launch.Arguments, Path.Combine(launch.Runtime, "game"), memoryMiB * 1024L * 1024);
+                    var command = new ServerGateCommand(session.OwnerPid, session.OwnerStartTicks, session.PidNamespace, launch.Executable, launch.Arguments, Path.Combine(launch.Runtime, "game"), memoryMiB * 1024L * 1024, runId);
                     await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command)); await process.StandardInput.FlushAsync(); released = true;
                 }
-                if (Volatile.Read(ref mapLoaded) && !publishedReady && Stopwatch.GetElapsedTime(Volatile.Read(ref mapAt)).TotalSeconds >= 2)
+                string? readyMap = null;
+                lock (parserLock)
                 {
-                    publishedReady = true;
-                    events.Report(new(ServerState.Running, "HCSL-SERVER-MAP-READY", Map: launch.Map));
+                    if (downloadSince != 0 && Stopwatch.GetElapsedTime(downloadSince).TotalSeconds >= 120)
+                    {
+                        downloadSince = 0; maps.Unconfirmed();
+                        events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-LOG", "HCSL: Workshop download remains unconfirmed after 120s; inspect logs.", MapProgress: maps.Progress));
+                    }
+                    if (everReady && !publishedReady && mapWaitSince != 0 && !mapWaitReported && Stopwatch.GetElapsedTime(mapWaitSince).TotalSeconds >= 120)
+                    {
+                        mapWaitReported = true;
+                        maps.Unconfirmed();
+                        events.Report(new(ServerState.LoadingMap, "HCSL-SERVER-MAP-UNCONFIRMED", MapProgress: maps.Progress));
+                    }
+                    if (mapLoaded && !publishedReady && Stopwatch.GetElapsedTime(mapAt).TotalSeconds >= 2)
+                    {
+                        publishedReady = everReady = true; readyMap = maps.Map; maps.MarkReady();
+                        events.Report(new(ServerState.Running, "HCSL-SERVER-MAP-READY", Map: readyMap, MapProgress: new(ServerMapPhase.Ready)));
+                    }
+                }
+                string? recoverMap = null;
+                lock (parserLock)
+                {
+                    if (emptyChangeTarget is not null && emptyChangeAt != 0 && !emptyChangeRecoveryTried
+                        && Stopwatch.GetElapsedTime(emptyChangeAt) >= TimeSpan.FromMilliseconds(750))
+                    { emptyChangeRecoveryTried = true; recoverMap = emptyChangeTarget; emptyChangeTarget = null; }
+                }
+                if (recoverMap is not null)
+                {
+                    var recovery = ServerMapRecovery.Command(recoverMap, launch.Preset?.MapKind ?? ServerMapKind.Standard);
+                    if (recovery is null) RecoveryFailed();
+                    else
+                    {
+                        try
+                        {
+                            var receipt = await SendConsoleAsync(new(runId, Guid.NewGuid(), recovery), stop);
+                            if (receipt.Delivery != ConsoleDelivery.Written) RecoveryFailed();
+                        }
+                        catch (Exception e) when (e is IOException or OperationCanceledException or ServerException)
+                        { RecoveryFailed(); }
+                    }
+                }
+                if (readyMap is not null)
+                {
                     // Recording must never disturb a run that already reached readiness.
-                    try { ServerLastRunStore.Write(l.InstancesRoot, options.InstanceId, runId, launch.Map); }
+                    try { ServerLastRunStore.Write(l.InstancesRoot, options.InstanceId, runId, readyMap); }
                     catch (Exception) { }
                 }
-                if (!publishedReady && clock.Elapsed.TotalSeconds >= options.StartTimeoutSeconds) { code = "HCSL-SERVER-START-TIMEOUT"; break; }
+                if (!everReady && clock.Elapsed.TotalSeconds >= startupLimit) { code = "HCSL-SERVER-START-TIMEOUT"; break; }
                 await Task.Delay(100);
             }
             if (!exited.IsCompleted)
             {
                 events.Report(new(ServerState.Stopping, code));
-                try { await process.StandardInput.WriteLineAsync("STOP"); await process.StandardInput.FlushAsync(); } catch (IOException) { }
+                using var stopWrite = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                try
+                {
+                    await console.Writer.WaitAsync(stopWrite.Token);
+                    try { await process.StandardInput.WriteLineAsync("STOP".AsMemory(), stopWrite.Token); await process.StandardInput.FlushAsync(stopWrite.Token); }
+                    finally { console.Writer.Release(); }
+                }
+                catch (Exception e) when (e is IOException or OperationCanceledException) { }
                 try { await exited.WaitAsync(TimeSpan.FromSeconds(7)); } catch (TimeoutException) { }
             }
             if (process.HasExited) exit = process.ExitCode;
@@ -156,6 +274,8 @@ public sealed class SystemdServerRuntime : IServerRuntimeService
         catch (Exception) { code = "HCSL-SERVER-PROCESS"; }
         finally
         {
+            consoleSessions.TryRemove(runId, out _);
+            if (console is not null) foreach (var ack in console.Acks.Values) ack.TrySetCanceled();
             if (journaled)
             {
                 // Parent EOF asks the gate to quit; systemd stop also drains descendants that escaped their original process group.

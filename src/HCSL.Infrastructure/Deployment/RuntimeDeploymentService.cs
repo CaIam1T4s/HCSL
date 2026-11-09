@@ -3,6 +3,7 @@ using HCSL.Infrastructure.Steam;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using HCSL.Application.Abstractions;
@@ -73,13 +74,22 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (options.ExpectedRevision is { } revision && d.Revision != revision)
             throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "Instance changed since the plan was reviewed.");
         var instance = InRoot(l.InstancesRoot, Id(id)); var preset = InRoot(instance, "presets/" + Id(p.Id));
-        var plugins = DeploymentFiles.Read<JsonElement>(InRoot(preset, "plugins.json"));
+        PresetMapPool mapPool;
+        try { mapPool = LocalPresetMapPoolStore.ReadForDeployment(InRoot(preset, "maps.json")); }
+        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+        string? collection;
+        ServerMapGroupPlan? rotation;
+        try
+        {
+            collection = MapPoolRules.CollectionId(mapPool);
+            rotation = collection is null ? ServerMapGroupRules.Create(p.Id, p.Map, mapPool) : null;
+        }
+        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+        var pluginSet = PluginSet(preset, l.LibraryRoot);
         var authorization = DeploymentFiles.Read<JsonElement>(InRoot(preset, "authorization.json"));
-        if (!plugins.TryGetProperty("FormatVersion", out var pv) || pv.GetInt32() != 1 ||
-            !plugins.TryGetProperty("Plugins", out var packages) || packages.ValueKind != JsonValueKind.Array || packages.GetArrayLength() != 0 ||
-            !authorization.TryGetProperty("FormatVersion", out var av) || av.GetInt32() != 1 ||
+        if (!authorization.TryGetProperty("FormatVersion", out var av) || av.GetInt32() != 1 ||
             !authorization.TryGetProperty("Rules", out var rules) || rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() != 0)
-            throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin packages and access rules are not deployable yet; nonempty or unknown manifests are refused.");
+            throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Access rules are not deployable yet; nonempty or unknown manifests are refused.");
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
         if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || state.BuildId != baseline.BuildId)
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must match the verified deployment baseline. Update the baseline after a new game build.");
@@ -90,9 +100,30 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest and installation state disagree.");
         var info = SmallText(InRoot(l.ServerRoot, "game/csgo/steam.inf"));
         if (!Regex.IsMatch(info, @"(?im)^\s*appid\s*=\s*730\s*$")) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Invalid steam.inf.");
-        var map = InRoot(l.ServerRoot, "game/csgo/maps/" + p.Map + ".vpk");
-        if (!File.Exists(map) || new FileInfo(map).Length == 0)
-            throw new DeploymentException("HCSL-DEPLOY-MAP", "Selected map is not present as a built-in map package; Workshop deployment is not implemented.");
+        if (collection is null)
+        {
+            var map = InRoot(l.ServerRoot, "game/csgo/maps/" + p.Map + ".vpk");
+            if (!File.Exists(map) || new FileInfo(map).Length == 0)
+                throw new DeploymentException("HCSL-DEPLOY-MAP", "Selected map is not present as a built-in map package; Workshop deployment is not implemented.");
+        }
+        if (rotation is not null)
+        {
+            foreach (var pooledMap in mapPool.Maps)
+            {
+                var package = InRoot(l.ServerRoot, "game/csgo/maps/" + pooledMap.Value + ".vpk");
+                if (!File.Exists(package) || new FileInfo(package).Length == 0)
+                    throw new DeploymentException("HCSL-DEPLOY-ROTATION", "Every standard map in the pool must be installed as a built-in map package.");
+            }
+            var existingRotation = InRoot(l.ServerRoot, "game/csgo/" + ServerMapGroupRules.FileName);
+            if (File.Exists(existingRotation) && new FileInfo(existingRotation).Length != 0)
+                throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The base installation already has a nonempty gamemodes_server.txt; merge it manually before enabling a managed map group.");
+        }
+        if (collection is not null)
+        {
+            var seed = InRoot(l.ServerRoot, "game/csgo/maps/" + ServerMapRules.CollectionSeedMap + ".vpk");
+            if (!File.Exists(seed) || new FileInfo(seed).Length == 0)
+                throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
+        }
         VerifyBaseline(l.ServerRoot, ct);
         var sdk = InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
         if (!File.Exists(sdk) || new FileInfo(sdk).Length == 0) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
@@ -128,11 +159,268 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (lease.Capacity.LibraryAvailableBytes < minimum || lease.Capacity.DataAvailableBytes < seedBytes + 64L * 1024 * 1024 ||
             (Path.GetPathRoot(l.LibraryRoot) == Path.GetPathRoot(l.DataRoot) && lease.Capacity.LibraryAvailableBytes < minimum + seedBytes + 64L * 1024 * 1024))
             throw new DeploymentException("HCSL-DEPLOY-SPACE", "Insufficient free space for the selected deployment policy and persistent seeds.");
-        var target = Target(l, id); ValidateExisting(lease, id, target); EnsureStopped(target);
+        var target = Target(l, id); ValidateExisting(lease, id, target, verifyRotation: false); EnsureStopped(target);
+        var notes = new List<string>
+        {
+            "Offline deployment only; no server is launched.", "No resource links are approved; the entire game tree is independently cloned.",
+            "Reflink support is tested during deployment, with no silent full-copy fallback.", "CoW writes can consume additional disk space later.",
+            "Missing base CFG files are seeded once; existing persistent CFG files are never overwritten.", "Previous deployments and unknown runtime writes are retained, not deleted."
+        };
+        if (rotation is not null) notes.Add($"A launcher-owned CS2 map group '{rotation.Name}' is generated; pool order does not prove the engine's actual next map.");
+        else if (collection is not null) notes.Add($"Workshop collection #{collection} is hosted natively and supplies its own map order; the preset startup map is ignored.");
+        else if (mapPool.Maps.Length != 0)
+            notes.Add("Workshop or mixed map pools are not deployed as a native map group; use confirmed live map changes.");
+        if (pluginSet.Packages.Length != 0)
+            notes.Add($"{pluginSet.Packages.Length} plugin package(s) are copied into the preset addons directory; package-owned addons files are replaced on redeploy.");
+        else notes.Add("No plugin packages are enabled.");
         return new(id, d.Revision, p.Id, p.Revision, state.BuildId!, target, options.CopyMode, count, bytes, minimum, seedBytes + 64L * 1024 * 1024, mappings,
-            ["Offline deployment only; no server is launched.", "No resource links are approved; the entire game tree is independently cloned.",
-             "Reflink support is tested during deployment, with no silent full-copy fallback.", "CoW writes can consume additional disk space later.",
-             "Missing base CFG files are seeded once; existing persistent CFG files are never overwritten.", "Previous deployments and unknown runtime writes are retained, not deleted."]);
+            [.. notes], rotation?.Name, rotation?.Hash, collection, pluginSet.Hash);
+    }
+    private static ServerMapGroupPlan? Rotation(string presetPath, PresetDefinition preset)
+    {
+        try { return ServerMapGroupRules.Create(preset.Id, preset.Map, LocalPresetMapPoolStore.ReadForDeployment(InRoot(presetPath, "maps.json"))); }
+        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+    }
+    private static string? Collection(string presetPath)
+    {
+        try { return MapPoolRules.CollectionId(LocalPresetMapPoolStore.ReadForDeployment(InRoot(presetPath, "maps.json"))); }
+        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+    }
+    private static (string? Hash, LocalPluginStore.Package[] Packages) PluginSet(string presetPath, string libraryRoot)
+    {
+        try
+        {
+            var manifest = LocalPluginStore.ReadManifestForDeployment(InRoot(presetPath, "plugins.json"));
+            var packages = new List<LocalPluginStore.Package>();
+            foreach (var plugin in manifest.Plugins.Where(p => p.Enabled))
+                packages.Add(LocalPluginStore.LoadPackage(Path.Combine(libraryRoot, "plugin-packages"), plugin.Id, plugin.Version));
+            using var sha = SHA256.Create();
+            foreach (var package in packages)
+            {
+                var line = Encoding.UTF8.GetBytes(package.Id + "\0" + package.Version + "\0" + package.Hash + "\n");
+                sha.TransformBlock(line, 0, line.Length, null, 0);
+            }
+            sha.TransformFinalBlock([], 0, 0);
+            return (packages.Count == 0 ? null : Convert.ToHexString(sha.Hash!), packages.ToArray());
+        }
+        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
+    }
+    private sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
+    private sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
+    private sealed record PluginLedgerFile(string Path, string Sha256);
+    private static PluginLedger ReadPluginLedger(string path)
+    {
+        LocalPaths.RejectLink(path);
+        if (!File.Exists(path)) return new(1, []);
+        try
+        {
+            var ledger = DeploymentFiles.Read<PluginLedger>(path);
+            if (ledger.FormatVersion != 1 || ledger.Packages is null) throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Unknown plugin install ledger.");
+            return ledger;
+        }
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin install ledger cannot be read; no plugin files were changed."); }
+    }
+    private static string AddonsPath(string addons, string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative) || relative.Contains('\\'))
+            throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Invalid plugin install path.");
+        var path = addons;
+        foreach (var part in relative.Split('/'))
+        {
+            if (part is "" or "." or "..") throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Invalid plugin install path.");
+            path = Path.Combine(path, part); LocalPaths.RejectLink(path);
+        }
+        return path;
+    }
+    private static void CopyPluginFile(string source, string destination, string sha256)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        var temp = destination + ".plugin-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.Copy(source, temp, false);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, File.GetUnixFileMode(source));
+            // Hash the copy, not the source: a package edited after validation must not reach the preset.
+            if (!string.Equals(HashFile(temp), sha256, StringComparison.OrdinalIgnoreCase))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "A plugin package file changed after it was validated; no persistent plugin file was replaced.");
+            File.Move(temp, destination, true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+    private static bool IsUnder(string path, string root) =>
+        path.Equals(root, LocalPaths.Comparison) || path.StartsWith(root + "/", LocalPaths.Comparison);
+    private static void RejectReservedPluginPath(string relative)
+    {
+        if (IsUnder(relative, "csgo/cfg") || IsUnder(relative, "csgo/logs") || IsUnder(relative, "csgo/recordings"))
+            throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin packages may not write preset CFG, logs or recordings.");
+        if (relative.Equals("csgo/addons", LocalPaths.Comparison))
+            throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "A plugin package file may not replace the addons directory.");
+    }
+    private sealed record PluginAddonFile(string RelativePath, string SourcePath, string Sha256);
+    /// <summary>Persistent addon changes prepared during staging and applied once, with an on-disk backup for rollback.</summary>
+    private sealed class PluginAddonPlan(string addons, string ledgerPath, PluginAddonFile[] writes, PluginAddonFile[] removals, PluginLedger ledger)
+    {
+        private readonly string backupRoot = Path.Combine(Path.GetDirectoryName(addons)!, ".hcsl-plugin-backup-" + Guid.NewGuid().ToString("N"));
+        private readonly List<(string Path, bool Existed)> applied = [];
+        private bool ledgerExisted, settled;
+        private string Destination(string relative) => AddonsPath(addons, relative["csgo/addons/".Length..]);
+        private string BackupPath(string destination) => Path.Combine(backupRoot, "files", Path.GetRelativePath(addons, destination));
+        private void Backup(string destination)
+        {
+            var backup = BackupPath(destination);
+            Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+            File.Copy(destination, backup, true);
+        }
+        internal void Apply()
+        {
+            try
+            {
+                Directory.CreateDirectory(backupRoot);
+                if (File.Exists(ledgerPath)) { File.Copy(ledgerPath, Path.Combine(backupRoot, "ledger.json"), true); ledgerExisted = true; }
+                foreach (var write in writes)
+                {
+                    var destination = Destination(write.RelativePath);
+                    var existed = File.Exists(destination);
+                    if (existed) Backup(destination);
+                    applied.Add((destination, existed));
+                    CopyPluginFile(write.SourcePath, destination, write.Sha256);
+                }
+                foreach (var removal in removals)
+                {
+                    var destination = Destination(removal.RelativePath);
+                    if (!File.Exists(destination)) continue;
+                    if (!string.Equals(HashFile(destination), removal.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+                    Backup(destination);
+                    File.Delete(destination);
+                    PruneEmptyDirectories(Path.GetDirectoryName(destination));
+                }
+                DeploymentFiles.AtomicJson(ledgerPath, ledger);
+            }
+            catch (Exception e)
+            {
+                try { Rollback(); }
+                catch (Exception rollback)
+                {
+                    throw new DeploymentException("HCSL-DEPLOY-PLUGINS",
+                        "Plugin addon files could not be written and the backup could not be restored; inspect the preset addons directory (" + rollback.GetType().Name + ").");
+                }
+                if (e is DeploymentException) throw;
+                throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin addon files could not be written; persistent plugin files were restored.");
+            }
+        }
+        internal void Commit()
+        {
+            if (settled) return;
+            settled = true;
+            if (Directory.Exists(backupRoot)) Directory.Delete(backupRoot, true);
+        }
+        internal void Rollback()
+        {
+            if (settled) return;
+            try
+            {
+                for (var i = applied.Count - 1; i >= 0; i--)
+                    if (!applied[i].Existed && File.Exists(applied[i].Path)) File.Delete(applied[i].Path);
+                var files = Path.Combine(backupRoot, "files");
+                if (Directory.Exists(files))
+                    foreach (var backup in Directory.EnumerateFiles(files, "*", SearchOption.AllDirectories))
+                    {
+                        var destination = Path.Combine(addons, Path.GetRelativePath(files, backup));
+                        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                        File.Copy(backup, destination, true);
+                    }
+                var ledgerBackup = Path.Combine(backupRoot, "ledger.json");
+                if (File.Exists(ledgerBackup)) File.Copy(ledgerBackup, ledgerPath, true);
+                else if (!ledgerExisted && File.Exists(ledgerPath)) File.Delete(ledgerPath);
+            }
+            finally
+            {
+                settled = true;
+                if (Directory.Exists(backupRoot)) Directory.Delete(backupRoot, true);
+            }
+        }
+        private void PruneEmptyDirectories(string? directory)
+        {
+            for (; directory is not null && !string.Equals(directory, addons, LocalPaths.Comparison); directory = Path.GetDirectoryName(directory))
+            {
+                if (!Directory.Exists(directory) || Directory.EnumerateFileSystemEntries(directory).Any()) break;
+                Directory.Delete(directory);
+            }
+        }
+    }
+    /// <summary>Builds the addon change plan and overlays non-addon package files into the staging tree. Persistent addons are untouched here.</summary>
+    private static PluginAddonPlan PlanPlugins(string stage, string presetPath, LocalPluginStore.Package[] packages)
+    {
+        try
+        {
+            var addons = InRoot(presetPath, "addons"); LocalPaths.RejectLink(addons);
+            if (!Directory.Exists(addons)) throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Preset addons directory is missing.");
+            var ledgerPath = InRoot(addons, ".hcsl-plugin-ledger.json");
+            var old = ReadPluginLedger(ledgerPath);
+            var writes = new List<PluginAddonFile>();
+            var installed = new List<PluginLedgerEntry>();
+            // Windows compares paths case-insensitively; the ledger and reserved roots must follow the same rule.
+            var keep = new HashSet<string>(StringComparer.FromComparison(LocalPaths.Comparison));
+            foreach (var package in packages)
+            {
+                var files = new List<PluginLedgerFile>();
+                foreach (var file in package.Files)
+                {
+                    RejectReservedPluginPath(file.RelativePath);
+                    if (IsUnder(file.RelativePath, "csgo/addons"))
+                    {
+                        writes.Add(new(file.RelativePath, file.FullPath, file.Sha256));
+                        keep.Add(file.RelativePath);
+                        files.Add(new(file.RelativePath, file.Sha256));
+                    }
+                    else CopyPluginFile(file.FullPath, InRoot(stage, "game/" + file.RelativePath), file.Sha256);
+                }
+                installed.Add(new(package.Id, package.Version, [.. files]));
+            }
+            var removals = new List<PluginAddonFile>();
+            foreach (var oldPackage in old.Packages ?? [])
+            {
+                foreach (var file in oldPackage.Files ?? [])
+                {
+                    if (keep.Contains(file.Path) || !IsUnder(file.Path, "csgo/addons")) continue;
+                    string destination;
+                    try { destination = AddonsPath(addons, file.Path["csgo/addons/".Length..]); }
+                    catch (DeploymentException) { continue; }
+                    if (!File.Exists(destination)) continue;
+                    if (!string.Equals(HashFile(destination), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+                    removals.Add(new(file.Path, destination, file.Sha256));
+                }
+            }
+            return new(addons, ledgerPath, [.. writes], [.. removals], new PluginLedger(1, [.. installed]));
+        }
+        catch (DeploymentException) { throw; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException or InvalidDataException or NotSupportedException)
+        { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin files could not be prepared; no persistent plugin file was changed."); }
+    }
+    private static void ClearRotation(string stage)
+    {
+        var path = InRoot(stage, "game/csgo/" + ServerMapGroupRules.FileName); LocalPaths.RejectLink(path);
+        if (!File.Exists(path)) return;
+        if (!File.ReadAllText(path).StartsWith(ServerMapGroupRules.ManagedMarker, StringComparison.Ordinal)) return;
+        File.Delete(path);
+    }
+    private static void WriteRotation(string stage, ServerMapGroupPlan rotation)
+    {
+        var path = InRoot(stage, "game/csgo/" + ServerMapGroupRules.FileName); LocalPaths.RejectLink(path);
+        if (File.Exists(path) && new FileInfo(path).Length != 0)
+            throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The staged game already has a nonempty gamemodes_server.txt.");
+        var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = LocalPaths.CreateFile(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                var bytes = new UTF8Encoding(false).GetBytes(rotation.Content);
+                stream.Write(bytes); stream.Flush(true);
+            }
+            File.Move(temp, path, true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
     }
     private static string SmallText(string path)
     {
@@ -152,6 +440,18 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         }
         foreach (var config in baseline.Configs) if (new FileInfo(InRoot(server, config)).Length == 0)
             throw new DeploymentException("HCSL-DEPLOY-FILES", "Required path configuration is missing.");
+    }
+    internal static bool RotationFileMatches(DeploymentReceipt receipt, string target)
+    {
+        if (receipt.RotationCollection is not null) return receipt.RotationGroup is null && receipt.RotationHash is null;
+        if (receipt.RotationHash is null) return true;
+        var rotation = InRoot(target, "game/csgo/" + ServerMapGroupRules.FileName); LocalPaths.RejectLink(rotation);
+        return File.Exists(rotation) && HashFile(rotation).Equals(receipt.RotationHash, StringComparison.Ordinal);
+    }
+    private static string HashFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
     }
     private static void VerifyHash(string path, string expected)
     {
@@ -178,7 +478,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             }
         }
     }
-    internal static DeploymentReceipt? ValidateExisting(IWorkspaceLease lease, Guid id, string target)
+    internal static DeploymentReceipt? ValidateExisting(IWorkspaceLease lease, Guid id, string target, bool verifyRotation = true)
     {
         LocalPaths.RejectLink(target);
         if (File.Exists(target)) throw new DeploymentException("HCSL-DEPLOY-UNMANAGED", "Runtime path is a file.");
@@ -190,6 +490,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw new DeploymentException("HCSL-DEPLOY-STATE", "Runtime ownership or deployment format does not match.");
         if (receipt.PersistentMappings == null || receipt.PersistentMappings.Length != 6 || receipt.PersistentMappings.Select(m => m.RuntimePath).Distinct().Count() != 6)
             throw new DeploymentException("HCSL-DEPLOY-STATE", "Incomplete persistent mapping metadata.");
+        if (verifyRotation && receipt.RotationHash is not null && !RotationFileMatches(receipt, target))
+            throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The generated gamemodes_server.txt is missing or modified; redeploy the preset.");
         // Unknown files are retained in previous generations. Unknown links are not followed or silently accepted.
         var instance = InRoot(lease.Layout.InstancesRoot, Id(id));
         foreach (var mapping in receipt.PersistentMappings)
@@ -279,16 +581,50 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var home = plan.PersistentMappings.Single(m => m.RuntimePath == "home").PersistentPath;
         var sdk = InRoot(home, ".steam/sdk64/steamclient.so");
         if (!File.Exists(sdk)) SeedFile(InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so"), sdk);
+        var presetPath = Path.Combine(InRoot(l.InstancesRoot, Id(tx.InstanceId)), "presets", Id(plan.PresetId));
+        var currentCollection = Collection(presetPath);
+        if (!string.Equals(currentCollection, plan.RotationCollection, StringComparison.Ordinal))
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The map pool changed while deployment was prepared. Redeploy to regenerate the rotation.");
+        var currentPlugins = PluginSet(presetPath, l.LibraryRoot);
+        if (!string.Equals(currentPlugins.Hash, plan.PluginSetHash, StringComparison.Ordinal))
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The plugin selection changed while deployment was prepared. Redeploy.");
+        var pluginChanges = PlanPlugins(stage, presetPath, currentPlugins.Packages);
+        if (plan.RotationHash is not null)
+        {
+            var entry = LocalInstanceStore.Load(InRoot(l.InstancesRoot, Id(tx.InstanceId)), tx.InstanceId);
+            var preset = entry.Presets.Single(p => p.Id == plan.PresetId);
+            var current = Rotation(presetPath, preset);
+            if (current is null || !string.Equals(current.Hash, plan.RotationHash, StringComparison.Ordinal))
+                throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The map pool changed while deployment was prepared. Redeploy to regenerate the map group.");
+            WriteRotation(stage, current);
+        }
+        else if (currentCollection is null)
+            ClearRotation(stage);
         var receipt = new DeploymentReceipt(1, tx.OperationId, "DeployedOffline", lease.Identity.DataId, lease.Identity.LibraryId,
-            plan.InstanceId, plan.PresetId, plan.InstanceRevision, plan.PresetRevision, plan.BuildId, plan.CopyMode, DateTimeOffset.UtcNow, plan.PersistentMappings);
+            plan.InstanceId, plan.PresetId, plan.InstanceRevision, plan.PresetRevision, plan.BuildId, plan.CopyMode, DateTimeOffset.UtcNow, plan.PersistentMappings,
+            plan.RotationGroup, plan.RotationHash, plan.RotationCollection, plan.PluginSetHash);
         DeploymentFiles.AtomicJson(Path.Combine(stage, "deployment.json"), receipt);
         ValidateExisting(lease, tx.InstanceId, stage); cancellationToken.ThrowIfCancellationRequested();
         checkpoint?.Invoke("Prepared");
-        EnsureStopped(plan.RuntimePath); ValidateExisting(lease, tx.InstanceId, plan.RuntimePath);
-        // Ignore cancellation inside the short publication window. Recovery handles process termination between renames.
-        if (Directory.Exists(plan.RuntimePath)) Directory.Move(plan.RuntimePath, previous);
-        checkpoint?.Invoke("PreviousMoved");
-        Directory.Move(stage, plan.RuntimePath); checkpoint?.Invoke("Published");
+        EnsureStopped(plan.RuntimePath); ValidateExisting(lease, tx.InstanceId, plan.RuntimePath, verifyRotation: false);
+        // Persistent addons are backed up and rolled back if publication fails. A crash between the two
+        // renames stays recoverable through the journal and the previous generation.
+        try
+        {
+            pluginChanges.Apply();
+            checkpoint?.Invoke("PluginsApplied");
+        }
+        catch { pluginChanges.Rollback(); throw; }
+        try
+        {
+            // Ignore cancellation inside the short publication window. Recovery handles process termination between renames.
+            if (Directory.Exists(plan.RuntimePath)) Directory.Move(plan.RuntimePath, previous);
+            checkpoint?.Invoke("PreviousMoved");
+            Directory.Move(stage, plan.RuntimePath);
+        }
+        catch { pluginChanges.Rollback(); throw; }
+        pluginChanges.Commit();
+        ValidateExisting(lease, tx.InstanceId, plan.RuntimePath); checkpoint?.Invoke("Published");
         File.Delete(journal); progress?.Report(new("DeployedOffline", done, plan.FileCount)); return receipt;
     }
     private static void Seed(string source, string target, CancellationToken ct)

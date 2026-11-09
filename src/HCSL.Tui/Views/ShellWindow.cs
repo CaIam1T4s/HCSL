@@ -105,7 +105,7 @@ public sealed partial class ShellWindow : Toplevel
             _instanceActions.Add(button);
             _page.Add(button);
         }
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 6; i++)
         {
             var button = new InstanceActionButton
             {
@@ -114,6 +114,11 @@ public sealed partial class ShellWindow : Toplevel
             };
             var actionIndex = i;
             button.Clicked += () => PresetAction(actionIndex);
+            button.PeerRequested += direction =>
+            {
+                var next = (actionIndex + direction + _presetActions.Count) % _presetActions.Count;
+                _presetActions[next].SetFocus();
+            };
             _presetActions.Add(button);
             _page.Add(button);
         }
@@ -126,6 +131,8 @@ public sealed partial class ShellWindow : Toplevel
             _serverActions.Add(button);
             _page.Add(button);
         }
+        InitializeMaps();
+        InitializePlugins();
         _page.Add(_instancesFrame);
         _steamPanel = new SteamCmdPanel(_steamCmd) { X = 1, Y = 0, Visible = false };
         _steamPanel.StateChanged += RefreshHostTitle;
@@ -140,6 +147,9 @@ public sealed partial class ShellWindow : Toplevel
             {
                 case Key.Esc: FocusParent(); break;
                 case Key.F1: ShowHelp(); break;
+                case Key.F2 when _pageId == "logs": _consoleInput.SetFocus(); break;
+                case Key.F3 when _pageId == "logs": ScrollConsoleLog(-1); break;
+                case Key.F4 when _pageId == "logs": ScrollConsoleLog(1); break;
                 case Key.F5: _ = StartSelectedAsync(); break;
                 case Key.F6: Navigate("launch"); ShowUnavailable(); break;
                 case Key.F7: Navigate("presets"); break;
@@ -244,14 +254,19 @@ public sealed partial class ShellWindow : Toplevel
         if (id != "logs") _content.MoveHome();
         _server.SetLogsVisible(id == "logs");
         UpdateLogView();
+        RefreshConsole();
         var language = id == "settings";
         _languageLabel.Visible = _language.Visible = language;
         _instanceButton.Visible = id == "home";
         _content.CanFocus = _content.TabStop = id == "logs";
         foreach (var button in _presetActions) button.Visible = id == "presets";
         foreach (var button in _serverActions) button.Visible = id == "manage";
+        foreach (var button in _mapActions) button.Visible = id == "maps";
+        foreach (var button in _pluginActions) button.Visible = id == "plugins";
+        RefreshMapPage();
+        RefreshPluginPage();
         _updating = false;
-        if (id is "instances" or "presets") _ = RefreshInstancesAsync();
+        if (id is "instances" or "presets" or "maps") _ = RefreshInstancesAsync();
         SetNeedsDisplay();
     }
 
@@ -262,6 +277,8 @@ public sealed partial class ShellWindow : Toplevel
         else if (_pageId == "settings") _language.SetFocus();
         else if (_pageId == "logs") _content.SetFocus();
         else if (_pageId == "home") _instanceButton.SetFocus();
+        else if (_pageId == "maps") { var first = _mapActions.FirstOrDefault(x => x.Enabled); if (first is not null) first.SetFocus(); else _navigation.SetFocus(); }
+        else if (_pageId == "plugins") { var first = _pluginActions.FirstOrDefault(x => x.Enabled); if (first is not null) first.SetFocus(); else _navigation.SetFocus(); }
         else if (_pageId == "manage")
         {
             if (_serverActions.FirstOrDefault(button => button.Enabled) is { } first) first.SetFocus();
@@ -299,8 +316,8 @@ public sealed partial class ShellWindow : Toplevel
         var actions = _options.English ? new[] { "Select", "Create", "Password", "Edit", "Delete" } : ["选择", "创建", "入服密码", "编辑", "删除"];
         for (var i = 0; i < actions.Length; i++) _instanceActions[i].Text = actions[i];
         var presetActions = _options.English
-            ? new[] { "New", "Copy", "Edit", "Delete", "Switch" }
-            : ["新建", "复制", "编辑", "删除", "切换"];
+            ? new[] { "New", "Copy", "Edit", "Delete", "Switch", "CFG" }
+            : ["新建", "复制", "编辑", "删除", "切换", "CFG 管理"];
         for (var i = 0; i < presetActions.Length; i++) _presetActions[i].Text = presetActions[i];
         _languageLabel.Text = T("语言", "Language");
         _language.RadioLabels = _options.English ? ["Chinese", "English"] : ["中文", "英文"];

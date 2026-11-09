@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regression checks for the real CS2 single-instance acceptance harness."""
+import hashlib
 import importlib.util
 import os
 import tempfile
@@ -49,6 +50,19 @@ class Identity(unittest.TestCase):
         self.assertEqual(accept.server_log_path('/data', INSTANCE_ID, RUN_ID),
                          Path('/data/instances', INSTANCE_ID, 'logs',
                               'server-01a1b0a4ae3e7f219f615de4548c1c82.log'))
+
+
+class BaselineMode(unittest.TestCase):
+    def test_current_direct_mode_without_vac_passes(self):
+        self.assertTrue(accept.baseline_mode_matches({'Mode': 'Direct', 'EffectiveVac': False}))
+
+    def test_stale_unknown_or_missing_modes_and_vac_do_not_pass(self):
+        for snapshot in ({'Mode': 'LoopbackLanValidation', 'EffectiveVac': False},
+                         {'Mode': 'Other', 'EffectiveVac': False},
+                         {'Mode': 'Direct', 'EffectiveVac': True},
+                         {'Mode': 'Direct'}, {'EffectiveVac': False}, {}):
+            with self.subTest(snapshot=snapshot):
+                self.assertFalse(accept.baseline_mode_matches(snapshot))
 
 
 class Limits(unittest.TestCase):
@@ -216,6 +230,29 @@ class Declarations(unittest.TestCase):
                                              {'Plugins': []}, {'Rules': []}))
         self.assertTrue(accept.plan_problems(plan(BuildId='1'), install, instance, preset,
                                              {'Plugins': []}, {'Rules': []}))
+
+    def test_rotation_requires_matching_generated_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            target = runtime / 'game' / 'csgo' / 'gamemodes_server.txt'
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b'group content')
+            digest = hashlib.sha256(b'group content').hexdigest().upper()
+            managed_plan = plan(RotationGroup='hcsl_test', RotationHash=digest)
+            managed_receipt = receipt(RotationGroup='hcsl_test', RotationHash=digest)
+            self.assertEqual(accept.rotation_problems(managed_receipt, managed_plan, runtime), [])
+            self.assertEqual(accept.rotation_problems(receipt(), plan(), runtime), [])
+            collection_plan = plan(RotationCollection='3070244462')
+            collection_receipt = receipt(RotationCollection='3070244462')
+            target.unlink()
+            self.assertEqual(accept.rotation_problems(collection_receipt, collection_plan, runtime), [])
+            self.assertTrue(accept.rotation_problems(receipt(RotationCollection='1'), collection_plan, runtime))
+            target.write_bytes(b'group content')
+            self.assertTrue(accept.rotation_problems(collection_receipt, collection_plan, runtime))
+            self.assertTrue(accept.rotation_problems(receipt(RotationGroup='hcsl_test'), managed_plan, runtime))
+            self.assertTrue(accept.rotation_problems(managed_receipt, plan(), runtime))
+            target.write_bytes(b'tampered')
+            self.assertTrue(accept.rotation_problems(managed_receipt, managed_plan, runtime))
 
     def test_receipt_must_be_deployed_offline_with_matching_copy_mode(self):
         install = {'Status': 'Ready', 'BuildId': BUILD_ID}

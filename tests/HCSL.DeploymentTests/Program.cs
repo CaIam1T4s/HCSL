@@ -35,6 +35,8 @@ try
     Source("game/csgo/cfg/server.cfg", "hostname base\n"); Source("game/csgo/cfg/default.cfg", "fixture defaults");
     Source("game/csgo/resource/data.vpk", "fixture resources");
     Source("game/csgo/maps/de_dust2.vpk", "fixture map");
+    Source("game/csgo/maps/de_mirage.vpk", "fixture mirage");
+    Source("game/csgo/maps/de_inferno.vpk", "fixture inferno");
     Source("game/empty-file", "");
     Source("steamapps/appmanifest_730.acf", "\"appid\" \"730\" \"StateFlags\" \"4\" \"buildid\" \"123\"");
     var sdk = Path.Combine(workspace.DataRoot, "steamcmd/tool/linux64/steamclient.so"); Directory.CreateDirectory(Path.GetDirectoryName(sdk)!); File.WriteAllText(sdk, "fixture sdk");
@@ -86,7 +88,7 @@ try
         service.Deploy(workspace, Options(first));
         Check(!File.Exists(Path.Combine(Runtime(first), "game/csgo/addons/plugin.db")), "previous preset database reused");
     });
-    foreach (var phase in new[] { "Journaled", "Cloned", "Prepared", "PreviousMoved", "Published" })
+    foreach (var phase in new[] { "Journaled", "Cloned", "Prepared", "PluginsApplied", "PreviousMoved", "Published" })
         Test("interruption recovery at " + phase, () =>
         {
             var original = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
@@ -161,6 +163,132 @@ try
             service.Recover(workspace, first.Id);
             Check(DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json")).OperationId == oldReceipt.OperationId, "unsupported clone replaced old runtime");
         }
+    });
+    Test("all-standard pool generates only the runtime map group and changes staleness", () =>
+    {
+        var poolStore = new LocalPresetMapPoolStore();
+        var presetId = first.Definition!.SelectedPresetId;
+        MapPoolResult Save(ServerMapTarget[] maps)
+        {
+            var current = poolStore.Execute(workspace, new(MapPoolAction.Read, first.Id, presetId));
+            return poolStore.Execute(workspace, new(MapPoolAction.Save, first.Id, presetId, first.Definition.Revision, current.Pool.Revision, current.Hash, maps));
+        }
+        Save([new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_mirage"), new(ServerMapKind.Standard, "de_inferno")]);
+        var plan = service.Plan(workspace, Options(first));
+        Check(plan.RotationGroup == ServerMapGroupRules.GroupName(presetId) && plan.RotationHash is not null, "Plan omitted the map group.");
+        var receipt = service.Deploy(workspace, Options(first));
+        var rotation = Path.Combine(Runtime(first), "game/csgo/gamemodes_server.txt");
+        Check(receipt.RotationGroup == plan.RotationGroup && receipt.RotationHash == plan.RotationHash, "Receipt omitted the map group.");
+        Check(File.ReadAllText(rotation).Contains("\"de_mirage\"\t\t\"\"", StringComparison.Ordinal), "Generated map group missing pooled maps.");
+        Check(!File.Exists(Path.Combine(server, "game/csgo/gamemodes_server.txt")), "Map group was written into the shared installation.");
+        Save([new(ServerMapKind.Standard, "de_inferno"), new(ServerMapKind.Standard, "de_mirage"), new(ServerMapKind.Standard, "de_dust2")]);
+        var reordered = service.Plan(workspace, Options(first));
+        Check(reordered.RotationHash != plan.RotationHash, "Reordered pool did not invalidate the plan.");
+        receipt = service.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(rotation).IndexOf("de_inferno", StringComparison.Ordinal) < File.ReadAllText(rotation).IndexOf("de_dust2", StringComparison.Ordinal), "Redeploy did not regenerate map group order.");
+        File.WriteAllText(rotation, "tampered");
+        Check(!RuntimeDeploymentService.RotationFileMatches(receipt, Runtime(first)), "Modified map group reported as intact.");
+        service.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(rotation).Contains("de_inferno", StringComparison.Ordinal), "Redeploy did not repair the map group.");
+        Save([new(ServerMapKind.Standard, "de_mirage")]);
+        Reject("HCSL-DEPLOY-ROTATION", () => service.Plan(workspace, Options(first)));
+        Save([new(ServerMapKind.Workshop, "3070244462")]);
+        Check(service.Plan(workspace, Options(first)).RotationGroup is null, "Workshop pool produced a native map group.");
+        service.Deploy(workspace, Options(first));
+        Check(!File.Exists(rotation), "Workshop redeploy retained a native map group.");
+        Save([new(ServerMapKind.WorkshopCollection, "3070244462")]);
+        var collectionPlan = service.Plan(workspace, Options(first));
+        Check(collectionPlan.RotationGroup is null && collectionPlan.RotationCollection == "3070244462", "Collection pool plan is wrong.");
+        var collectionReceipt = service.Deploy(workspace, Options(first));
+        Check(collectionReceipt.RotationCollection == "3070244462" && !File.Exists(rotation), "Collection pool wrote or lost state.");
+        Save([new(ServerMapKind.Standard, "de_dust2")]);
+        var baseRotation = Path.Combine(server, "game/csgo/gamemodes_server.txt");
+        File.WriteAllText(baseRotation, "\"GameModes_Server.txt\"\n{\n}\n");
+        try { Reject("HCSL-DEPLOY-ROTATION", () => service.Plan(workspace, Options(first))); }
+        finally { File.Delete(baseRotation); }
+    });
+    Test("enabled plugin packages overlay the runtime and disabling removes only tracked files", () =>
+    {
+        var presetId = first.Definition!.SelectedPresetId;
+        var plugins = new LocalPluginStore();
+        var pluginFile = Path.Combine(Preset(first), "plugins.json");
+        var initial = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0");
+        Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "metamod"));
+        File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"metamod\",\"Name\":\"Metamod\",\"Version\":\"1.0.0\"}");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "metamod", "metamod.vdf"), "metamod vdf");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "gameinfo.gi"), "patched gameinfo");
+        var saved = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, initial.Hash,
+            [new("metamod", "1.0.0")]));
+        var plan = service.Plan(workspace, Options(first));
+        Check(plan.PluginSetHash is not null, "Plan omitted plugin set hash.");
+        var receipt = service.Deploy(workspace, Options(first));
+        Check(receipt.PluginSetHash == plan.PluginSetHash, "Receipt omitted plugin set hash.");
+        Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")) == "metamod vdf", "Addon package not overlaid.");
+        Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/gameinfo.gi")) == "patched gameinfo", "Runtime gameinfo not overlaid.");
+        Check(File.ReadAllText(Path.Combine(server, "game/csgo/gameinfo.gi")) == "fixture gameinfo", "Shared gameinfo changed.");
+        var ledger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
+        Check(File.Exists(ledger) && File.ReadAllText(ledger).Contains("csgo/addons/metamod/metamod.vdf"), "Plugin ledger missing.");
+        var disabled = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, saved.Hash, []));
+        var disabledPlan = service.Plan(workspace, Options(first));
+        Check(disabledPlan.PluginSetHash is null && disabledPlan.PluginSetHash != plan.PluginSetHash, "Disabling did not change hash.");
+        service.Deploy(workspace, Options(first));
+        Check(!File.Exists(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")), "Disabled package file remained.");
+        Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/gameinfo.gi")) == "fixture gameinfo", "Disabled overlay retained gameinfo.");
+        Check(!File.ReadAllText(ledger).Contains("metamod.vdf"), "Ledger retained removed file.");
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, disabled.Hash, [new("metamod", "1.0.0")]));
+        service.Deploy(workspace, Options(first));
+        File.WriteAllText(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf"), "user modified");
+        var current = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
+        var off = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, current.Hash, []));
+        service.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")) == "user modified", "Modified plugin data was deleted.");
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, off.Hash, []));
+        File.WriteAllText(pluginFile, "{\"FormatVersion\":1,\"Revision\":1,\"Plugins\":[{\"Id\":\"metamod\",\"Version\":\"1.0.0\",\"Enabled\":true}]}");
+        File.Delete(Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0", "plugin.json"));
+        Reject("HCSL-DEPLOY-PLUGINS", () => service.Plan(workspace, Options(first)));
+    });
+    Test("failed plugin application restores preset addons and ledger", () =>
+    {
+        var presetId = first.Definition!.SelectedPresetId;
+        var plugins = new LocalPluginStore();
+        var current = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
+        var empty = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, current.Hash, []));
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "rollback", "1.0.0");
+        Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "rollback"));
+        File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"rollback\",\"Name\":\"Rollback\",\"Version\":\"1.0.0\"}");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "rollback", "rollback.vdf"), "package content");
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, empty.Hash, [new("rollback", "1.0.0")]));
+        var addon = Path.Combine(Preset(first), "addons", "rollback", "rollback.vdf");
+        Directory.CreateDirectory(Path.GetDirectoryName(addon)!); File.WriteAllText(addon, "preexisting user file");
+        var ledger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
+        var beforeLedger = File.Exists(ledger) ? File.ReadAllText(ledger) : null;
+        var before = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+        var failing = new RuntimeDeploymentService(baseline, p => { if (p == "PluginsApplied") throw new IOException("injected publication failure"); });
+        try { failing.Deploy(workspace, Options(first)); throw new Exception("injection not reached"); } catch (IOException) { }
+        Check(File.ReadAllText(addon) == "preexisting user file", "Failed deploy did not restore the preset addon file.");
+        Check(beforeLedger is null ? !File.Exists(ledger) : File.ReadAllText(ledger) == beforeLedger, "Failed deploy changed the plugin ledger.");
+        Check(!Directory.EnumerateDirectories(Preset(first), ".hcsl-plugin-backup-*").Any(), "Failed deploy left a backup directory.");
+        var after = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+        Check(after.OperationId == before.OperationId, "Failed plugin publication replaced the runtime.");
+        service.Recover(workspace, first.Id);
+        Check(!File.Exists(Journal(first)), "Recovery did not finish after the plugin failure.");
+    });
+    Test("plugin packages cannot write reserved or mapped paths", () =>
+    {
+        var presetId = first.Definition!.SelectedPresetId;
+        var plugins = new LocalPluginStore();
+        var current = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
+        var empty = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, current.Hash, []));
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "reserved", "1.0.0");
+        Directory.CreateDirectory(Path.Combine(package, "files", "csgo"));
+        File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"reserved\",\"Name\":\"Reserved\",\"Version\":\"1.0.0\"}");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "cfg"), "not a directory");
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, empty.Hash, [new("reserved", "1.0.0")]));
+        Reject("HCSL-DEPLOY-PLUGINS", () => service.Deploy(workspace, Options(first)));
+        service.Recover(workspace, first.Id);
+        var reset = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, reset.Hash, []));
     });
     Test("workspace lease excludes deploy and source remains byte-identical", () =>
     {

@@ -11,6 +11,6 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
     <PackageReference Include="TKCode.Arc" Version="0.4.0-preview.1" />
   </ItemGroup>
-  <ItemGroup><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /><ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../HCSL.Infrastructure/HCSL.Infrastructure.csproj" /><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /><ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" /></ItemGroup>
   <Import Project="../../build/DaemonPayload.targets" />
 </Project>
