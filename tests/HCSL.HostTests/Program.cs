@@ -128,6 +128,28 @@ Layout();
 Check(evictionScroll.Offset.Y > 100, "End inside the real Arc editor must resume following.");
 evictionLog.Close();
 Console.WriteLine("PASS gui.logs.live-append-anchor-eviction-notice-and-jump-latest");
+// Regression: the log stream updates faster than layout, so each projection must re-assert the
+// bottom after layout instead of inferring "reader scrolled away" from a growing Extent.
+var burstLog = new ServerLogWindow(model, owner); burstLog.Show(owner); Layout();
+var burstArea = burstLog.GetVisualDescendants().OfType<Textarea>().Single();
+var burstScroll = burstArea.GetVisualDescendants().OfType<ScrollViewer>().Single();
+Check(Math.Abs(burstScroll.Offset.Y - (burstScroll.Extent.Height - burstScroll.Viewport.Height)) < 3, "Log must start following at bottom.");
+for (var burst = 0; burst < 12; burst++)
+{
+    daemon.LastLogSequence += 37;
+    PumpUntil(server.RefreshLogsAsync()); Layout();
+}
+Dispatcher.UIThread.RunJobs(); Layout();
+Check(Math.Abs(burstScroll.Offset.Y - (burstScroll.Extent.Height - burstScroll.Viewport.Height)) < 3, "Rapid appends must keep following the newest line.");
+// A real reader scroll must still pause following and keep the reading position.
+burstScroll.Offset = new Vector(0, 10); Layout();
+daemon.LastLogSequence += 60;
+PumpUntil(server.RefreshLogsAsync()); Layout();
+Check(burstScroll.Offset.Y < 40, "Reader scroll must pause following.");
+Click(burstLog, "跳到最新"); Layout();
+Check(Math.Abs(burstScroll.Offset.Y - (burstScroll.Extent.Height - burstScroll.Viewport.Height)) < 3, "Jump latest must resume following.");
+burstLog.Close();
+Console.WriteLine("PASS gui.logs.rapid-appends-keep-following-and-reader-scroll-pauses");
 var downloads = new HCSL.Host.Views.Pages.DownloadsPage { DataContext = owner.DataContext };
 var downloadWindow = new Window { Width = 900, Height = 700, Content = downloads };
 downloadWindow.Show(owner);

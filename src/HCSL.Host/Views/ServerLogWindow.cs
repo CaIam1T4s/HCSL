@@ -23,7 +23,7 @@ public sealed class ServerLogWindow : Window
         IsResizable = false, FrameMinHeight = 0, MinHeight = 0, ClipToBounds = true
     };
     private readonly TKCode.Arc.Button follow = new() { Content = "暂停跟随", Variant = TKCode.Arc.ButtonVariant.Secondary };
-    private bool following = true, closed, projecting;
+    private bool following = true, closed, projecting, updateQueued;
     private ScrollViewer? scroll;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
     private readonly ConsoleLogViewport reading = new();
@@ -68,10 +68,14 @@ public sealed class ServerLogWindow : Window
         Opened += (_, _) =>
         {
             scroll = text.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
-            if (scroll is not null) scroll.ScrollChanged += (_, _) =>
+            if (scroll is not null) scroll.ScrollChanged += (_, e) =>
             {
-                if (projecting) return;
-                following = scroll.Offset.Y >= Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height) - 1;
+                if (closed || projecting) return;
+                // Content growth changes Extent only. Treating that as "the reader scrolled away"
+                // is what stopped following during fast output; only an offset/viewport change is intent.
+                if (e.ExtentDelta.Y != 0) return;
+                if (e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
+                following = IsAtBottom(scroll);
                 if (following) reading.Reset();
             };
             Update();
@@ -128,8 +132,27 @@ public sealed class ServerLogWindow : Window
     private void JumpLatest()
     {
         following = true; reading.Reset();
-        if (scroll is not null) scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+        ApplyBottom();
+        Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Loaded);
         Update();
+    }
+    private static bool IsAtBottom(ScrollViewer viewer) =>
+        viewer.Offset.Y >= Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height) - 1;
+    /// <summary>Programmatic scroll to the end; ScrollChanged must not read this as user intent.</summary>
+    private void ApplyBottom()
+    {
+        if (scroll is null) return;
+        var wasProjecting = projecting;
+        projecting = true;
+        try { scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height)); }
+        finally { projecting = wasProjecting; }
+    }
+    private void ScheduleUpdate()
+    {
+        if (updateQueued) return;
+        updateQueued = true;
+        // Coalesce bursts: a fast log stream must not queue one full rebuild per line.
+        Dispatcher.UIThread.Post(() => { updateQueued = false; if (!closed) Update(); }, DispatcherPriority.Background);
     }
     private void OwnerClosed(object? sender, EventArgs e) => Close();
     private void PromptChanged(bool visible)
@@ -148,7 +171,7 @@ public sealed class ServerLogWindow : Window
             Show(); // Restore the existing owner relationship after Hide().
         }
     }
-    private void Changed(object? sender, PropertyChangedEventArgs e) { if (!closed) Update(); }
+    private void Changed(object? sender, PropertyChangedEventArgs e) { if (!closed) ScheduleUpdate(); }
     private void Update()
     {
         summary.Text = model.Header;
@@ -163,24 +186,34 @@ public sealed class ServerLogWindow : Window
         var nextRows = model.Server.ConsoleRows;
         var next = string.Join(Environment.NewLine, nextRows.Select(r => r.Text));
         if (text.Text == next && rows.Select(r => r.Id).SequenceEqual(nextRows.Select(r => r.Id))) return;
-        var height = scroll is null || rows.Count == 0 ? 1 : scroll.Extent.Height / rows.Count;
-        var position = scroll is null ? 0 : scroll.Offset.Y / Math.Max(1, height);
-        if (!following) reading.Capture(rows, (int)position);
-        rows = nextRows;
-        var restored = following ? 0 : reading.Restore(rows);
-        if (reading.ReadingPositionLost) history.Text = "较早日志已移出缓冲区；已定位最早保留记录。可跳到最新。";
+        var wasFollowing = following;
+        double position = 0;
+        if (!wasFollowing && scroll is not null && rows.Count > 0)
+        {
+            var rowHeight = Math.Max(1, scroll.Extent.Height / rows.Count);
+            position = scroll.Offset.Y / rowHeight;
+            reading.Capture(rows, (int)Math.Round(position));
+        }
         projecting = true;
-        text.Text = next;
+        try { text.Text = next; }
+        finally { projecting = false; }
+        rows = nextRows;
+        if (wasFollowing)
+        {
+            // Extent is stale until the new text is measured: apply now, then again after layout.
+            ApplyBottom();
+            Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Background);
+            return;
+        }
+        var restored = reading.Restore(rows);
+        if (reading.ReadingPositionLost) history.Text = "较早日志已移出缓冲区；已定位最早保留记录。可跳到最新。";
         Dispatcher.UIThread.Post(() =>
         {
-            try
-            {
-                if (closed || scroll is null) return;
-                var h = rows.Count == 0 ? 1 : scroll.Extent.Height / rows.Count;
-                scroll.Offset = new Vector(scroll.Offset.X, following ? Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height)
-                    : Math.Max(0, (restored + (reading.ReadingPositionLost ? 0 : position % 1)) * h));
-            }
-            finally { projecting = false; }
+            if (closed || scroll is null || following) return;
+            var rowHeight = rows.Count == 0 ? 1 : scroll.Extent.Height / rows.Count;
+            var target = (restored + (reading.ReadingPositionLost ? 0 : position % 1)) * rowHeight;
+            scroll.Offset = new Vector(scroll.Offset.X, Math.Max(0, Math.Min(target, Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height))));
         }, DispatcherPriority.Loaded);
     }
 }
