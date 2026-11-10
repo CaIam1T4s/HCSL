@@ -57,7 +57,8 @@ public static class DevFormat
 
     public static string Plugins(PluginResult result)
     {
-        var lines = new List<string> { "available  " + result.Available.Length + " package version(s)" };
+        var total = result.AvailableTotal > result.Available.Length ? result.AvailableTotal : result.Available.Length;
+        var lines = new List<string> { "available  " + result.Available.Length + (total > result.Available.Length ? " of " + total : "") + " package version(s)" };
         lines.AddRange(result.Available.Select(a =>
             "  " + a.Id + " " + a.Version + "  " + a.Name + "  " + a.Files + " files " + Bytes(a.Bytes)));
         lines.Add("selected   " + result.Selected.Length);

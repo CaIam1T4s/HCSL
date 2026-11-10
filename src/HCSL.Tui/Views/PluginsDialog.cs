@@ -26,6 +26,8 @@ public sealed class PluginsDialog : Dialog
         AddAction(T("添加", "Add"), Add);
         AddAction(T("移除", "Remove"), () => Edit(() => { draft.Remove(list.SelectedItem); Refresh(); }));
         AddAction(T("启用/禁用", "Toggle"), () => Edit(() => { draft.Toggle(list.SelectedItem); Refresh(list.SelectedItem); }));
+        AddAction(T("上移", "Up"), () => Edit(() => Refresh(draft.Move(list.SelectedItem, -1))));
+        AddAction(T("下移", "Down"), () => Edit(() => Refresh(draft.Move(list.SelectedItem, 1))));
         AddAction(T("保存", "Save"), Save);
         AddAction(T("重读", "Reload"), () => { if (Discard()) Reload(); });
         AddAction(T("关闭", "Close"), Close);

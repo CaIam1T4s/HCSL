@@ -64,11 +64,11 @@ public partial class MainWindow
             try { await Load(); } catch (Exception e) { status.Text = e.Message; }
             while (!windowClosed)
             {
-                var choice = await ShowOverlayAsync(content, ["关闭", "添加插件", "移除", "启用/禁用", "保存清单", "重新读取"]);
+                var choice = await ShowOverlayAsync(content, ["关闭", "添加插件", "移除", "启用/禁用", "上移", "下移", "保存清单", "重新读取"]);
                 if (choice <= 0) { if (windowClosed || await Discard()) break; else continue; }
                 try
                 {
-                    if (choice == 5) { if (await Discard()) await Load(); continue; }
+                    if (choice == 7) { if (await Discard()) await Load(); continue; }
                     if (!model.CanEditPlugins)
                         throw new IOException("HCSL-PLUGIN-BUSY: 请先停服并完成恢复/工具任务。");
                     var index = list.SelectedIndex;
@@ -77,7 +77,9 @@ public partial class MainWindow
                         case 1: await AddPlugin(); break;
                         case 2: draft.Remove(index); Refresh(index); status.Text = "已从草稿移除；保存后生效。"; break;
                         case 3: draft.Toggle(index); Refresh(index); status.Text = "已切换启用状态草稿；保存后生效。"; break;
-                        case 4:
+                        case 4: Refresh(draft.Move(index, -1)); status.Text = "已上移草稿；数组顺序即部署顺序。"; break;
+                        case 5: Refresh(draft.Move(index, 1)); status.Text = "已下移草稿；数组顺序即部署顺序。"; break;
+                        case 6:
                             draft.Load(await model.PluginsAsync(draft.SaveCommand(instance.Id, preset.Id, instance.Revision)));
                             Refresh(index); status.Text = "插件清单已保存；下次部署/启动会应用，未自动部署。"; break;
                     }

@@ -227,8 +227,13 @@ try
         Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")) == "metamod vdf", "Addon package not overlaid.");
         Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/gameinfo.gi")) == "patched gameinfo", "Runtime gameinfo not overlaid.");
         Check(File.ReadAllText(Path.Combine(server, "game/csgo/gameinfo.gi")) == "fixture gameinfo", "Shared gameinfo changed.");
-        var ledger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
+        var ledger = Path.Combine(Preset(first), ".hcsl-plugin-ledger.json");
         Check(File.Exists(ledger) && File.ReadAllText(ledger).Contains("csgo/addons/metamod/metamod.vdf"), "Plugin ledger missing.");
+        // A ledger left inside addons by an older build is migrated out of the game-visible tree.
+        var legacyLedger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
+        File.Copy(ledger, legacyLedger, true);
+        service.Deploy(workspace, Options(first));
+        Check(!File.Exists(legacyLedger) && File.Exists(ledger), "Legacy ledger was not migrated out of addons.");
         var disabled = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, saved.Hash, []));
         var disabledPlan = service.Plan(workspace, Options(first));
         Check(disabledPlan.PluginSetHash is null && disabledPlan.PluginSetHash != plan.PluginSetHash, "Disabling did not change hash.");
@@ -261,7 +266,7 @@ try
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, empty.Hash, [new("rollback", "1.0.0")]));
         var addon = Path.Combine(Preset(first), "addons", "rollback", "rollback.vdf");
         Directory.CreateDirectory(Path.GetDirectoryName(addon)!); File.WriteAllText(addon, "preexisting user file");
-        var ledger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
+        var ledger = Path.Combine(Preset(first), ".hcsl-plugin-ledger.json");
         var beforeLedger = File.Exists(ledger) ? File.ReadAllText(ledger) : null;
         var before = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
         var failing = new RuntimeDeploymentService(baseline, p => { if (p == "PluginsApplied") throw new IOException("injected publication failure"); });

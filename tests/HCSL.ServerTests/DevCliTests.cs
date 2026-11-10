@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HCSL.Contracts;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -41,13 +42,14 @@ public static class DevCliTests
 
         var deploy = DevCommandLine.Parse(["deploy", "--dry-run", "--explain"]);
         Check(deploy.Has("--dry-run") && deploy.Has("--explain"), "deploy flags lost.");
+        Check(DevCommandLine.Parse(["deploy", "--recover"]).Has("--recover"), "deploy --recover flag lost.");
         var start = DevCommandLine.Parse(["start", "--wait", "--allow-low-memory"]);
         Check(start.Has("--wait") && start.Has("--allow-low-memory"), "start flags lost.");
         // Every flag the usage text advertises must parse; regression for --wait being documented but rejected.
         foreach (var flag in new[] { "--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable" })
             Check(DevCommandLine.Parse(["doctor", flag]).Has(flag), "documented flag rejected: " + flag);
 
-        Check(DevHints.For("HCSL-DEPLOY-RECOVERY")!.Contains("hcsl recover"), "recovery hint missing.");
+        Check(DevHints.For("HCSL-DEPLOY-RECOVERY")!.Contains("deploy --recover"), "recovery hint missing.");
         Check(DevHints.For("HCSL-CONSOLE-STATE")!.Contains("hcsl start"), "console hint missing.");
         Check(DevHints.For("HCSL-DEPLOY-PLUGINS")!.Contains("hcsl doctor"), "plugin deploy hint missing.");
 
@@ -89,6 +91,24 @@ public static class DevCliTests
         var pluginText = DevFormat.Plugins(result);
         Check(pluginText.Contains("metamod") && pluginText.Contains("rejected   1") && pluginText.Contains("HCSL-PLUGIN-PACKAGE"), "plugin projection lost fields.");
         Check(DevFormat.ExplainPlugins(result).Contains("1 enabled"), "plugin explain summary wrong.");
+
+        // Ordered plugin draft: array order is load order, so Move must swap and SaveCommand must keep it.
+        var draft = new PluginDraft();
+        draft.Load(new PluginResult(
+            [new("alpha", "Alpha", "1.0.0", "hash", 1, 1), new("beta", "Beta", "1.0.0", "hash", 1, 1), new("gamma", "Gamma", "1.0.0", "hash", 1, 1)],
+            [new("alpha", "Alpha", "1.0.0", true, true), new("beta", "Beta", "1.0.0", true, true), new("gamma", "Gamma", "1.0.0", true, true)],
+            1, "manifest"));
+        Check(draft.Move(0, 1) == 1 && draft.Plugins.Select(p => p.Id).SequenceEqual(["beta", "alpha", "gamma"]), "move down did not swap.");
+        Check(draft.Move(2, 1) == 2, "move past the end must clamp.");
+        var command = draft.SaveCommand(Guid.NewGuid(), Guid.NewGuid(), 1);
+        Check(command.Plugins!.Select(p => p.Id).SequenceEqual(["beta", "alpha", "gamma"]), "draft order lost in SaveCommand.");
+
+        // IPC-safe projections: package hashes are not serialized and truncation reports the total.
+        Check(!JsonSerializer.Serialize(new PluginPackageInfo("alpha", "Alpha", "1.0.0", "deadbeef", 1, 1)).Contains("Hash", StringComparison.Ordinal),
+            "package hash must not be serialized into the list response.");
+        var truncated = new PluginResult([new("alpha", "Alpha", "1.0.0", "hash", 1, 1)],
+            [new("alpha", "Alpha", "1.0.0", true, true)], 1, "manifest", null, 7);
+        Check(DevFormat.Plugins(truncated).Contains("1 of 7", StringComparison.Ordinal), "truncated catalog total missing.");
 
         // Instance/preset selectors: UUID, exact name, unique prefix; ambiguous selections list candidates.
         var presetA = new PresetDefinition(1, Guid.NewGuid(), 1, "Default");

@@ -48,7 +48,8 @@ public sealed partial class ShellWindow
     private static string PluginKey(Guid instanceId, Guid presetId) => instanceId.ToString("D") + "/" + presetId.ToString("D");
     private string DescribePlugins(PluginResult result)
     {
-        var text = T("已刷新：可用 ", "Refreshed: available ") + result.Available.Length
+        var total = result.AvailableTotal > result.Available.Length ? " / " + result.AvailableTotal : "";
+        var text = T("已刷新：可用 ", "Refreshed: available ") + result.Available.Length + total
             + T(" 个包版本，清单启用 ", " package versions, enabled ") + result.Selected.Count(p => p.Enabled) + T(" 个。", ".");
         if (result.Rejected is { Length: > 0 } rejected)
             text += "\n" + T("被拒绝的包 ", "Rejected ") + rejected.Length + ": "

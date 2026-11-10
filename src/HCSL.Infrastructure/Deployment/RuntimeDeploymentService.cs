@@ -374,8 +374,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         {
             var addons = InRoot(presetPath, "addons"); LocalPaths.RejectLink(addons);
             if (!Directory.Exists(addons)) throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Preset addons directory is missing.");
-            var ledgerPath = InRoot(addons, ".hcsl-plugin-ledger.json");
-            var old = ReadPluginLedger(ledgerPath);
+            // The ledger lives beside the preset, not inside the addons directory that the game sees.
+            var ledgerPath = InRoot(presetPath, ".hcsl-plugin-ledger.json");
+            var legacyLedger = InRoot(addons, ".hcsl-plugin-ledger.json");
+            var old = ReadPluginLedger(File.Exists(ledgerPath) ? ledgerPath : legacyLedger);
             var writes = new List<PluginAddonFile>();
             var installed = new List<PluginLedgerEntry>();
             // Windows compares paths case-insensitively; the ledger and reserved roots must follow the same rule.
@@ -415,6 +417,15 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         catch (DeploymentException) { throw; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException or InvalidDataException or NotSupportedException)
         { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin files could not be prepared; no persistent plugin file was changed."); }
+    }
+    private static void DeleteLegacyPluginLedger(string presetPath)
+    {
+        try
+        {
+            var legacy = InRoot(presetPath, "addons/.hcsl-plugin-ledger.json");
+            if (File.Exists(legacy) && File.Exists(InRoot(presetPath, ".hcsl-plugin-ledger.json"))) File.Delete(legacy);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or DeploymentException) { }
     }
     private static void ClearRotation(string stage)
     {
@@ -642,6 +653,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         }
         catch { pluginChanges.Rollback(); throw; }
         pluginChanges.Commit();
+        DeleteLegacyPluginLedger(presetPath);
         ValidateExisting(lease, tx.InstanceId, plan.RuntimePath); checkpoint?.Invoke("Published");
         File.Delete(journal); progress?.Report(new("DeployedOffline", done, plan.FileCount)); return receipt;
     }

@@ -28,6 +28,15 @@ public sealed class PluginDraft
     }
     public void Remove(int index) { if (index >= 0 && index < plugins.Count) plugins.RemoveAt(index); }
     public void Toggle(int index) { if (index >= 0 && index < plugins.Count) plugins[index] = plugins[index] with { Enabled = !plugins[index].Enabled }; }
+    /// <summary>Swap one step within the manifest; array order is deployment/load order.</summary>
+    public int Move(int index, int delta)
+    {
+        if (plugins.Count < 2 || index < 0 || index >= plugins.Count) return Math.Max(0, index);
+        var target = Math.Clamp(index + delta, 0, plugins.Count - 1);
+        if (target == index) return index;
+        (plugins[index], plugins[target]) = (plugins[target], plugins[index]);
+        return target;
+    }
     public PluginCommand SaveCommand(Guid instanceId, Guid presetId, long instanceRevision)
     {
         if (Loaded is null) throw new IOException("HCSL-PLUGIN-NOT-LOADED: Reload before saving.");

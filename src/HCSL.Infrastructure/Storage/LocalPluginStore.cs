@@ -82,14 +82,15 @@ public sealed class LocalPluginStore : IPluginStore
         var file = SafePath(Path.Combine(preset, "plugins.json"));
         var (manifest, hash) = ReadManifest(file);
         var (available, rejected) = Catalog(packagesRoot);
-        var listed = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
-        if (c.Action == PluginAction.List) return Result(manifest, hash, listed, rejected);
+        var ordered = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
+        var listed = ordered.Length > PluginRules.MaxListedPackages ? ordered[..PluginRules.MaxListedPackages] : ordered;
+        if (c.Action == PluginAction.List) return Result(manifest, hash, listed, rejected, ordered.Length);
         if (entry.Definition.Revision != c.InstanceRevision)
             throw new InstanceException("HCSL-INSTANCE-STALE", "Instance revision changed. Refresh before editing plugins.");
         PluginRules.Validate(c.Plugins);
         var next = c.Plugins ?? [];
         foreach (var plugin in next.Where(p => p.Enabled))
-            if (!listed.Any(p => p.Id == plugin.Id && p.Version == plugin.Version))
+            if (!ordered.Any(p => p.Id == plugin.Id && p.Version == plugin.Version))
                 throw new InstanceException("HCSL-PLUGIN-PACKAGE", "An enabled plugin package is not available in this library.");
         var current = File.Exists(file) ? Hash(file) : null;
         if (!string.Equals(current, c.ExpectedHash, StringComparison.Ordinal))
@@ -97,10 +98,10 @@ public sealed class LocalPluginStore : IPluginStore
         var saved = new PluginManifest(1, manifest.Revision + 1, next);
         Write(file, saved);
         var (written, writtenHash) = ReadManifest(file);
-        return Result(written, writtenHash, listed, rejected);
+        return Result(written, writtenHash, listed, rejected, ordered.Length);
     }
 
-    private static PluginResult Result(PluginManifest manifest, string hash, PluginPackageInfo[] available, PluginPackageRejection[] rejected)
+    private static PluginResult Result(PluginManifest manifest, string hash, PluginPackageInfo[] available, PluginPackageRejection[] rejected, int total)
     {
         var selected = manifest.Plugins.Select(p =>
         {
@@ -108,7 +109,7 @@ public sealed class LocalPluginStore : IPluginStore
             return new PluginSelectionInfo(p.Id, package?.Name, p.Version, p.Enabled, package is not null,
                 package is null ? "HCSL-PLUGIN-PACKAGE" : null);
         }).ToArray();
-        return new(available, selected, manifest.Revision, hash, rejected);
+        return new(available, selected, manifest.Revision, hash, rejected, total);
     }
 
     internal static PluginManifest ReadManifestForDeployment(string file) => ReadManifest(file).Manifest;

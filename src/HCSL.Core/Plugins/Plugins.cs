@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace HCSL.Core;
@@ -17,7 +18,7 @@ public sealed record PluginCommand(PluginAction Action, Guid InstanceId, Guid Pr
 public sealed record PluginManifest(int FormatVersion, long Revision, PluginSelection[] Plugins);
 
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
-public sealed record PluginPackageInfo(string Id, string Name, string Version, string Hash, int Files, long Bytes);
+public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes);
 
 /// <summary>Selected entry joined with package availability. Never contains file contents.</summary>
 public sealed record PluginSelectionInfo(string Id, string? Name, string Version, bool Enabled, bool Available, string? Error = null);
@@ -26,7 +27,7 @@ public sealed record PluginSelectionInfo(string Id, string? Name, string Version
 public sealed record PluginPackageRejection(string Id, string Version, string Code);
 
 public sealed record PluginResult(PluginPackageInfo[] Available, PluginSelectionInfo[] Selected, long Revision, string Hash,
-    PluginPackageRejection[]? Rejected = null);
+    PluginPackageRejection[]? Rejected = null, int AvailableTotal = 0);
 
 public static class PluginRules
 {
@@ -34,6 +35,8 @@ public static class PluginRules
     public const int MaxPackageFiles = 4096;
     public const long MaxPackageBytes = 512L * 1024 * 1024;
     public const int MaxManifestBytes = 1024 * 1024;
+    /// <summary>Upper bound for one List response; the UI reports the total when more versions exist.</summary>
+    public const int MaxListedPackages = 256;
     private static readonly Regex IdPattern = new(@"\A[a-z0-9][a-z0-9._-]{0,63}\z", RegexOptions.CultureInvariant);
     private static readonly Regex VersionPattern = new(@"\A[A-Za-z0-9][A-Za-z0-9._+-]{0,63}\z", RegexOptions.CultureInvariant);
 
