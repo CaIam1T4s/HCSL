@@ -22,6 +22,7 @@ public static class DevHints
         "HCSL-SERVER-STALE" => "The deployment is stale: `hcsl deploy` (or confirm redeploy-and-start in the UI).",
         "HCSL-SERVER-DEPLOYMENT" => "No current deployment: `hcsl deploy` first.",
         "HCSL-SERVER-BUSY" => "A server task is already running: `hcsl status`.",
+        "HCSL-SERVER-RECOVERY" => "A server run is active or unrecovered: stop it with `hcsl stop`; if no run is active, recover the previous session in the GUI/TUI (or `HCSL.ServerCheck --recover --instance <UUID>`).",
         "HCSL-SERVER-MEMORY" or "HCSL-SERVER-LOW-MEMORY" => "Free memory, or pass --allow-low-memory to start.",
         "HCSL-CONSOLE-STATE" => "The server is not Starting/LoadingMap/Running. Start it (`hcsl start --wait`) and retry.",
         "HCSL-CONSOLE-STALE" => "The run changed: `hcsl status` and retry against the new RunId.",
