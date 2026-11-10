@@ -194,7 +194,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var packages = new List<LocalPluginStore.Package>();
             foreach (var plugin in manifest.Plugins.Where(p => p.Enabled))
                 packages.Add(LocalPluginStore.LoadPackage(Path.Combine(libraryRoot, "plugin-packages"), plugin.Id, plugin.Version));
-            FrameworkRules.ValidateSelections(packages.Select(p => new FrameworkRules.SelectedFramework(p.Id, p.Framework)));
+            FrameworkRules.ValidateSelections(packages.Select(p => new FrameworkRules.SelectedFramework(p.Id, p.Framework, p.FrameworkPayload)));
             using var sha = SHA256.Create();
             foreach (var package in packages)
             {

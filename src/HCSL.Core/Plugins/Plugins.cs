@@ -34,7 +34,7 @@ public sealed record PluginImportResult(string PackagePath, string Id, string Ve
 
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
 public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes,
-    string? Framework = null);
+    string? Framework = null, bool FrameworkPayload = false);
 
 /// <summary>Selected entry joined with package availability. Never contains file contents.</summary>
 public sealed record PluginSelectionInfo(string Id, string? Name, string Version, bool Enabled, bool Available, string? Error = null);

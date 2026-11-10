@@ -85,7 +85,7 @@ public static class PluginTests
                 File.WriteAllText(Path.Combine(dir, "files", relative), "binary");
             }
             FrameworkPackage("counterstrikesharp", "1.0.0", "csgo/addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so");
-            FrameworkPackage("source2mod", "1.0.0", "csgo/addons/source2mod/plugins/sp_sample.smx");
+            FrameworkPackage("source2mod", "1.0.0", "csgo/addons/source2mod/bin/linuxsteamrt64/source2mod.so");
             FrameworkPackage("matchzy", "0.9.2", "csgo/addons/counterstrikesharp/plugins/MatchZy/MatchZy.dll");
             var gateRevision = instances.Execute(workspace, new(InstanceAction.List)).Instances.Single(x => x.Id == d.Id).Definition!.Revision;
             var gateBase = store.Execute(workspace, Read());

@@ -208,9 +208,11 @@ public sealed class LocalPluginImporter : IPluginImporter
 
         var manifest = ReadPackagedManifest(root);
         var id = forcedId ?? manifest?.Id ?? DetectId(files, hint);
-        var name = fallbackName ?? manifest?.Name ?? DetectName(id, hint);
+        var name = fallbackName ?? manifest?.Name ?? DetectName(id, files, hint);
         var version = forcedVersion ?? manifest?.Version ?? DetectVersion(hint) ?? DetectVersionFromBinaries(files) ?? "1.0.0";
         var metaPlugin = DetectMetaPlugin(files);
+        if (FrameworkRules.Find(id) is not null && !FrameworkRules.IsFrameworkPayload(id, files.Select(f => f.RelativePath)))
+            warnings.Add("This package is a sub-plugin, not the " + id + " framework loader; importing it as '" + id + "' would replace the framework selection.");
         WarnWrongSourceModBuild(files, warnings);
         WarnMissingMetaBinary(files, metaPlugin, warnings);
         return new(files, id, name, version, metaPlugin, cfgFiles);
@@ -273,7 +275,23 @@ public sealed class LocalPluginImporter : IPluginImporter
             ("csgo/addons/metamod/", "metamod")
         })
             if (files.Any(f => f.RelativePath.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return id;
-        var addons = files.Select(f => f.RelativePath)
+        var paths = files.Select(f => f.RelativePath).ToArray();
+        if (paths.Any(p => p.StartsWith("csgo/addons/counterstrikesharp/", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (FrameworkRules.IsFrameworkPayload("counterstrikesharp", paths)) return "counterstrikesharp";
+            var folder = paths.Select(p => p.StartsWith("csgo/addons/counterstrikesharp/plugins/", StringComparison.OrdinalIgnoreCase)
+                    ? p["csgo/addons/counterstrikesharp/plugins/".Length..].Split('/')[0] : null)
+                .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+            if (folder is not null) return Sanitize(folder);
+        }
+        if (paths.Any(p => p.StartsWith("csgo/addons/source2mod/", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (FrameworkRules.IsFrameworkPayload("source2mod", paths)) return "source2mod";
+            var smx = paths.FirstOrDefault(p => p.StartsWith("csgo/addons/source2mod/plugins/", StringComparison.OrdinalIgnoreCase)
+                && p.EndsWith(".smx", StringComparison.OrdinalIgnoreCase));
+            if (smx is not null) return Sanitize(Path.GetFileNameWithoutExtension(smx));
+        }
+        var addons = paths
             .Where(p => p.StartsWith("csgo/addons/", StringComparison.OrdinalIgnoreCase))
             .Select(p => p["csgo/addons/".Length..].Split('/')[0])
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -281,13 +299,37 @@ public sealed class LocalPluginImporter : IPluginImporter
         return Sanitize(candidate);
     }
 
-    private static string DetectName(string id, string hint) => id switch
+    private static string DetectName(string id, List<SourceFile> files, string hint)
     {
-        "source2mod" => "Source2Mod",
-        "sourcemod" => "SourceMod",
-        "metamod" => "Metamod:Source",
-        _ => hint is { Length: > 0 } ? hint : "Plugin"
-    };
+        if (id is "source2mod" or "sourcemod" or "metamod")
+            return id switch { "source2mod" => "Source2Mod", "sourcemod" => "SourceMod", _ => "Metamod:Source" };
+        var plugin = SubPluginName(files, id);
+        if (plugin is not null) return plugin;
+        return hint is { Length: > 0 } ? hint : "Plugin";
+    }
+
+    /// <summary>Original display name of a sub-plugin folder/file (MatchZy, sp_sample).</summary>
+    private static string? SubPluginName(List<SourceFile> files, string id)
+    {
+        foreach (var file in files)
+        {
+            var path = file.RelativePath;
+            var marker = "csgo/addons/counterstrikesharp/plugins/";
+            if (path.StartsWith(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                var rest = path[marker.Length..];
+                var name = rest.Split('/')[0];
+                if (Sanitize(name) == id) return name;
+            }
+            var s2m = "csgo/addons/source2mod/plugins/";
+            if (path.StartsWith(s2m, StringComparison.OrdinalIgnoreCase) && path.EndsWith(".smx", StringComparison.OrdinalIgnoreCase))
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                if (Sanitize(name) == id) return name;
+            }
+        }
+        return null;
+    }
 
     private static string? DetectVersion(string hint)
     {

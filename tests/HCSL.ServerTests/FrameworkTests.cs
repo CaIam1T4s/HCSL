@@ -49,10 +49,10 @@ public static class FrameworkTests
         Check(FrameworkRules.Resolve(["csgo/addons/source2mod/plugins/sp_sample.smx", "csgo/addons/metamod/source2mod.vdf"]) == "source2mod",
             "Source2Mod resolved incorrectly.");
         Check(FrameworkRules.Resolve(["csgo/addons/cs2fixes/bin/linuxsteamrt64/cs2fixes.so"]) is null, "Native plugin was assigned a framework.");
-        FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("counterstrikesharp", "counterstrikesharp"), new("matchzy", "counterstrikesharp")]);
+        FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("counterstrikesharp", "counterstrikesharp", true), new("matchzy", "counterstrikesharp")]);
         try
         {
-            FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("source2mod", "source2mod"), new("matchzy", "counterstrikesharp")]);
+            FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("source2mod", "source2mod", true), new("matchzy", "counterstrikesharp")]);
             throw new Exception("Two scripting frameworks were accepted.");
         }
         catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-CONFLICT") { }
@@ -64,11 +64,17 @@ public static class FrameworkTests
         catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
         try
         {
-            FrameworkRules.ValidateSelections([new("source2mod", "source2mod")]);
+            FrameworkRules.ValidateSelections([new("source2mod", "source2mod", true)]);
             throw new Exception("A scripting framework without Metamod was accepted.");
         }
         catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
         FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("cs2fixes", null)]);
+        try
+        {
+            FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("counterstrikesharp", "counterstrikesharp", IsFrameworkPackage: false), new("matchzy", "counterstrikesharp")]);
+            throw new Exception("A sub-plugin masquerading as a framework was accepted.");
+        }
+        catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
 
         var root = Path.Combine(Path.GetTempPath(), "hcsl-frameworks-" + Guid.NewGuid().ToString("N"));
         try

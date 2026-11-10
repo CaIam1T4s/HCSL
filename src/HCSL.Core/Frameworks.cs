@@ -158,7 +158,7 @@ public static class FrameworkRules
     }
 
     /// <summary>One enabled package projection used by the selection gate.</summary>
-    public sealed record SelectedFramework(string Id, string? Framework);
+    public sealed record SelectedFramework(string Id, string? Framework, bool IsFrameworkPackage = false);
 
     /// <summary>
     /// Derive the owning framework from game-relative package paths. Most specific markers win:
@@ -175,6 +175,23 @@ public static class FrameworkRules
         }
         if (paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))) return "metamod";
         return null;
+    }
+
+    /// <summary>True only for a package that ships the framework loader itself, not a sub-plugin using its folder.</summary>
+    public static bool IsFrameworkPayload(string? framework, IEnumerable<string> relativePaths)
+    {
+        var paths = relativePaths.ToArray();
+        return framework switch
+        {
+            "metamod" => paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase)),
+            "counterstrikesharp" => paths.Any(p => p.StartsWith("csgo/addons/counterstrikesharp/bin/", StringComparison.OrdinalIgnoreCase))
+                && paths.Any(p => p.EndsWith("/counterstrikesharp.so", StringComparison.OrdinalIgnoreCase)
+                    || p.EndsWith("/counterstrikesharp.dll", StringComparison.OrdinalIgnoreCase)),
+            "source2mod" => paths.Any(p => p.EndsWith("/bin/linuxsteamrt64/source2mod.so", StringComparison.OrdinalIgnoreCase))
+                || paths.Any(p => p.Equals("csgo/addons/metamod/source2mod.vdf", StringComparison.OrdinalIgnoreCase)),
+            "swiftlys2" or "modsharp" => paths.Any(p => p.StartsWith("csgo/addons/" + framework + "/bin/", StringComparison.OrdinalIgnoreCase)),
+            _ => false
+        };
     }
 
     /// <summary>
@@ -194,9 +211,9 @@ public static class FrameworkRules
                 "A preset can enable only one scripting framework; found " + string.Join(", ", scripts) + ".");
         foreach (var script in scripts)
         {
-            if (!selected.Any(x => string.Equals(x.Id, script, StringComparison.Ordinal)))
+            if (!selected.Any(x => string.Equals(x.Id, script, StringComparison.Ordinal) && x.IsFrameworkPackage))
                 throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
-                    "The preset selects a " + script + " plugin but not the " + script + " framework package.");
+                    "The preset selects a " + script + " plugin but not a valid " + script + " framework package.");
             if (!selected.Any(x => string.Equals(x.Framework, "metamod", StringComparison.Ordinal)))
                 throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
                     script + " requires the metamod package to be enabled in the same preset.");

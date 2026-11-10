@@ -92,6 +92,17 @@ public static class PluginImportTests
             Check(csgo.Warnings.Any(w => w.Contains("sourcemod.2.cs2.so", StringComparison.Ordinal)), "Missing CS2 engine warning.");
             Check(csgo.Warnings.Any(w => w.Contains("32-bit", StringComparison.Ordinal)), "32-bit binary warning missing.");
 
+            // 5b) A CounterStrikeSharp sub-plugin must not claim the framework id.
+            var mz = Path.Combine(root, "matchzy");
+            WriteFile(mz, "addons/counterstrikesharp/plugins/MatchZy/MatchZy.dll", "binary");
+            WriteFile(mz, "addons/counterstrikesharp/gamedata/matchzy.json", "{}");
+            var mzProbe = importer.Probe(workspace, new(mz));
+            Check(mzProbe.Id == "matchzy" && mzProbe.Name == "MatchZy", "CSSharp sub-plugin was detected as the framework: " + mzProbe.Id + "/" + mzProbe.Name);
+            var cssFramework = Path.Combine(root, "css");
+            WriteFile(cssFramework, "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so", "binary");
+            WriteFile(cssFramework, "addons/counterstrikesharp/api/CounterStrikeSharp.API.dll", "binary");
+            Check(importer.Probe(workspace, new(cssFramework)).Id == "counterstrikesharp", "Real CSSharp framework was not detected.");
+
             // 6) Enabling uses the preset revision/hash path and appends at the end.
             var instances = new LocalInstanceStore();
             var entry = instances.Execute(workspace, new(InstanceAction.Create, Name: "Import")).Instances.Single();

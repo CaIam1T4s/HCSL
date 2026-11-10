@@ -277,7 +277,7 @@ try
         }
         Package("metamod", "1.0.0", "csgo/addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so");
         Package("counterstrikesharp", "1.0.0", "csgo/addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so");
-        Package("source2mod", "1.0.0", "csgo/addons/source2mod/plugins/x.smx");
+        Package("source2mod", "1.0.0", "csgo/addons/source2mod/bin/linuxsteamrt64/source2mod.so");
         var file = Path.Combine(Preset(first), "plugins.json");
         File.WriteAllText(file, "{\"FormatVersion\":1,\"Revision\":1,\"Plugins\":["
             + "{\"Id\":\"metamod\",\"Version\":\"1.0.0\",\"Enabled\":true},"
