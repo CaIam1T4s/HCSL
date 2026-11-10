@@ -1,9 +1,11 @@
 using System.Formats.Tar;
+using System.Text.Json;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using HCSL.Application.Abstractions;
+using HCSL.Contracts;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Infrastructure.Frameworks;
@@ -162,6 +164,8 @@ public static class FrameworkTests
             Check(offline.Frameworks.Where(f => f.Installable).All(f => f.Error == "HCSL-FRAMEWORK-NET"), "Offline check did not report a stable code.");
             var noAsset = new FrameworkManager(new FakeHandler(json, archive, dropAssets: true));
             await Reject(noAsset.InstallAsync(workspace, new("counterstrikesharp")), "HCSL-FRAMEWORK-RELEASE");
+            var slow = await new FrameworkClient(new SlowDaemon()).CheckAsync();
+            Check(slow.Frameworks.Length > 0, "Slow framework check was cancelled by the short IPC timeout.");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -228,6 +232,18 @@ public static class FrameworkTests
             var bytes = archive;
             if (mutateDigest) { bytes = (byte[])archive.Clone(); bytes[0] ^= 0xFF; }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
+        }
+    }
+
+    private sealed class SlowDaemon : IDaemonClient
+    {
+        public async Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
+        {
+            if (request.Kind == RequestKind.Hello)
+                return new(LocalProtocol.Version, request.Id, true, Defaults: new("/s", "/d", "/l"));
+            await Task.Delay(TimeSpan.FromSeconds(6), ct);
+            return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(
+                new FrameworkCheckResult([new("metamod", "Metamod:Source", true, true, null, null, null, false, null, null)])));
         }
     }
 

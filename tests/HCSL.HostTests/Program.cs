@@ -327,6 +327,8 @@ WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text
 WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新")));
 Check(!owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "已安装") && b.IsEffectivelyEnabled),
     "An up-to-date framework still offered a download button.");
+var baseButton = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "基础框架（必需）"));
+Check(!baseButton.IsEffectivelyEnabled, "Metamod could be selected as the preset scripting framework.");
 var download = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新"));
 Check(download.IsEffectivelyEnabled, "Available framework download was disabled.");
 Click(owner, "下载最新");

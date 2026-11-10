@@ -99,9 +99,11 @@ public partial class MainWindow
                 body.Children.Add(download);
                 var choose = new TKCode.Arc.Button
                 {
-                    Content = installedPayload ? "设为当前预设框架" : "未安装，先下载",
+                    Content = framework.Kind == FrameworkKind.Base ? "基础框架（必需）"
+                        : installedPayload ? "设为当前预设框架" : "未安装，先下载",
                     Variant = ButtonVariant.Secondary,
-                    IsEnabled = installedPayload && !incompatible && current != framework.Id
+                    IsEnabled = installedPayload && framework.Kind == FrameworkKind.ScriptFramework
+                        && !incompatible && current != framework.Id
                 };
                 choose.Click += async (_, _) =>
                 {
