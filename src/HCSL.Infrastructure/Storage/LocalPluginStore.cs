@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +15,9 @@ public sealed class LocalPluginStore : IPluginStore
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
     private static readonly string[] Roots = ["csgo", "core", "csgo_lv"];
+    /// <summary>Metadata signature → validated package. Package files never change while HCSL runs.</summary>
+    private static readonly ConcurrentDictionary<string, (string Signature, Package Package)> Cache = new(StringComparer.Ordinal);
+    private const int CacheLimit = 512;
 
     internal sealed record PackageFile(string RelativePath, string FullPath, string Sha256, long Bytes);
     internal sealed record Package(string Id, string Name, string Version, string Root, PackageFile[] Files, string Hash, long Bytes);
@@ -48,7 +52,8 @@ public sealed class LocalPluginStore : IPluginStore
         var manifestPath = SafePath(Path.Combine(root, "plugin.json"));
         if (!File.Exists(manifestPath)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin package manifest is missing.");
         if (new FileInfo(manifestPath).Length > PluginRules.MaxManifestBytes) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is too large.");
-        var manifest = JsonSerializer.Deserialize<PackageManifest>(File.ReadAllText(manifestPath), Json)
+        var manifestText = File.ReadAllText(manifestPath);
+        var manifest = JsonSerializer.Deserialize<PackageManifest>(manifestText, Json)
             ?? throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is empty.");
         if (manifest.FormatVersion != 1 || manifest.Id != id || manifest.Version != version || string.IsNullOrWhiteSpace(manifest.Name) || manifest.Name.Length > 100 || manifest.Name.Any(char.IsControl))
             throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest identity does not match its folder.");
@@ -56,6 +61,8 @@ public sealed class LocalPluginStore : IPluginStore
         var source = SafePath(Path.Combine(root, filesRoot));
         if (!Directory.Exists(source)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin files directory is missing.");
         var files = new List<PackageFile>();
+        var signature = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        signature.AppendData(Encoding.UTF8.GetBytes(manifestText));
         long bytes = 0;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
@@ -65,10 +72,19 @@ public sealed class LocalPluginStore : IPluginStore
             if (info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Package links are not accepted.");
             bytes = checked(bytes + info.Length);
             if (files.Count >= PluginRules.MaxPackageFiles || bytes > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin package is too large.");
-            files.Add(new(relative, file, Hash(file), info.Length));
+            // Content hashing a large package is expensive; metadata is enough to detect edits, adds and removals.
+            signature.AppendData(Encoding.UTF8.GetBytes($"{relative}\0{info.Length}\0{info.LastWriteTimeUtc.Ticks}\n"));
+            files.Add(new(relative, file, "", info.Length));
         }
+        var cacheKey = root;
+        var stamp = Convert.ToHexString(signature.GetHashAndReset());
+        if (Cache.TryGetValue(cacheKey, out var cached) && cached.Signature == stamp) return cached.Package;
+        for (var i = 0; i < files.Count; i++) files[i] = files[i] with { Sha256 = Hash(files[i].FullPath) };
         var hash = PackageHash(files);
-        return new(id, manifest.Name, version, source, files.OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToArray(), hash, bytes);
+        var package = new Package(id, manifest.Name, version, source, files.OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToArray(), hash, bytes);
+        if (Cache.Count >= CacheLimit) Cache.Clear();
+        Cache[cacheKey] = (stamp, package);
+        return package;
     }
 
     private static PluginResult ExecuteRoot(string instancesRoot, string packagesRoot, PluginCommand c)

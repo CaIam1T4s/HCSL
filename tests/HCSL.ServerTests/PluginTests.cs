@@ -33,6 +33,12 @@ public static class PluginTests
             File.WriteAllText(Path.Combine(package, "files", "csgo", "gameinfo.gi"), "patched");
             var available = store.Execute(workspace, Read());
             Check(available.Available.Length == 1 && available.Available[0].Id == "metamod" && available.Available[0].Files == 2, "Package catalog.");
+            var cachedHash = store.Execute(workspace, Read()).Available[0].Hash;
+            Check(cachedHash == available.Available[0].Hash, "Repeated catalog read changed the package hash.");
+            var binary = Path.Combine(package, "files", "csgo", "addons", "metamod", "server.so");
+            File.WriteAllText(binary, "binary2");
+            File.SetLastWriteTimeUtc(binary, DateTime.UtcNow.AddSeconds(5));
+            Check(store.Execute(workspace, Read()).Available[0].Hash != cachedHash, "Edited package was not re-hashed.");
             var broken = Path.Combine(workspace.LibraryRoot, "plugin-packages", "broken", "0.1.0");
             Directory.CreateDirectory(Path.Combine(broken, "files"));
             File.WriteAllText(Path.Combine(broken, "plugin.json"), "{\"FormatVersion\":1}");
