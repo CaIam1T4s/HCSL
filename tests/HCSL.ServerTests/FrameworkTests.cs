@@ -37,6 +37,34 @@ public static class FrameworkTests
         Check(!FrameworkRules.Conflicts("metamod", "counterstrikesharp"), "Metamod marked exclusive.");
         Check(FrameworkRules.Find("unknown") is null, "Unknown framework accepted.");
 
+        Check(FrameworkRules.Resolve(["csgo/gameinfo.gi", "csgo/addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so", "csgo/addons/metamod/source2mod.vdf"]) == "metamod",
+            "Metamod loader not resolved.");
+        Check(FrameworkRules.Resolve(["csgo/addons/metamod/counterstrikesharp.vdf", "csgo/addons/counterstrikesharp/plugins/MatchZy/MatchZy.dll"]) == "counterstrikesharp",
+            "CSSharp plugin resolved to Metamod.");
+        Check(FrameworkRules.Resolve(["csgo/addons/source2mod/plugins/sp_sample.smx", "csgo/addons/metamod/source2mod.vdf"]) == "source2mod",
+            "Source2Mod resolved incorrectly.");
+        Check(FrameworkRules.Resolve(["csgo/addons/cs2fixes/bin/linuxsteamrt64/cs2fixes.so"]) is null, "Native plugin was assigned a framework.");
+        FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("counterstrikesharp", "counterstrikesharp"), new("matchzy", "counterstrikesharp")]);
+        try
+        {
+            FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("source2mod", "source2mod"), new("matchzy", "counterstrikesharp")]);
+            throw new Exception("Two scripting frameworks were accepted.");
+        }
+        catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-CONFLICT") { }
+        try
+        {
+            FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("matchzy", "counterstrikesharp")]);
+            throw new Exception("A plugin without its framework was accepted.");
+        }
+        catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
+        try
+        {
+            FrameworkRules.ValidateSelections([new("source2mod", "source2mod")]);
+            throw new Exception("A scripting framework without Metamod was accepted.");
+        }
+        catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
+        FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("cs2fixes", null)]);
+
         var root = Path.Combine(Path.GetTempPath(), "hcsl-frameworks-" + Guid.NewGuid().ToString("N"));
         try
         {

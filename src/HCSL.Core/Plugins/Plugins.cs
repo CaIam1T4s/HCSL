@@ -32,7 +32,8 @@ public sealed record PluginImportResult(string PackagePath, string Id, string Ve
     bool CurrentPlatformSupported, string[] Warnings, bool Enabled);
 
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
-public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes);
+public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes,
+    string? Framework = null);
 
 /// <summary>Selected entry joined with package availability. Never contains file contents.</summary>
 public sealed record PluginSelectionInfo(string Id, string? Name, string Version, bool Enabled, bool Available, string? Error = null);

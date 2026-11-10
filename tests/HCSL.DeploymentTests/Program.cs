@@ -253,6 +253,31 @@ try
         File.Delete(Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0", "plugin.json"));
         Reject("HCSL-DEPLOY-PLUGINS", () => service.Plan(workspace, Options(first)));
     });
+    Test("deployment rejects conflicting scripting frameworks", () =>
+    {
+        var presetId = first.Definition!.SelectedPresetId;
+        void Package(string id, string version, string relative)
+        {
+            var dir = Path.Combine(workspace.LibraryRoot, "plugin-packages", id, version);
+            Directory.CreateDirectory(Path.Combine(dir, "files", Path.GetDirectoryName(relative)!));
+            File.WriteAllText(Path.Combine(dir, "plugin.json"), $$"""{"FormatVersion":1,"Id":"{{id}}","Name":"{{id}}","Version":"{{version}}"}""");
+            File.WriteAllText(Path.Combine(dir, "files", relative), "binary");
+        }
+        Package("metamod", "1.0.0", "csgo/addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so");
+        Package("counterstrikesharp", "1.0.0", "csgo/addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so");
+        Package("source2mod", "1.0.0", "csgo/addons/source2mod/plugins/x.smx");
+        var file = Path.Combine(Preset(first), "plugins.json");
+        File.WriteAllText(file, "{\"FormatVersion\":1,\"Revision\":1,\"Plugins\":["
+            + "{\"Id\":\"metamod\",\"Version\":\"1.0.0\",\"Enabled\":true},"
+            + "{\"Id\":\"counterstrikesharp\",\"Version\":\"1.0.0\",\"Enabled\":true},"
+            + "{\"Id\":\"source2mod\",\"Version\":\"1.0.0\",\"Enabled\":true}]}");
+        Reject("HCSL-PLUGIN-FRAMEWORK-CONFLICT", () => service.Plan(workspace, Options(first)));
+        File.WriteAllText(file, "{\"FormatVersion\":1,\"Revision\":1,\"Plugins\":["
+            + "{\"Id\":\"metamod\",\"Version\":\"1.0.0\",\"Enabled\":true},"
+            + "{\"Id\":\"source2mod\",\"Version\":\"1.0.0\",\"Enabled\":true}]}");
+        Check(service.Plan(workspace, Options(first)).PluginSetHash is not null, "Valid Source2Mod selection failed to plan.");
+        File.WriteAllText(file, """{"FormatVersion":1,"Revision":1,"Plugins":[]}""");
+    });
     Test("failed plugin application restores preset addons and ledger", () =>
     {
         var presetId = first.Definition!.SelectedPresetId;

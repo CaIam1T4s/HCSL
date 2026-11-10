@@ -20,7 +20,7 @@ public sealed class LocalPluginStore : IPluginStore
     private const int CacheLimit = 512;
 
     internal sealed record PackageFile(string RelativePath, string FullPath, string Sha256, long Bytes);
-    internal sealed record Package(string Id, string Name, string Version, string Root, PackageFile[] Files, string Hash, long Bytes);
+    internal sealed record Package(string Id, string Name, string Version, string Root, PackageFile[] Files, string Hash, long Bytes, string? Framework);
 
     public PluginResult Execute(WorkspaceRequest workspace, PluginCommand command)
     {
@@ -81,7 +81,8 @@ public sealed class LocalPluginStore : IPluginStore
         if (Cache.TryGetValue(cacheKey, out var cached) && cached.Signature == stamp) return cached.Package;
         for (var i = 0; i < files.Count; i++) files[i] = files[i] with { Sha256 = Hash(files[i].FullPath) };
         var hash = PackageHash(files);
-        var package = new Package(id, manifest.Name, version, source, files.OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToArray(), hash, bytes);
+        var package = new Package(id, manifest.Name, version, source, files.OrderBy(f => f.RelativePath, StringComparer.Ordinal).ToArray(), hash, bytes,
+            FrameworkRules.Resolve(files.Select(f => f.RelativePath)));
         if (Cache.Count >= CacheLimit) Cache.Clear();
         Cache[cacheKey] = (stamp, package);
         return package;
@@ -108,6 +109,11 @@ public sealed class LocalPluginStore : IPluginStore
         foreach (var plugin in next.Where(p => p.Enabled))
             if (!ordered.Any(p => p.Id == plugin.Id && p.Version == plugin.Version))
                 throw new InstanceException("HCSL-PLUGIN-PACKAGE", "An enabled plugin package is not available in this library.");
+        FrameworkRules.ValidateSelections(next.Where(p => p.Enabled).Select(p =>
+        {
+            var package = ordered.First(a => a.Id == p.Id && a.Version == p.Version);
+            return new FrameworkRules.SelectedFramework(p.Id, package.Framework);
+        }));
         var current = File.Exists(file) ? Hash(file) : null;
         if (!string.Equals(current, c.ExpectedHash, StringComparison.Ordinal))
             throw new InstanceException("HCSL-PLUGIN-CONFLICT", "Plugin manifest changed. Reload before saving; your draft was not written.");
@@ -165,7 +171,7 @@ public sealed class LocalPluginStore : IPluginStore
                 try
                 {
                     var package = LoadPackage(packagesRoot, id, version);
-                    result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes));
+                    result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes, package.Framework));
                 }
                 catch (InstanceException e) { rejected.Add(new(id, version, e.Code)); }
                 catch (WorkspaceException e) { rejected.Add(new(id, version, e.Code)); }

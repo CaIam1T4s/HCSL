@@ -136,6 +136,52 @@ public static class FrameworkRules
         return string.CompareOrdinal(left, right);
     }
 
+    /// <summary>One enabled package projection used by the selection gate.</summary>
+    public sealed record SelectedFramework(string Id, string? Framework);
+
+    /// <summary>
+    /// Derive the owning framework from game-relative package paths. Most specific markers win:
+    /// a CounterStrikeSharp plugin also ships addons/metamod/*.vdf but belongs to CSSharp, not Metamod.
+    /// </summary>
+    public static string? Resolve(IEnumerable<string> relativePaths)
+    {
+        var paths = relativePaths.ToArray();
+        foreach (var definition in Known)
+        {
+            if (definition.Kind == FrameworkKind.Base) continue;
+            var marker = "csgo/addons/" + definition.Id + "/";
+            if (paths.Any(p => p.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return definition.Id;
+        }
+        if (paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))) return "metamod";
+        return null;
+    }
+
+    /// <summary>
+    /// Reject two scripting frameworks and scripting packages without their framework/base.
+    /// Base Metamod and unknown native plugins impose no extra requirement.
+    /// </summary>
+    public static void ValidateSelections(IEnumerable<SelectedFramework> enabled)
+    {
+        var selected = enabled.ToArray();
+        var scripts = selected
+            .Select(x => x.Framework)
+            .Where(f => Find(f)?.Kind == FrameworkKind.ScriptFramework)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (scripts.Length > 1)
+            throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-CONFLICT",
+                "A preset can enable only one scripting framework; found " + string.Join(", ", scripts) + ".");
+        foreach (var script in scripts)
+        {
+            if (!selected.Any(x => string.Equals(x.Id, script, StringComparison.Ordinal)))
+                throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
+                    "The preset selects a " + script + " plugin but not the " + script + " framework package.");
+            if (!selected.Any(x => string.Equals(x.Framework, "metamod", StringComparison.Ordinal)))
+                throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
+                    script + " requires the metamod package to be enabled in the same preset.");
+        }
+    }
+
     private static int? ParseBuild(string version)
     {
         var match = Regex.Match(version, @"\+(\d+)\z", RegexOptions.CultureInvariant);

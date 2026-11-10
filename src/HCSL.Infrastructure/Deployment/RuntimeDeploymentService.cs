@@ -194,6 +194,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var packages = new List<LocalPluginStore.Package>();
             foreach (var plugin in manifest.Plugins.Where(p => p.Enabled))
                 packages.Add(LocalPluginStore.LoadPackage(Path.Combine(libraryRoot, "plugin-packages"), plugin.Id, plugin.Version));
+            FrameworkRules.ValidateSelections(packages.Select(p => new FrameworkRules.SelectedFramework(p.Id, p.Framework)));
             using var sha = SHA256.Create();
             foreach (var package in packages)
             {
@@ -203,6 +204,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             sha.TransformFinalBlock([], 0, 0);
             return (packages.Count == 0 ? null : Convert.ToHexString(sha.Hash!), packages.ToArray());
         }
+        catch (InstanceException e) when (e.Code.StartsWith("HCSL-PLUGIN-FRAMEWORK-", StringComparison.Ordinal))
+        { throw new DeploymentException(e.Code, e.Message); }
         catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
     }

@@ -38,6 +38,8 @@ public static class DevHints
         "HCSL-FRAMEWORK-HASH" => "The release has no usable SHA-256 digest or the download changed; do not install it automatically.",
         "HCSL-FRAMEWORK-BUSY" => "Stop the server/SteamCMD first: `hcsl stop`.",
         "HCSL-FRAMEWORK-ID" => "Only the built-in catalog can be installed: `hcsl frameworks`.",
+        "HCSL-PLUGIN-FRAMEWORK-CONFLICT" => "Enable only one scripting framework per preset (CounterStrikeSharp or Source2Mod, not both).",
+        "HCSL-PLUGIN-FRAMEWORK-MISSING" => "Also enable the framework package and metamod in the same preset: `hcsl plugins`.",
         "HCSL-IPC-VERSION" => "GUI/CLI and daemon versions differ: restart the daemon/session.",
         _ => null
     };
