@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using HCSL.Core;
 using HCSL.Frontend;
+using HCSL.Frontend.Dev;
 using HCSL.Host.ViewModels;
 
 namespace HCSL.Host.Views.Pages;
@@ -44,6 +45,7 @@ public partial class InstancePage : UserControl
         RefreshButton.IsEnabled = !operating && !m.Busy;
         StartButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
         DeployButton.IsEnabled = !operating && !watchingStart && m.CanDeploy;
+        RecoverDeployButton.IsEnabled = !operating && !watchingStart && m.CanRecoverDeployment;
         StopButton.IsEnabled = !operating && m.Server.CanStop;
         ChangeMapButton.IsEnabled = !operating && m.Server.CanSendConsole && !m.Server.Busy;
         RecoverButton.IsEnabled = !operating && m.Server.CanRecover;
@@ -70,8 +72,13 @@ public partial class InstancePage : UserControl
     private async void DeployServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
-        var confirmation = await owner.ChooseAsync("部署（不启动）",
-            m.SelectionText + "\n\n将离线部署所选预设：宿主自动探测 reflink/全量复制，不会启动 CS2。\n运行中的服务器需先停服；部署失败不会写入新的运行目录。",
+        var preset = m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == d.SelectedPresetId);
+        var plan = await m.DeployPreviewAsync(d.Id, d.SelectedPresetId);
+        var preview = plan is null
+            ? "无法获取部署预览（宿主未连接或已有操作）；请查看状态后再试。"
+            : DevFormat.Plan(plan, m.Selected.Entry, preset);
+        var confirmation = await owner.ChooseAsync("部署预览（不启动）",
+            preview + "\n\n继续部署？宿主自动探测 reflink/全量复制，不会启动 CS2。\n运行中的服务器需先停服；部署失败不会写入新的运行目录。",
             "取消", "部署");
         if (confirmation != 1 || m.Selected?.Entry.Id != d.Id) return;
         if (!await m.DeployAsync()) { await owner.ChooseAsync("部署未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error, "返回"); return; }
@@ -79,6 +86,21 @@ public partial class InstancePage : UserControl
         for (var waited = 0; m.Server.Active && waited < 1800; waited++) await Task.Delay(500);
         var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
         await owner.ChooseAsync(done ? "部署完成" : "部署未完成", m.Server.DetailText, "返回");
+    });
+    private async void RecoverDeployment(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
+        if (await owner.ChooseAsync("恢复部署",
+            "检测到中断的部署时会保留旧运行目录并删除 journal；不会启动 CS2，也不会部署新内容。\n恢复后可再点「部署（不启动）」。",
+            "取消", "恢复") != 1 || m.Selected?.Entry.Id != d.Id) return;
+        if (!await m.RecoverDeploymentAsync())
+        {
+            await owner.ChooseAsync("恢复未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error, "返回");
+            return;
+        }
+        for (var waited = 0; m.Server.Active && waited < 1200; waited++) await Task.Delay(500);
+        var done = m.Server.Code == "HCSL-SERVER-DEPLOY-RECOVERED";
+        await owner.ChooseAsync(done ? "恢复完成" : "恢复未完成", m.Server.DetailText, "返回");
     });
     private async void StartServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {

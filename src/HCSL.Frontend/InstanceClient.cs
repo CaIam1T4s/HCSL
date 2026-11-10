@@ -52,6 +52,14 @@ public sealed class InstanceClient(IDaemonClient client)
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         return Path.Combine(hello.Defaults.LibraryRoot, "runtime", instanceId.ToString("D"));
     }
+    /// <summary>Resolved workspace roots reported by the daemon; used for read-only plans.</summary>
+    public async Task<Contracts.WorkspacePaths> WorkspaceAsync(CancellationToken ct = default)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        return hello.Defaults;
+    }
+
     public async Task<InstanceCatalog> ExecuteAsync(InstanceCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);

@@ -134,6 +134,7 @@ static int Deploy(DevInvocation invocation, JsonSerializerOptions json, Cancella
     var (entry, preset) = Target(workspace, invocation);
     var options = Deployment(workspace, invocation, entry.Id);
     var service = new RuntimeDeploymentService();
+    if (invocation.Has("--recover")) Console.WriteLine("recovered  " + service.Recover(workspace, entry.Id));
     var plan = service.Plan(workspace, options, ct);
     if (!invocation.Has("--json")) PrintPlan(invocation, workspace, entry, preset, plan);
     if (invocation.Has("--dry-run")) { if (!invocation.Has("--json")) Console.WriteLine("dry-run    nothing was written"); return 0; }

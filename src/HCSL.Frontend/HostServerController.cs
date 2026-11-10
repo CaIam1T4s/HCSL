@@ -143,6 +143,16 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         Server.Attach(Selected.Entry.Id);
         return Server.StartAsync(autoDeploy: true, allowLowMemory: allowLowMemory);
     }
+    /// <summary>Read-only deployment preview for the confirmation dialog (never writes).</summary>
+    public async Task<DeploymentPlan?> DeployPreviewAsync(Guid instanceId, Guid presetId)
+    {
+        if (Busy || Server.Busy || !Server.Connected) return null;
+        if (!Instances.Any(i => i.Entry.Id == instanceId && i.Entry.Presets.Any(p => p.Id == presetId))) return null;
+        Server.Attach(instanceId);
+        var plan = await Server.PlanDeploymentAsync(await instances.WorkspaceAsync());
+        return plan;
+    }
+
     /// <summary>Deploy-only action for the UI: no AutoDeploy, no start.</summary>
     public Task<bool> DeployAsync()
     {
@@ -151,6 +161,14 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         return Server.DeployAsync();
     }
     public bool CanDeploy => !Busy && Selected?.Entry.Definition is not null && Server.CanDeploy;
+
+    public Task<bool> RecoverDeploymentAsync()
+    {
+        if (Busy || Selected?.Entry.Definition is null || !Server.CanRecoverDeployment) return Task.FromResult(false);
+        Server.Attach(Selected.Entry.Id);
+        return Server.RecoverDeploymentAsync();
+    }
+    public bool CanRecoverDeployment => !Busy && Selected?.Entry.Definition is not null && Server.CanRecoverDeployment;
 
     public Task<bool> RecoverAsync()
     {

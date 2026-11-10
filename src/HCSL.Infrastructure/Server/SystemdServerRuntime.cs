@@ -78,6 +78,24 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
         return Task.Run(() => new RuntimeDeploymentService().Deploy(workspace, new(instanceId, mode), progress, ct), ct);
     }
 
+    /// <summary>Read-only deployment plan: same validation as deploy, but no runtime or persistent write.</summary>
+    public Task<DeploymentPlan> PlanDeploymentAsync(WorkspaceRequest workspace, Guid instanceId, CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsLinux()) throw new ServerException("HCSL-SERVER-PLATFORM", "Only Linux x64 is implemented.");
+        if (instanceId == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
+        var mode = RuntimeDeploymentService.ProbeCopyMode(Path.Combine(workspace.LibraryRoot, "runtime"));
+        return Task.Run(() => new RuntimeDeploymentService().Plan(workspace, new(instanceId, mode), ct), ct);
+    }
+
+    /// <summary>Recover an interrupted deployment without deploying or starting anything.</summary>
+    public Task<string> RecoverDeploymentAsync(WorkspaceRequest workspace, Guid instanceId, IProgress<ServerRuntimeEvent>? events = null, CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsLinux()) throw new ServerException("HCSL-SERVER-PLATFORM", "Only Linux x64 is implemented.");
+        if (instanceId == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
+        events?.Report(new(ServerState.Preparing, "HCSL-SERVER-DEPLOY-RECOVERING"));
+        return Task.Run(() => new RuntimeDeploymentService().Recover(workspace, instanceId), ct);
+    }
+
     public async Task<ServerOutcome> RunAsync(WorkspaceRequest workspace, Guid runId, ServerStartOptions options, IProgress<ServerRuntimeEvent> events, CancellationToken stop)
     {
         if (!OperatingSystem.IsLinux()) throw new ServerException("HCSL-SERVER-PLATFORM", "Only Linux x64 is implemented.");

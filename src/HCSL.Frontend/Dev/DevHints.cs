@@ -6,7 +6,7 @@ public static class DevHints
     public static string? For(string? code) => code switch
     {
         null or "" => null,
-        "HCSL-DEPLOY-RECOVERY" => "An earlier deploy stopped before publication: run `hcsl recover`, then `hcsl deploy`.",
+        "HCSL-DEPLOY-RECOVERY" => "An earlier deploy stopped before publication: run `hcsl deploy --recover` (or `hcsl recover`, then deploy).",
         "HCSL-DEPLOY-RUNNING" => "Stop the server first: `hcsl stop` (or stop it in the UI), then deploy.",
         "HCSL-DEPLOY-PLUGINS" => "Check plugin package paths and that the preset addons directory is writable: `hcsl doctor`.",
         "HCSL-DEPLOY-STALE" => "Redeploy: `hcsl deploy`.",

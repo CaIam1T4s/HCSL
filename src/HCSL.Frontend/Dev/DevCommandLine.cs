@@ -18,7 +18,7 @@ public static class DevCommandLine
     ];
 
     private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -30,6 +30,7 @@ public static class DevCommandLine
           instances              List instances (name, UUID, selected preset, port, deployment).
           plan                   Validate a deployment without writing anything (add --explain).
           deploy                 Deploy the selected preset (auto reflink/full copy, add --explain).
+                                 --recover first recovers an interrupted deployment journal.
           recover                Recover an interrupted deployment journal.
           start | stop           Start/stop the daemon-owned server (start --wait blocks until Running/Failed).
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).

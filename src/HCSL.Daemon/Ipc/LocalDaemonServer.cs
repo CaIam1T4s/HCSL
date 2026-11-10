@@ -99,7 +99,9 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             {
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
                 LocalResponse response;
-                try { response = request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token) : Dispatch(request); }
+                try { response = request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
+                    : Dispatch(request); }
                 catch (ServerException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (InstanceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (WorkspaceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
@@ -116,6 +118,21 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 slots.Release();
             }
         }
+    }
+    private static ServerAction? DeserializeServerAction(LocalRequest request)
+    {
+        try { return JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")?.Action; }
+        catch (JsonException) { return null; }
+    }
+    private async Task<LocalResponse> PlanDeploymentAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
+        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+            ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
+        var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
+        var plan = await servers.PlanDeployment(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command.InstanceId);
+        return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan));
     }
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
     {
@@ -170,6 +187,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             ServerAction.Logs => servers.Snapshot(command.AfterSequence, command.RunId),
             ServerAction.Stop => servers.Stop(command.RunId),
             ServerAction.Deploy => servers.Deploy(Workspace(), command.InstanceId),
+            ServerAction.RecoverDeployment => servers.RecoverDeployment(Workspace(), command.InstanceId),
             ServerAction.Recover => servers.Recover(Workspace(), command.InstanceId, command.RunId),
             _ => throw new ServerException("HCSL-SERVER-OPTIONS", "Unknown server action.")
         };

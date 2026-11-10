@@ -337,6 +337,14 @@ if (only is null or "errors")
     WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
     Click(owner, "返回"); Layout();
     Check(!server.Active && daemon.Stops == 0, "Deploy-only action must not start or stop the server.");
+    // A leftover journal is recoverable from the UI, not only from the CLI.
+    Click(owner, "恢复部署");
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "恢复")));
+    Click(owner, "恢复");
+    WaitUntil(() => daemon.RecoverDeployments == 1);
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
+    Click(owner, "返回"); Layout();
+    Check(!server.Active, "Deployment recovery must not start the server.");
     Console.WriteLine("PASS gui.errors.failed-start-hint-and-deploy-only");
     if (only is "errors") return 0;
 }
@@ -515,6 +523,8 @@ sealed class FakeDaemon : IDaemonClient
     public string? StartFailureCode, StartFailureDetail;
     public Guid? FailedRun;
     public int Deploys;
+    public int RecoverDeployments;
+    public int PlanDeployments;
     public string DeployCode = "HCSL-SERVER-DEPLOYED";
     public bool CfgRunIdentity;
     public int CfgWrites;
@@ -586,12 +596,23 @@ sealed class FakeDaemon : IDaemonClient
             stopped = true; Stops++;
         }
         if (serverCommand is { Action: ServerAction.Deploy }) Deploys++;
+        if (serverCommand is { Action: ServerAction.RecoverDeployment }) RecoverDeployments++;
+        if (serverCommand is { Action: ServerAction.PlanDeployment })
+        {
+            PlanDeployments++;
+            var plan = new DeploymentPlan(Catalog.Instances.FirstOrDefault()?.Id ?? Guid.Empty, 1, Catalog.Instances.FirstOrDefault()?.Presets.FirstOrDefault()?.Id ?? Guid.Empty,
+                1, "26445667", "/library/runtime/preview", DeploymentCopyMode.Reflink, 3140, 73434849358, 1024, 1024,
+                [], ["Offline deployment only; no server is launched."], null, null, null, null);
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan)));
+        }
         var failing = serverCommand is { Action: ServerAction.Start } && StartFailureCode is not null;
         if (failing) FailedRun = Guid.NewGuid();
         var lines = Enumerable.Range(LastLogSequence - 149, 150).Select(i => new ServerLogLine(i, (RepeatLogText ? "repeat " : $"{i} ") + new string('x', 300))).ToArray();
         var snapshot = failing
             ? new ServerSnapshot(FailedRun, null, ServerState.Failed, false, StartFailureCode!, false, true, null, LastLogSequence + 1, false, lines, Detail: StartFailureDetail)
-            : serverCommand is { Action: ServerAction.Deploy }
+            : serverCommand is { Action: ServerAction.RecoverDeployment }
+                ? new ServerSnapshot(run, null, ServerState.Stopped, false, "HCSL-SERVER-DEPLOY-RECOVERED", false, true, null, LastLogSequence + 1, false, lines, Detail: "PreviousDeploymentPreserved_StagingRetained")
+                : serverCommand is { Action: ServerAction.Deploy }
                 ? new ServerSnapshot(run, null, ServerState.Stopped, false, DeployCode, false, true, null, LastLogSequence + 1, false, lines, Detail: "Deployment published (Reflink).")
                 : new ServerSnapshot(run, CfgRunIdentity ? Catalog.Instances.Single().Id : null, stopped ? ServerState.Stopped : IdleForPresetTests ? ServerState.Idle : ServerState.Running,
                     !stopped && !IdleForPresetTests, stopped ? "HCSL-SERVER-STOPPED" : "HCSL-SERVER-MAP-READY", true, stopped, null, LastLogSequence + 1, false, lines,

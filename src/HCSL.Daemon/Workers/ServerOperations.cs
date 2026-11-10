@@ -157,6 +157,45 @@ public sealed class ServerOperations : IAsyncDisposable
         }
     }
 
+    /// <summary>Read-only deployment preview; the deployment service takes its own lease, so no run state changes.</summary>
+    public Task<DeploymentPlan> PlanDeployment(WorkspaceRequest workspace, Guid id) =>
+        service.PlanDeploymentAsync(workspace, id);
+
+    /// <summary>Recover a leftover deployment journal; serialized with deploy/start/stop and never launches CS2.</summary>
+    public ServerSnapshot RecoverDeployment(WorkspaceRequest workspace, Guid id)
+    {
+        if (id == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
+        lock (sync)
+        {
+            Admit(id); var current = runId!.Value; var token = cancellation!.Token;
+            pending = Task.Run(async () =>
+            {
+                try
+                {
+                    var outcome = await service.RecoverDeploymentAsync(workspace, id, new Sink(this, current), token);
+                    lock (sync)
+                    {
+                        code = "HCSL-SERVER-DEPLOY-RECOVERED";
+                        detail = outcome;
+                        loaded = false; exit = null; clean = true; state = ServerState.Stopped;
+                    }
+                }
+                catch (Exception e)
+                {
+                    lock (sync)
+                    {
+                        code = e switch { ServerException s => s.Code, WorkspaceException w => w.Code, DeploymentException d => d.Code, InstanceException i => i.Code, OperationCanceledException => "HCSL-SERVER-STOPPED", _ => "HCSL-SERVER-ERROR" };
+                        detail = e is ServerException or WorkspaceException or DeploymentException or InstanceException ? e.Message[..Math.Min(e.Message.Length, 512)] : "Deployment recovery failed; inspect the redacted logs.";
+                        clean = e is ServerException or WorkspaceException or DeploymentException or InstanceException or OperationCanceledException;
+                        state = clean ? (code == "HCSL-SERVER-STOPPED" ? ServerState.Stopped : ServerState.Failed) : ServerState.RecoveryRequired;
+                    }
+                }
+                finally { lock (sync) { active = !clean; lastBusy = Stopwatch.GetTimestamp(); } }
+            });
+            return Snapshot();
+        }
+    }
+
     public Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
     {
         ServerConsoleRules.ValidateConfirmed(command);

@@ -58,6 +58,11 @@ public static class HostServerControllerTests
                 "deploy-only action not delegated.");
             Check(!host2.Server.Active, "deploy-only must not mark the server active.");
             var preset = host2.Selected!.Entry.Presets[0];
+            var preview = await host2.DeployPreviewAsync(deployer.First, preset.Id);
+            Check(preview is not null && deployer.PlanDeployments == 1 && preview.CopyMode == DeploymentCopyMode.Reflink,
+                "deployment preview not delegated.");
+            Check(host2.CanRecoverDeployment && await host2.RecoverDeploymentAsync() && deployer.RecoverDeployments == 1
+                && host2.Server.Code == "HCSL-SERVER-DEPLOY-RECOVERED", "recover-deployment not delegated.");
             Check(await host2.OpenPresetDirectoryAsync(deployer.First, preset.Id, "addons"), "preset addons open failed.");
             Check(opener.Last == Path.Combine(deployer.DataRoot, "instances", deployer.First.ToString("D"), "presets", preset.Id.ToString("D"), "addons"),
                 "preset addons path wrong: " + opener.Last);
@@ -82,7 +87,7 @@ public static class HostServerControllerTests
         public Guid Run { get; } = Guid.NewGuid();
         public bool Recover;
         public Guid? Recovered, StopRun;
-        public int PasswordCalls, StopCalls, DeployCalls;
+        public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments;
         public ServerCommand? LastStart;
         private bool hasPassword, active;
         private Guid current;
@@ -104,6 +109,14 @@ public static class HostServerControllerTests
             if (command.Action == ServerAction.Stop) { StopCalls++; StopRun = command.RunId; active = false; }
             if (command.Action == ServerAction.Recover) { Recovered = command.InstanceId; Recover = false; }
             if (command.Action == ServerAction.Deploy) { DeployCalls++; current = command.InstanceId; active = false; code = "HCSL-SERVER-DEPLOYED"; }
+            if (command.Action == ServerAction.RecoverDeployment) { RecoverDeployments++; current = command.InstanceId; active = false; code = "HCSL-SERVER-DEPLOY-RECOVERED"; }
+            if (command.Action == ServerAction.PlanDeployment)
+            {
+                PlanDeployments++;
+                var plan = new DeploymentPlan(command.InstanceId, 1, preset, 1, "123", "/library/runtime/preview", DeploymentCopyMode.Reflink,
+                    3140, 1024, 1024, 1024, [], [], null, null, null, null);
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan)));
+            }
             var snapshot = new ServerSnapshot(active || Recover ? Run : null, Recover ? Second : current == Guid.Empty ? null : current,
                 Recover ? ServerState.RecoveryRequired : active ? ServerState.Running : ServerState.Stopped,
                 active, Recover ? "HCSL-SERVER-RECOVERY" : code, active, !active && !Recover,

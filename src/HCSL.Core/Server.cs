@@ -1,6 +1,6 @@
 namespace HCSL.Core;
 public enum ServerState { Idle, Preparing, Starting, LoadingMap, Running, Stopping, Stopped, Failed, RecoveryRequired }
-public enum ServerAction { Start, Status, Logs, Stop, Recover, Deploy }
+public enum ServerAction { Start, Status, Logs, Stop, Recover, Deploy, RecoverDeployment, PlanDeployment }
 public sealed record ServerCommand(ServerAction Action, Guid InstanceId = default, Guid? RunId = null, long AfterSequence = 0, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
 public sealed record ServerStartOptions(Guid InstanceId, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
 public sealed record ServerLogLine(long Sequence, string Text);

@@ -259,6 +259,25 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public Task<bool> DeployAsync() =>
         CanDeploy ? SendAsync(new(ServerAction.Deploy, attached), true, "deploy", 4000) : Task.FromResult(false);
 
+    /// <summary>Read-only deployment preview for the confirmation dialog; failure is reported in <see cref="Code"/>.</summary>
+    public async Task<DeploymentPlan?> PlanDeploymentAsync(WorkspacePaths workspace)
+    {
+        if (!connected || attached == Guid.Empty) return null;
+        try
+        {
+            var plan = await new ServerClient(client).PlanDeploymentAsync(attached, workspace);
+            return plan;
+        }
+        catch (IOException) { return null; }
+    }
+
+    /// <summary>Deployment recovery is read-modify-write on the runtime, so it needs the same admission as deploy.</summary>
+    public bool CanRecoverDeployment => connected && !Busy && attached != Guid.Empty
+        && snapshot is null or { Active: false };
+
+    public Task<bool> RecoverDeploymentAsync() =>
+        CanRecoverDeployment ? SendAsync(new(ServerAction.RecoverDeployment, attached), true, "recover-deployment", 4000) : Task.FromResult(false);
+
     public Task<bool> StopAsync() =>
         CanStop && snapshot?.RunId is { } run
             ? SendAsync(new(ServerAction.Stop, snapshot.InstanceId ?? attached, run), false, "stop", 4000)
