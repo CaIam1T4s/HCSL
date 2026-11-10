@@ -243,7 +243,7 @@ def mapping_problems(runtime, mappings, instance_root, preset_dir):
 
 
 def plan_problems(plan, install, instance, preset, plugins, authorization,
-                  expected_copy_mode='Reflink'):
+                  expected_copy_mode='Reflink', with_plugins=False):
     """Validate DeploymentCheck --plan output against the recorded install and preset."""
     problems = []
     if plan.get('InstanceId') != instance.get('Id'):
@@ -264,7 +264,7 @@ def plan_problems(plan, install, instance, preset, plugins, authorization,
         problems.append('plan does not declare six persistent mappings')
     if not plan.get('RuntimePath'):
         problems.append('plan has no runtime path')
-    if plugins.get('Plugins'):
+    if plugins.get('Plugins') and not with_plugins:
         problems.append('preset declares plugins; the direct LAN baseline does not deploy them')
     if authorization.get('Rules'):
         problems.append('preset declares access rules; the direct LAN baseline does not deploy them')
@@ -703,6 +703,46 @@ def stop_hint(report, context):
 # Phases
 # --------------------------------------------------------------------------- #
 
+def plugin_package_dir(context, selection):
+    """Return the package root for one preset selection (<library>/plugin-packages/<id>/<version>)."""
+    return (Path(context['LibraryRoot']) / 'plugin-packages' / str(selection.get('Id') or '')
+            / str(selection.get('Version') or ''))
+
+
+def plugin_selection_problems(context):
+    """A --with-plugins run needs every selection enabled and backed by a readable package."""
+    problems = []
+    for selection in context['Plugins'].get('Plugins') or []:
+        if not selection.get('Id') or not selection.get('Version'):
+            problems.append(f'plugin selection is missing Id/Version: {selection}')
+            continue
+        if not selection.get('Enabled', True):
+            problems.append(f"plugin is disabled: {selection.get('Id')} {selection.get('Version')}")
+        package = plugin_package_dir(context, selection)
+        if not (package / 'plugin.json').is_file():
+            problems.append(f'missing plugin package: {package}')
+    return problems
+
+
+def plugin_addon_problems(context, runtime):
+    """Every addons file shipped by an enabled package must exist in the deployed runtime."""
+    problems = []
+    addons_root = Path(runtime) / 'game' / 'csgo' / 'addons'
+    for selection in context['Plugins'].get('Plugins') or []:
+        if not selection.get('Enabled', True):
+            continue
+        source_root = plugin_package_dir(context, selection) / 'files' / 'csgo' / 'addons'
+        if not source_root.is_dir():
+            continue
+        for source in source_root.rglob('*'):
+            if not source.is_file():
+                continue
+            relative = source.relative_to(source_root)
+            if not (addons_root / relative).is_file():
+                problems.append(f"missing deployed addon: {relative} ({selection.get('Id')})")
+    return problems
+
+
 def phase_preflight(context, entry, args, report):
     checks, evidence = entry['Checks'], entry['Evidence']
     check(checks, 'P0-platform', sys.platform == 'linux' and os.uname().machine in ('x86_64', 'amd64'),
@@ -737,8 +777,14 @@ def phase_preflight(context, entry, args, report):
           f"server={context['ServerRoot']}/game")
     map_file = context['ServerRoot'] / 'game' / 'csgo' / 'maps' / (str(context['Preset'].get('Map')) + '.vpk')
     check(checks, 'P0-map', map_file.is_file(), str(map_file))
-    check(checks, 'P0-plugins', not context['Plugins'].get('Plugins'),
-          f"plugins={len(context['Plugins'].get('Plugins') or [])}")
+    selected_plugins = context['Plugins'].get('Plugins') or []
+    if getattr(args, 'with_plugins', False):
+        problems = plugin_selection_problems(context)
+        check(checks, 'P0-plugins', not problems, '; '.join(problems) or
+              f"{len(selected_plugins)} enabled package(s) ready")
+        entry['Evidence']['Plugins'] = selected_plugins
+    else:
+        check(checks, 'P0-plugins', not selected_plugins, f'plugins={len(selected_plugins)}')
     check(checks, 'P0-access-rules', not context['Authorization'].get('Rules'),
           f"rules={len(context['Authorization'].get('Rules') or [])}")
     check(checks, 'P0-mappings-directions', context['PresetDir'].is_dir(), str(context['PresetDir']))
@@ -771,7 +817,8 @@ def phase_preflight(context, entry, args, report):
     entry['Evidence']['Plan'] = plan
     problems = plan_problems(plan, install, context['Instance'], context['Preset'],
                              context['Plugins'], context['Authorization'],
-                             'FullCopy' if args.full_copy else 'Reflink')
+                             'FullCopy' if args.full_copy else 'Reflink',
+                             with_plugins=getattr(args, 'with_plugins', False))
     check(checks, 'P0-plan', not problems, '; '.join(problems) or
           f"{plan.get('FileCount')} files, {plan.get('LogicalBytes')} bytes, {plan.get('CopyMode')}")
     library_free = free_bytes(context['LibraryRoot'])
@@ -785,7 +832,9 @@ def phase_preflight(context, entry, args, report):
     report['Limitations'] = [
         'Direct LAN baseline: wildcard listening (not loopback-isolated), sv_lan=1, '
         '-insecure, EffectiveVac=false, no GSLT. Use firewall isolation for testing.',
-        'No plugins, access rules, public exposure, Windows or non-reflink deployment are covered.',
+        ('Plugins are deployed in --with-plugins mode; access rules, public exposure, Windows and '
+         'non-reflink deployment are still not covered.' if getattr(args, 'with_plugins', False)
+         else 'No plugins, access rules, public exposure, Windows or non-reflink deployment are covered.'),
         'A pass here does not prove stability under player load or multi-instance concurrency.',
     ]
     return 'Passed'
@@ -893,6 +942,11 @@ def phase_deploy(context, entry, args, report):
           shared['Detail'])
     check(checks, 'D9-receipt-file', Path(runtime, 'deployment.json').is_file(),
           str(runtime / 'deployment.json'))
+    if getattr(args, 'with_plugins', False):
+        addon_problems = plugin_addon_problems(context, runtime)
+        deployed = sum(1 for _ in (Path(runtime) / 'game' / 'csgo' / 'addons').rglob('*'))
+        check(checks, 'D10-plugin-addons', not addon_problems,
+              '; '.join(addon_problems) or f'{deployed} addon entries present')
     return 'Passed'
 
 
@@ -963,6 +1017,11 @@ def start_once(context, entry, args, report, label):
                                Path(context['Runtime'], 'userdata'))
     evidence[label]['Log'] = {'Path': str(log_path), 'Bytes': len(text.encode()),
                               'Observed': observed}
+    if getattr(args, 'with_plugins', False) and any(
+            item.get('Id') == 'metamod' and item.get('Enabled', True)
+            for item in context['Plugins'].get('Plugins') or []):
+        check(checks, f'{label}-metamod-loaded', '[META]' in text,
+              'Metamod banner missing from the server log')
     check(checks, f'{label}-log-evidence', log_path.is_file() and observed['MapLoadedConfirmed'],
           f'{log_path} map={observed["MapLoadedConfirmed"]} '
           f'active={observed["ServerStateActivated"]} physics={observed["MapPhysicsObserved"]} '
@@ -1157,6 +1216,8 @@ def main(argv=None):
     parser.add_argument('--timeout', type=int, default=120, help='startup timeout seconds (1..300)')
     parser.add_argument('--full-copy', action='store_true', help='explicitly deploy with FullCopy')
     parser.add_argument('--skip-build', action='store_true', help='trust existing build output')
+    parser.add_argument('--with-plugins', action='store_true',
+                        help='accept a non-empty plugin selection; verify packages, deployed addons and the Metamod banner')
     parser.add_argument('--plan', action='store_true', help='print commands and exit (implies no execute)')
     args = parser.parse_args(argv)
     if not 1 <= args.timeout <= 300:

@@ -300,5 +300,51 @@ class Evidence(unittest.TestCase):
         self.assertFalse(observed['UserLocalEnvironmentObserved'])
 
 
+class PluginDeployment(unittest.TestCase):
+    def context(self, root):
+        library = Path(root) / 'library'
+        package = library / 'plugin-packages' / 'metamod' / '2.0.0'
+        (package / 'files' / 'csgo' / 'addons' / 'metamod' / 'bin').mkdir(parents=True)
+        (package / 'plugin.json').write_text('{"FormatVersion":1,"Id":"metamod","Version":"2.0.0"}')
+        (package / 'files' / 'csgo' / 'addons' / 'metamod' / 'metaplugins.ini').write_text('')
+        (package / 'files' / 'csgo' / 'addons' / 'metamod' / 'bin' / 'metamod.2.cs2.so').write_bytes(b'x')
+        runtime = Path(root) / 'runtime'
+        (runtime / 'game' / 'csgo' / 'addons').mkdir(parents=True)
+        return {
+            'LibraryRoot': str(library),
+            'Plugins': {'Plugins': [{'Id': 'metamod', 'Version': '2.0.0', 'Enabled': True}]},
+        }, runtime, package
+
+    def test_plan_accepts_plugins_only_in_plugin_mode(self):
+        install = {'Status': 'Ready', 'BuildId': BUILD_ID}
+        instance = {'Id': INSTANCE_ID, 'Revision': 9}
+        preset = {'Id': PRESET_ID}
+        plugins = {'Plugins': [{'Id': 'metamod', 'Version': '2.0.0'}]}
+        self.assertTrue(accept.plan_problems(plan(), install, instance, preset, plugins, {'Rules': []}))
+        self.assertEqual(accept.plan_problems(plan(), install, instance, preset, plugins,
+                                              {'Rules': []}, with_plugins=True), [])
+
+    def test_selection_requires_an_enabled_readable_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context, _, package = self.context(directory)
+            self.assertEqual(accept.plugin_selection_problems(context), [])
+            context['Plugins']['Plugins'][0]['Enabled'] = False
+            self.assertTrue(any('disabled' in item for item in accept.plugin_selection_problems(context)))
+            context['Plugins']['Plugins'][0]['Enabled'] = True
+            (package / 'plugin.json').unlink()
+            self.assertTrue(any('missing plugin package' in item
+                                for item in accept.plugin_selection_problems(context)))
+
+    def test_every_packaged_addon_must_be_deployed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context, runtime, _ = self.context(directory)
+            problems = accept.plugin_addon_problems(context, runtime)
+            self.assertTrue(any('metaplugins.ini' in item for item in problems))
+            (runtime / 'game' / 'csgo' / 'addons' / 'metamod' / 'bin').mkdir(parents=True)
+            (runtime / 'game' / 'csgo' / 'addons' / 'metamod' / 'metaplugins.ini').write_text('')
+            (runtime / 'game' / 'csgo' / 'addons' / 'metamod' / 'bin' / 'metamod.2.cs2.so').write_bytes(b'x')
+            self.assertEqual(accept.plugin_addon_problems(context, runtime), [])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
