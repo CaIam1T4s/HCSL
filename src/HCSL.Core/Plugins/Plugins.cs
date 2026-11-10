@@ -17,6 +17,14 @@ public sealed record PluginCommand(PluginAction Action, Guid InstanceId, Guid Pr
 
 public sealed record PluginManifest(int FormatVersion, long Revision, PluginSelection[] Plugins);
 
+/// <summary>Import an extracted plugin release into the local library. The source directory is read, never executed.</summary>
+public sealed record PluginImportCommand(Guid InstanceId, Guid PresetId, string SourceDirectory, string Id, string Name, string Version,
+    string? MetaPlugin = null, bool Enable = false, bool Force = false, long InstanceRevision = 0);
+
+/// <summary>Result of an import. Warnings are advisory; the package is already written when this is returned.</summary>
+public sealed record PluginImportResult(string PackagePath, string Id, string Version, int Files, long Bytes,
+    bool CurrentPlatformSupported, string[] Warnings, bool Enabled);
+
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
 public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes);
 

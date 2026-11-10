@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using HCSL.Core;
 using HCSL.Frontend;
 using TKCode.Arc;
@@ -59,27 +60,77 @@ public partial class MainWindow
                 catch (InstanceException e) { status.Text = e.Code + ": " + e.Message; }
             }
         }
+        async Task ImportPlugin()
+        {
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "选择插件发行目录（含 addons/、csgo/ 或 files/csgo/）",
+                AllowMultiple = false
+            });
+            var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+            if (string.IsNullOrWhiteSpace(path)) return;
+            var (defaultId, defaultName, meta) = DetectImport(path);
+            var body = new StackPanel { Spacing = 8 };
+            body.Children.Add(new TextBlock { Text = "导入插件包", FontSize = 20 });
+            body.Children.Add(new TextBlock { Text = "目录：" + path, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var importId = new Input { Text = defaultId };
+            var importName = new Input { Text = defaultName };
+            var importVersion = new Input { Text = "1.0.0" };
+            var importEnable = new TKCode.Arc.Checkbox { Content = "导入后加入当前预设并启用（需要停服）", IsChecked = false };
+            var importForce = new TKCode.Arc.Checkbox { Content = "覆盖同名版本", IsChecked = false };
+            body.Children.Add(new TextBlock { Text = "Id" }); body.Children.Add(importId);
+            body.Children.Add(new TextBlock { Text = "名称" }); body.Children.Add(importName);
+            body.Children.Add(new TextBlock { Text = "版本" }); body.Children.Add(importVersion);
+            body.Children.Add(importEnable); body.Children.Add(importForce);
+            body.Children.Add(new TextBlock
+            {
+                Text = meta is null
+                    ? "未检测到 Metamod 子插件二进制；普通 addons 包不需要 metaplugins.ini。"
+                    : "将生成 addons/metamod/metaplugins.ini：" + meta + "（清单中需排在 Metamod:Source 之后）。",
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            if (await ShowOverlayAsync(body, ["取消", "导入"]) != 1) return;
+            var result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id, path,
+                importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "", meta,
+                importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision));
+            await Load();
+            status.Text = $"已导入 {result.Id} {result.Version}（{result.Files} 文件，{result.Bytes / 1024} KiB）；"
+                + (result.Enabled ? "已启用。" : "未启用。")
+                + (result.Warnings.Length == 0 ? "" : " 警告：" + string.Join("；", result.Warnings.Take(3)))
+                + " 重新部署后生效。";
+        }
+        static (string Id, string Name, string? Meta) DetectImport(string path)
+        {
+            static bool Has(string root, params string[] parts) => Directory.Exists(Path.Combine([root, .. parts]));
+            if (Has(path, "addons", "sourcemod") || Has(path, "csgo", "addons", "sourcemod") || Has(path, "files", "csgo", "addons", "sourcemod"))
+                return ("sourcemod", "SourceMod", "addons/sourcemod/bin/sourcemod_mm");
+            if (Has(path, "addons", "metamod") || Has(path, "csgo", "addons", "metamod") || Has(path, "files", "csgo", "addons", "metamod"))
+                return ("metamod", "Metamod:Source", null);
+            return (Path.GetFileName(path).TrimEnd('/').ToLowerInvariant().Replace(' ', '-'), Path.GetFileName(path.TrimEnd('/')), null);
+        }
         try
         {
             try { await Load(); } catch (Exception e) { status.Text = e.Message; }
             while (!windowClosed)
             {
-                var choice = await ShowOverlayAsync(content, ["关闭", "添加插件", "移除", "启用/禁用", "上移", "下移", "保存清单", "重新读取"]);
+                var choice = await ShowOverlayAsync(content, ["关闭", "添加插件", "导入插件包", "移除", "启用/禁用", "上移", "下移", "保存清单", "重新读取"]);
                 if (choice <= 0) { if (windowClosed || await Discard()) break; else continue; }
                 try
                 {
-                    if (choice == 7) { if (await Discard()) await Load(); continue; }
-                    if (!model.CanEditPlugins)
+                    if (choice == 8) { if (await Discard()) await Load(); continue; }
+                    // Importing into the library is allowed while running; enabling is gated by the controller.
+                    if (!model.CanEditPlugins && choice != 2)
                         throw new IOException("HCSL-PLUGIN-BUSY: 请先停服并完成恢复/工具任务。");
                     var index = list.SelectedIndex;
                     switch (choice)
                     {
                         case 1: await AddPlugin(); break;
-                        case 2: draft.Remove(index); Refresh(index); status.Text = "已从草稿移除；保存后生效。"; break;
-                        case 3: draft.Toggle(index); Refresh(index); status.Text = "已切换启用状态草稿；保存后生效。"; break;
-                        case 4: Refresh(draft.Move(index, -1)); status.Text = "已上移草稿；数组顺序即部署顺序。"; break;
-                        case 5: Refresh(draft.Move(index, 1)); status.Text = "已下移草稿；数组顺序即部署顺序。"; break;
-                        case 6:
+                        case 2: await ImportPlugin(); break;
+                        case 3: draft.Remove(index); Refresh(index); status.Text = "已从草稿移除；保存后生效。"; break;
+                        case 4: draft.Toggle(index); Refresh(index); status.Text = "已切换启用状态草稿；保存后生效。"; break;
+                        case 5: Refresh(draft.Move(index, -1)); status.Text = "已上移草稿；数组顺序即部署顺序。"; break;
+                        case 6: Refresh(draft.Move(index, 1)); status.Text = "已下移草稿；数组顺序即部署顺序。"; break;
+                        case 7:
                             draft.Load(await model.PluginsAsync(draft.SaveCommand(instance.Id, preset.Id, instance.Revision)));
                             Refresh(index); status.Text = "插件清单已保存；下次部署/启动会应用，未自动部署。"; break;
                     }

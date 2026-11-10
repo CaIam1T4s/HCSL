@@ -5,6 +5,14 @@ namespace HCSL.Frontend;
 public sealed class PresetPluginClient(InstanceClient instances, ServerController server)
 {
     public bool CanWrite => PresetEditGate.CanWrite(server);
+    /// <summary>Import a local release directory. Enabling also needs the normal write gate.</summary>
+    public Task<PluginImportResult> ImportAsync(PluginImportCommand command)
+    {
+        if (!server.Connected) throw new IOException("HCSL-PLUGIN-BUSY: Host is disconnected.");
+        if (command.Enable && !CanWrite) throw new IOException("HCSL-PLUGIN-BUSY: Stop the server and finish recovery before enabling plugins.");
+        return instances.PluginImportAsync(command);
+    }
+
     public Task<PluginResult> ExecuteAsync(PluginCommand command)
     {
         if (!server.Connected || server.Busy || (command.Action != PluginAction.List &&

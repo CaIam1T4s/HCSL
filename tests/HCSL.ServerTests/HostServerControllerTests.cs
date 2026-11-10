@@ -58,6 +58,8 @@ public static class HostServerControllerTests
                 "deploy-only action not delegated.");
             Check(!host2.Server.Active, "deploy-only must not mark the server active.");
             var preset = host2.Selected!.Entry.Presets[0];
+            var imported = await host2.ImportPluginAsync(new(deployer.First, preset.Id, "/tmp/src", "metamod", "Metamod", "2.0.0"));
+            Check(imported.Id == "metamod" && deployer.ImportCalls == 1, "plugin import not delegated.");
             var preview = await host2.DeployPreviewAsync(deployer.First, preset.Id);
             Check(preview is not null && deployer.PlanDeployments == 1 && preview.CopyMode == DeploymentCopyMode.Reflink,
                 "deployment preview not delegated.");
@@ -87,7 +89,7 @@ public static class HostServerControllerTests
         public Guid Run { get; } = Guid.NewGuid();
         public bool Recover;
         public Guid? Recovered, StopRun;
-        public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments;
+        public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments, ImportCalls;
         public ServerCommand? LastStart;
         private bool hasPassword, active;
         private Guid current;
@@ -96,6 +98,13 @@ public static class HostServerControllerTests
         {
             if (request.Kind == RequestKind.Hello)
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: new("/settings", DataRoot, LibraryRoot)));
+            if (request.Kind == RequestKind.PluginImport)
+            {
+                var c = JsonSerializer.Deserialize<PluginImportCommand>(request.PluginImportJson!)!;
+                ImportCalls++;
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(
+                    new PluginImportResult("/library/plugin-packages/" + c.Id + "/" + c.Version, c.Id, c.Version, 3, 10, true, [], c.Enable))));
+            }
             if (request.Kind == RequestKind.Instances)
             {
                 var c = JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson!)!;
