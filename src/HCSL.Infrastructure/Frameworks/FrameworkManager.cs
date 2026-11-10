@@ -25,12 +25,14 @@ public sealed class FrameworkManager : IFrameworkManager
         this.clock = clock ?? TimeProvider.System;
     }
 
-    public async Task<FrameworkCheckResult> CheckAsync(WorkspaceRequest workspace, CancellationToken ct = default)
+    public async Task<FrameworkCheckResult> CheckAsync(WorkspaceRequest workspace, string? frameworkId = null, CancellationToken ct = default)
     {
         var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
         var packagesRoot = Path.Combine(paths.LibraryRoot, "plugin-packages");
         var results = new List<FrameworkVersionInfo>(FrameworkRules.Known.Length);
-        foreach (var framework in FrameworkRules.Known)
+        var catalog = frameworkId is null ? FrameworkRules.Known : [FrameworkRules.Find(frameworkId)
+            ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Unknown framework.")];
+        foreach (var framework in catalog)
         {
             var installed = InstalledVersion(packagesRoot, framework.Id);
             if (!framework.Installable)

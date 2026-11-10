@@ -145,7 +145,10 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var result = await Frameworks.CheckAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), ct);
+        var command = request.FrameworkCheckJson is { Length: > 0 } json
+            ? JsonSerializer.Deserialize<FrameworkCheckCommand>(json)
+            : null;
+        var result = await Frameworks.CheckAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command?.Id, ct);
         return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(result));
     }
     private async Task<LocalResponse> FrameworkInstallAsync(LocalRequest request, CancellationToken ct)

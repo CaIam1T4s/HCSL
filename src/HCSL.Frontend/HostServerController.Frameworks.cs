@@ -15,6 +15,14 @@ public sealed partial class HostServerController
         finally { Busy = false; Notify(); }
     }
 
+    /// <summary>Read-only per-framework check used for progressive cards; concurrent calls must not flip Busy.</summary>
+    public async Task<FrameworkCheckResult> CheckFrameworkAsync(string id)
+    {
+        if (!Server.Connected || frameworks is null)
+            throw new IOException("HCSL-FRAMEWORK-NET: Host is disconnected.");
+        return await frameworks.CheckAsync(id);
+    }
+
     public async Task<FrameworkInstallResult> InstallFrameworkAsync(string id, string? version = null)
     {
         if (!CanInstallFramework || frameworks is null)

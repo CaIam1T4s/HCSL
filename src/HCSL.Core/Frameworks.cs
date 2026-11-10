@@ -18,6 +18,9 @@ public sealed record FrameworkVersionInfo(string Id, string DisplayName, bool Ba
 
 public sealed record FrameworkCheckResult(FrameworkVersionInfo[] Frameworks);
 
+/// <summary>Check one framework (for progressive UI) or the whole catalog when Id is null.</summary>
+public sealed record FrameworkCheckCommand(string? Id = null);
+
 /// <summary>Install the latest (or a specific) release of one catalog framework into the local package library.</summary>
 public sealed record FrameworkInstallCommand(string Id, string? Version = null, bool WithRuntime = true);
 

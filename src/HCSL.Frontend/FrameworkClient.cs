@@ -9,12 +9,12 @@ public sealed class FrameworkClient(IDaemonClient client)
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(25);
 
-    public async Task<FrameworkCheckResult> CheckAsync(CancellationToken ct = default)
+    public async Task<FrameworkCheckResult> CheckAsync(string? id = null, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkCheck,
-            Options: new(hello.Defaults)), CheckTimeout, ct);
+            Options: new(hello.Defaults), FrameworkCheckJson: JsonSerializer.Serialize(new FrameworkCheckCommand(id))), CheckTimeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<FrameworkCheckResult>(response.FrameworkCheckJson ?? "null")
             ?? throw new IOException("Missing framework check result.");
