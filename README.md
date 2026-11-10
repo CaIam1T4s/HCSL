@@ -66,4 +66,4 @@ TUI 使用与 GUI 对应的五项一级导航、左侧二级菜单、共享服�
 
 Linux 实例离线部署的预检、部署与中断恢复见 [部署说明](docs/deployment/offline-deployment.md)。不启动 CS2；TUI F5 开服仍待接入。
 
-Daemon 单实例启动、日志、停服与会话恢复已有 [Linux 命令行验证入口](docs/server-lifecycle.md)。 日常调试与插件/部署诊断优先使用 [hcsl 开发命令行](docs/dev-cli.md)。目前限定回环 LAN 验证模式，GUI/TUI 服务器控制仍待接入。真实 CS2 的端到端验收步骤与检查项见 [单实例验收清单](docs/acceptance/real-cs2-single-instance.md)；本轮只完成脚本与清单，尚未对真实 CS2 执行。
+Daemon 单实例启动、日志、停服与会话恢复已有 [Linux 命令行验证入口](docs/server-lifecycle.md)。 日常调试与插件/部署诊断优先使用 [hcsl 开发命令行](docs/dev-cli.md)。 自动化无法覆盖的界面/外部程序/平台组合与人工验证步骤见 [人工验证清单](docs/manual-verification.md)。目前限定回环 LAN 验证模式，GUI/TUI 服务器控制仍待接入。真实 CS2 的端到端验收步骤与检查项见 [单实例验收清单](docs/acceptance/real-cs2-single-instance.md)；本轮只完成脚本与清单，尚未对真实 CS2 执行。
