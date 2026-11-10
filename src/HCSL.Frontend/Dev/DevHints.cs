@@ -33,6 +33,11 @@ public static class DevHints
         "HCSL-PLUGIN-PACKAGE" => "A selected package is missing/invalid: `hcsl plugins` and `hcsl doctor`.",
         "HCSL-PLUGIN-LIMIT" => "The selection or a package exceeds a documented limit (32 entries, 4096 files, 512 MiB).",
         "HCSL-INSTANCE-STALE" => "The instance changed: refresh the catalog (`hcsl status`) and retry.",
+        "HCSL-FRAMEWORK-NET" => "Network/API failure: check connectivity/proxy, or import the release manually with `hcsl import`.",
+        "HCSL-FRAMEWORK-RELEASE" or "HCSL-FRAMEWORK-ASSET" => "No matching official asset for this platform; download it manually and use `hcsl import`.",
+        "HCSL-FRAMEWORK-HASH" => "The release has no usable SHA-256 digest or the download changed; do not install it automatically.",
+        "HCSL-FRAMEWORK-BUSY" => "Stop the server/SteamCMD first: `hcsl stop`.",
+        "HCSL-FRAMEWORK-ID" => "Only the built-in catalog can be installed: `hcsl frameworks`.",
         "HCSL-IPC-VERSION" => "GUI/CLI and daemon versions differ: restart the daemon/session.",
         _ => null
     };

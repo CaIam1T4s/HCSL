@@ -6,14 +6,19 @@ namespace HCSL.Frontend;
 public interface IDaemonClient
 {
     Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default);
+    /// <summary>Long-running requests (downloads) opt into their own deadline; fakes keep the default.</summary>
+    Task<LocalResponse> SendAsync(LocalRequest request, TimeSpan timeout, CancellationToken ct = default)
+        => SendAsync(request, ct);
 }
 public sealed class DaemonClient(string? pipeName = null) : IDaemonClient
 {
     private readonly string pipe = LocalProtocol.PipeName(pipeName);
-    public async Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
+    public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default) =>
+        SendAsync(request, TimeSpan.FromSeconds(5), ct);
+    public async Task<LocalResponse> SendAsync(LocalRequest request, TimeSpan timeout, CancellationToken ct = default)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(TimeSpan.FromSeconds(5));
+        deadline.CancelAfter(timeout);
         var options = OperatingSystem.IsWindows() ? PipeOptions.Asynchronous : PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly;
         using var connection = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, options);
         await connection.ConnectAsync(deadline.Token);

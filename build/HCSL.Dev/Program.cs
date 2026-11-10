@@ -48,6 +48,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "doctor" => Doctor(invocation, json),
     "plugins" => Plugins(invocation, json),
     "import" => Import(invocation, json),
+    "frameworks" => await FrameworksAsync(invocation, json, ct),
     "gc" => Gc(invocation),
     "test" => await TestAsync(invocation, json, ct),
     _ => throw new DevUsageException("Unknown command. Run: hcsl help")
@@ -174,6 +175,36 @@ static async Task<(DaemonClient Daemon, ServerClient Client)> ConnectAsync(DevIn
 
 static WorkspacePaths Paths(WorkspaceRequest workspace) => new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
 
+static async Task<int> FrameworksAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var (daemon, _) = await ConnectAsync(invocation, ct);
+    var client = new FrameworkClient(daemon);
+    if (invocation.Get("--install") is { } install)
+    {
+        if (!invocation.Has("--json")) Console.Error.WriteLine("framework  downloading " + install + " ...");
+        var result = await client.InstallAsync(new(install, invocation.Get("--version"), !invocation.Has("--no-runtime")), ct);
+        if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(result, json)); return 0; }
+        Console.WriteLine($"installed  {result.Id} {result.Version}");
+        Console.WriteLine($"package    {result.PackagePath}");
+        Console.WriteLine($"files      {result.Files} · {result.Bytes / 1024 / 1024.0:F1} MiB");
+        Console.WriteLine($"sha256     {result.Sha256} · digest verified");
+        foreach (var warning in result.Warnings) Console.WriteLine("warning    " + warning);
+        return 0;
+    }
+    var check = await client.CheckAsync(ct);
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(check, json)); return 0; }
+    Console.WriteLine("framework            installed     latest        state");
+    foreach (var item in check.Frameworks)
+    {
+        var state = !item.Installable ? "manual"
+            : item.Error is { } code ? code
+            : item.InstalledVersion is null ? "not installed"
+            : item.UpdateAvailable ? "update available" : "current";
+        Console.WriteLine($"{item.Id,-20} {item.InstalledVersion ?? "-",-13} {item.LatestVersion ?? "-",-13} {state}");
+        if (item.Requires is not null) Console.WriteLine($"  requires {item.Requires}");
+    }
+    return 0;
+}
 static async Task<int> StatusAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
 {
     var workspace = Workspace(invocation);

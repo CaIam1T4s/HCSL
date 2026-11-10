@@ -12,6 +12,7 @@ namespace HCSL.Daemon.Ipc;
 
 public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operations, TimeSpan? idleTimeout = null, ServerOperations? servers = null)
 {
+    private static readonly HCSL.Infrastructure.Frameworks.FrameworkManager Frameworks = new();
     private readonly object activity = new();
     private int activeRequests;
     private long lastActivity = Stopwatch.GetTimestamp();
@@ -98,8 +99,12 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             try
             {
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
+                if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall)
+                    deadline.CancelAfter(TimeSpan.FromMinutes(20));
                 LocalResponse response;
-                try { response = request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
+                try { response = request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
                     : Dispatch(request); }
                 catch (ServerException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
@@ -133,6 +138,24 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
         var plan = await servers.PlanDeployment(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command.InstanceId);
         return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan));
+    }
+    private async Task<LocalResponse> FrameworkCheckAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var result = await Frameworks.CheckAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), ct);
+        return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(result));
+    }
+    private async Task<LocalResponse> FrameworkInstallAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<FrameworkInstallCommand>(request.FrameworkInstallJson ?? "null")
+            ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework install command is required.");
+        if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
+            throw new InstanceException("HCSL-FRAMEWORK-BUSY", "Stop the server/SteamCMD and complete recovery before installing a framework.");
+        var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
+        return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
     }
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
     {

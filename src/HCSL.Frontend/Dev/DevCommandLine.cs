@@ -14,11 +14,11 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe", "--no-runtime"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -37,6 +37,8 @@ public static class DevCommandLine
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
           import <path>          Probe (--probe) or import a folder/archive into plugin-packages.
+          frameworks             Check Metamod/CounterStrikeSharp versions; --install <id> downloads
+                                 the latest official release, verifies its SHA-256 and imports it.
           doctor                 Check workspace, permissions, packages, leftovers and report fixes.
           gc                     Delete stale .previous-*/.staging-* deployments (needs --yes).
           test mms <dir|tar.gz>  Import a Metamod:Source release as a plugin package (--enable to select it).
@@ -59,6 +61,8 @@ public static class DevCommandLine
           --force                test mms/gc: overwrite an existing package version.
           --allow-low-memory     start: allow 3072..4095 MiB free memory.
           --follow --after <n>   logs: stream new lines / start after a sequence.
+          --install <id>         frameworks: install this framework (metamod, counterstrikesharp).
+          --no-runtime           frameworks: CounterStrikeSharp without the bundled .NET runtime.
 
         Examples:
           hcsl status
@@ -70,6 +74,8 @@ public static class DevCommandLine
           hcsl plugins --json
           hcsl gc --yes
           hcsl test mms ~/Downloads/mmsource-2.0.0-dev-linux.tar.gz --enable
+          hcsl frameworks
+          hcsl frameworks --install counterstrikesharp
         """;
 
     public static DevInvocation Parse(string[] args)
@@ -106,7 +112,7 @@ public static class DevCommandLine
 
         if (command == "exec" && positionals.Count == 0)
             throw new DevUsageException("exec needs a command. Example: hcsl exec \"meta version\"");
-        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "plugins" or "gc" && positionals.Count > 0)
+        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "plugins" or "gc" or "frameworks" && positionals.Count > 0)
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
         return new(command, [.. positionals], options);
     }
@@ -116,6 +122,7 @@ public static class DevCommandLine
         "exec" => "exec \"meta version\"",
         "logs" => "logs --after 0",
         "gc" => "gc --yes",
+        "frameworks" => "frameworks --install counterstrikesharp",
         _ => $"{command} --instance 565653a2-28fe-4fce-8bb6-6e231d55ac61"
     };
 }

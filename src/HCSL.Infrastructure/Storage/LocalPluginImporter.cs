@@ -333,8 +333,9 @@ public sealed class LocalPluginImporter : IPluginImporter
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }
 
+    /// <summary>Only the Metamod loader itself needs the gameinfo overlay; a plugin that merely ships a .vdf does not.</summary>
     private static bool NeedsGameInfo(List<SourceFile> files) =>
-        files.Any(f => f.RelativePath.StartsWith("csgo/addons/metamod/", StringComparison.OrdinalIgnoreCase))
+        files.Any(f => f.RelativePath.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))
         && !files.Any(f => f.RelativePath.Equals("csgo/gameinfo.gi", StringComparison.OrdinalIgnoreCase));
 
     private static void WriteGameInfoOverlay(string baseGameInfo, string overlay)
