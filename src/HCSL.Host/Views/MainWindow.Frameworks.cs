@@ -30,9 +30,12 @@ public partial class MainWindow
             plugins = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id));
             var check = await model.CheckFrameworksAsync();
             current = FrameworkSelection.Current(plugins);
-            currentText.Text = current is null
-                ? "当前预设未启用脚本框架。"
-                : "当前预设脚本框架：" + FrameworkRules.Find(current)?.DisplayName + "（" + current + "）";
+            var metamod = plugins.Selected.FirstOrDefault(s => s.Id == "metamod" && s.Enabled);
+            currentText.Text = (metamod is null ? "基础框架：Metamod:Source 未启用" : "基础框架：Metamod:Source " + metamod.Version + "（已启用）")
+                + " · "
+                + (current is null
+                    ? "脚本框架：未启用"
+                    : "脚本框架：" + FrameworkRules.Find(current)?.DisplayName + "（" + current + "）");
             cards.Children.Clear();
             foreach (var framework in FrameworkRules.Known)
             {
@@ -90,6 +93,7 @@ public partial class MainWindow
                     Content = !framework.Installable ? "手动" : installed is null ? "下载最新" : latest is not null && FrameworkRules.CompareVersions(framework.Id, latest, installed) > 0 ? "更新到 " + latest : "已安装",
                     Variant = ButtonVariant.Secondary,
                     IsEnabled = framework.Installable && !incompatible && info?.Error is null
+                        && (installed is null || latest is not null && FrameworkRules.CompareVersions(framework.Id, latest, installed) > 0)
                 };
                 download.Click += async (_, _) => await InstallAsync();
                 body.Children.Add(download);

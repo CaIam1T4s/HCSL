@@ -297,6 +297,7 @@ WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Any(s =
 var pluginSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().First(s => s.IsEffectivelyVisible
     && s.ItemsSource is string[] items && items.Any(x => x.Contains("Metamod", StringComparison.Ordinal)));
 Check(pluginSelect.ItemsSource!.Cast<string>().Single().Contains("Metamod"), "Plugin list missing selected package.");
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("Metamod:Source", StringComparison.Ordinal) == true));
 Click(owner, "启用/禁用");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("已切换启用状态草稿") == true));
 Click(owner, "保存清单");
@@ -322,8 +323,10 @@ daemon.Plugins = new(
     [new("metamod", "Metamod", "1.0.0", true, true)], 1, "plugin-fw");
 var frameworkInstalls = daemon.FrameworkInstalls;
 var frameworkDialog = owner.EditFrameworksAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
-WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("当前预设未启用脚本框架") == true));
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("脚本框架：未启用") == true));
 WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新")));
+Check(!owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "已安装") && b.IsEffectivelyEnabled),
+    "An up-to-date framework still offered a download button.");
 var download = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新"));
 Check(download.IsEffectivelyEnabled, "Available framework download was disabled.");
 Click(owner, "下载最新");
@@ -334,7 +337,7 @@ daemon.Plugins = new(
      new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", "hash", 1, 1, "counterstrikesharp", true)],
     [new("metamod", "Metamod", "1.0.0", true, true), new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", true, true)], 1, "plugin-fw2");
 var compatDialog = owner.EditFrameworksAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
-WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("当前预设脚本框架：CounterStrikeSharp") == true));
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("脚本框架：CounterStrikeSharp") == true));
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("与 CounterStrikeSharp 不兼容") == true));
 Click(owner, "关闭"); PumpUntil(compatDialog);
 Console.WriteLine("PASS gui.frameworks.download-and-incompatible-card");

@@ -18,6 +18,9 @@ public partial class MainWindow
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         var frameworkSelect = new Select();
+        content.Children.Add(new TextBlock { Text = "基础框架（Metamod 必需）" });
+        var baseText = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+        content.Children.Add(baseText);
         content.Children.Add(new TextBlock { Text = "当前脚本框架" });
         content.Children.Add(frameworkSelect);
         var list = new Select(); content.Children.Add(list);
@@ -52,6 +55,10 @@ public partial class MainWindow
         void Refresh(int draftIndex = 0)
         {
             var current = CurrentFramework();
+            var baseSelection = draft.Plugins.FirstOrDefault(p => p.Id == "metamod");
+            baseText.Text = baseSelection is null
+                ? "Metamod:Source：未选择（未安装或尚未加入预设）"
+                : "Metamod:Source " + baseSelection.Version + (baseSelection.Enabled ? "（已启用）" : "（已禁用，部署前需启用）");
             updatingFramework = true;
             try
             {
