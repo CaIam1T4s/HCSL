@@ -55,6 +55,18 @@ public sealed partial class ShellWindow
                 + string.Join("; ", rejected.Take(3).Select(r => $"{r.Id}/{r.Version} {r.Code}"));
         return text;
     }
+    /// <summary>Terminal parity for the GUI directory buttons: show the resolved directories instead of opening them.</summary>
+    private async Task<string> DescribePluginPathsAsync(Guid instanceId, Guid presetId)
+    {
+        try
+        {
+            var addons = await _instanceClient.PresetDirectoryAsync(instanceId, presetId, "addons");
+            var runtime = await _instanceClient.RuntimeDirectoryAsync(instanceId);
+            return T("预设 addons：", "Preset addons: ") + addons + "\n"
+                + T("运行目录：", "Runtime: ") + runtime + (Directory.Exists(runtime) ? "" : T("（尚未部署）", " (not deployed)"));
+        }
+        catch (Exception e) when (e is IOException) { return e.Message; }
+    }
     /// <summary>The refresh action queries the daemon again; it never just repaints the old text.</summary>
     private async Task RefreshPluginListAsync(Guid instanceId, Guid presetId)
     {
@@ -62,9 +74,10 @@ public sealed partial class ShellWindow
         try
         {
             var result = await new PresetPluginClient(_instanceClient, _server).ExecuteAsync(new(PluginAction.List, instanceId, presetId));
+            var paths = await DescribePluginPathsAsync(instanceId, presetId);
             Application.MainLoop.Invoke(() =>
             {
-                _pluginSummary = DescribePlugins(result); _pluginSummaryKey = PluginKey(instanceId, presetId);
+                _pluginSummary = DescribePlugins(result) + "\n" + paths; _pluginSummaryKey = PluginKey(instanceId, presetId);
                 _pluginBusy = false; RefreshPluginPage();
             });
         }

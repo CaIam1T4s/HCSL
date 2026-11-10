@@ -43,6 +43,7 @@ public partial class InstancePage : UserControl
         InstanceSelect.IsEnabled = !operating && !watchingStart && !m.Busy && !m.Server.Busy;
         RefreshButton.IsEnabled = !operating && !m.Busy;
         StartButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        DeployButton.IsEnabled = !operating && !watchingStart && m.CanDeploy;
         StopButton.IsEnabled = !operating && m.Server.CanStop;
         ChangeMapButton.IsEnabled = !operating && m.Server.CanSendConsole && !m.Server.Busy;
         RecoverButton.IsEnabled = !operating && m.Server.CanRecover;
@@ -65,6 +66,19 @@ public partial class InstancePage : UserControl
     {
         if (Model is not { } m) return;
         if (!m.Server.Connected) await m.InitializeAsync(); else await m.RefreshInstancesAsync();
+    });
+    private async void DeployServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
+        var confirmation = await owner.ChooseAsync("部署（不启动）",
+            m.SelectionText + "\n\n将离线部署所选预设：宿主自动探测 reflink/全量复制，不会启动 CS2。\n运行中的服务器需先停服；部署失败不会写入新的运行目录。",
+            "取消", "部署");
+        if (confirmation != 1 || m.Selected?.Entry.Id != d.Id) return;
+        if (!await m.DeployAsync()) { await owner.ChooseAsync("部署未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error, "返回"); return; }
+        // The request is accepted asynchronously; wait for the daemon to finish the deployment task.
+        for (var waited = 0; m.Server.Active && waited < 1800; waited++) await Task.Delay(500);
+        var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
+        await owner.ChooseAsync(done ? "部署完成" : "部署未完成", m.Server.DetailText, "返回");
     });
     private async void StartServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {

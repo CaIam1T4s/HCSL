@@ -305,6 +305,43 @@ Console.WriteLine("PASS gui.plugins.toggle-save-no-console");
 if (only is "plugins") return 0;
 }
 
+if (only is null or "errors")
+{
+    if (daemon.Catalog.Instances.Length == 0)
+    {
+        var errorPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Default");
+        var errorInstance = Guid.NewGuid();
+        daemon.Catalog = new([new(errorInstance, new(1, errorInstance, 1, "cs_test_dust_", 27015, errorPreset.Id), [errorPreset])]);
+    }
+    PumpUntil(model.RefreshInstancesAsync());
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("instance"); Layout();
+    daemon.IdleForPresetTests = true; daemon.CfgRunIdentity = false;
+    PumpUntil(server.RefreshAsync()); Layout();
+    // A failed start must show the daemon's code plus the documented next step.
+    daemon.StartFailureCode = "HCSL-DEPLOY-PLUGINS";
+    daemon.StartFailureDetail = "Plugin packages may not write preset CFG, logs or recordings.";
+    Click(owner, "启动");
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "取消")));
+    Click(owner, "启动");
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("HCSL-DEPLOY-PLUGINS") == true));
+    Check(owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("hcsl doctor") == true),
+        "Deployment failure dialog must include the actionable hint.");
+    Click(owner, "返回"); Layout();
+    daemon.StartFailureCode = null;
+    // Deploy-only is a first-class action: it must not start CS2 and must report completion.
+    PumpUntil(server.RefreshAsync()); Layout();
+    Click(owner, "部署（不启动）");
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "部署")));
+    Click(owner, "部署");
+    WaitUntil(() => daemon.Deploys == 1);
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
+    Click(owner, "返回"); Layout();
+    Check(!server.Active && daemon.Stops == 0, "Deploy-only action must not start or stop the server.");
+    Console.WriteLine("PASS gui.errors.failed-start-hint-and-deploy-only");
+    if (only is "errors") return 0;
+}
+
+
 if (only is null or "cfg")
 {
 var cfgQueries = daemon.Queries;
@@ -423,7 +460,7 @@ if (only is "start") return 0;
 
 if (only is not null)
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, logs, forms, presets, pools, plugins, cfg, maps, start or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, logs, forms, presets, pools, plugins, cfg, maps, start, errors or all.");
     return 2;
 }
 return 0;
@@ -475,6 +512,10 @@ sealed class FakeDaemon : IDaemonClient
     public int LastLogSequence { get; set; } = 150;
     public bool RepeatLogText { get; set; }
     public bool IdleForPresetTests;
+    public string? StartFailureCode, StartFailureDetail;
+    public Guid? FailedRun;
+    public int Deploys;
+    public string DeployCode = "HCSL-SERVER-DEPLOYED";
     public bool CfgRunIdentity;
     public int CfgWrites;
     public int PoolWrites;
@@ -538,15 +579,23 @@ sealed class FakeDaemon : IDaemonClient
             Queries++;
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(new ServerConsoleReceipt(run, c.CommandId, ConsoleDelivery.Written, "HCSL-CONSOLE-WRITTEN", ServerConsoleRules.Display(c.Text)))));
         }
-        if (request.ServerCommandJson is { } json && JsonSerializer.Deserialize<ServerCommand>(json) is { Action: ServerAction.Stop } command)
+        var serverCommand = request.ServerCommandJson is { } json ? JsonSerializer.Deserialize<ServerCommand>(json) : null;
+        if (serverCommand is { Action: ServerAction.Stop } stop)
         {
-            if (command.RunId != run) throw new Exception("Stop must carry the confirmed RunId.");
+            if (stop.RunId != run) throw new Exception("Stop must carry the confirmed RunId.");
             stopped = true; Stops++;
         }
+        if (serverCommand is { Action: ServerAction.Deploy }) Deploys++;
+        var failing = serverCommand is { Action: ServerAction.Start } && StartFailureCode is not null;
+        if (failing) FailedRun = Guid.NewGuid();
         var lines = Enumerable.Range(LastLogSequence - 149, 150).Select(i => new ServerLogLine(i, (RepeatLogText ? "repeat " : $"{i} ") + new string('x', 300))).ToArray();
-        var snapshot = new ServerSnapshot(run, CfgRunIdentity ? Catalog.Instances.Single().Id : null, stopped ? ServerState.Stopped : IdleForPresetTests ? ServerState.Idle : ServerState.Running,
-            !stopped && !IdleForPresetTests, stopped ? "HCSL-SERVER-STOPPED" : "HCSL-SERVER-MAP-READY", true, stopped, null, LastLogSequence + 1, false, lines,
-            Preset: CfgRunIdentity ? new(Catalog.Instances.Single().Presets[0].Id, 1, "Selected preset", "de_dust2") : null);
+        var snapshot = failing
+            ? new ServerSnapshot(FailedRun, null, ServerState.Failed, false, StartFailureCode!, false, true, null, LastLogSequence + 1, false, lines, Detail: StartFailureDetail)
+            : serverCommand is { Action: ServerAction.Deploy }
+                ? new ServerSnapshot(run, null, ServerState.Stopped, false, DeployCode, false, true, null, LastLogSequence + 1, false, lines, Detail: "Deployment published (Reflink).")
+                : new ServerSnapshot(run, CfgRunIdentity ? Catalog.Instances.Single().Id : null, stopped ? ServerState.Stopped : IdleForPresetTests ? ServerState.Idle : ServerState.Running,
+                    !stopped && !IdleForPresetTests, stopped ? "HCSL-SERVER-STOPPED" : "HCSL-SERVER-MAP-READY", true, stopped, null, LastLogSequence + 1, false, lines,
+                    Preset: CfgRunIdentity ? new(Catalog.Instances.Single().Presets[0].Id, 1, "Selected preset", "de_dust2") : null);
         return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
             Defaults: new("/settings", "/data", "/library"), ServerSnapshotJson: JsonSerializer.Serialize(snapshot)));
     }

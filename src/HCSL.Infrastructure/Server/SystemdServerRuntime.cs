@@ -66,6 +66,18 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
         }
         catch { return false; }
     }
+    /// <summary>Deploy-only path for the GUI/CLI: no CS2 process, no systemd unit, no console.</summary>
+    public Task<DeploymentReceipt> DeployAsync(WorkspaceRequest workspace, Guid instanceId, IProgress<ServerRuntimeEvent>? events = null, CancellationToken ct = default)
+    {
+        if (!OperatingSystem.IsLinux()) throw new ServerException("HCSL-SERVER-PLATFORM", "Only Linux x64 is implemented.");
+        if (instanceId == Guid.Empty) throw new ServerException("HCSL-SERVER-ID", "Instance ID is required.");
+        var mode = RuntimeDeploymentService.ProbeCopyMode(Path.Combine(workspace.LibraryRoot, "runtime"));
+        events?.Report(new(ServerState.Preparing, "HCSL-SERVER-DEPLOYING"));
+        var progress = new Progress<DeploymentEvent>(e => events?.Report(new(ServerState.Preparing,
+            "HCSL-SERVER-DEPLOYING", e.Stage + " " + e.FilesCompleted + "/" + e.TotalFiles)));
+        return Task.Run(() => new RuntimeDeploymentService().Deploy(workspace, new(instanceId, mode), progress, ct), ct);
+    }
+
     public async Task<ServerOutcome> RunAsync(WorkspaceRequest workspace, Guid runId, ServerStartOptions options, IProgress<ServerRuntimeEvent> events, CancellationToken stop)
     {
         if (!OperatingSystem.IsLinux()) throw new ServerException("HCSL-SERVER-PLATFORM", "Only Linux x64 is implemented.");

@@ -42,15 +42,47 @@ public static class HostServerControllerTests
         Check(restored.Selected?.Entry.Id == recovery.Second, "fresh GUI did not select orphan instance");
         Check(!restored.CanMutate && await restored.RecoverAsync() && recovery.Recovered == recovery.Second, "recovery identity lost");
         Console.WriteLine("PASS host.controller.orphan-selection-and-recovery");
+
+        // Deploy-only action and the directory entry points that the GUI buttons call.
+        var root = Path.Combine(Path.GetTempPath(), "hcsl-dirs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var deployer = new FakeDaemon { DataRoot = Path.Combine(root, "data"), LibraryRoot = Path.Combine(root, "library") };
+            Directory.CreateDirectory(Path.Combine(deployer.LibraryRoot, "runtime", deployer.First.ToString("D")));
+            var opener = new StubOpener();
+            using var host2 = new HostServerController(new ServerController(deployer, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1)),
+                new InstanceClient(deployer), opener);
+            await host2.InitializeAsync();
+            Check(host2.CanDeploy, "deploy must be admitted before the first start.");
+            Check(await host2.DeployAsync() && deployer.DeployCalls == 1 && host2.Server.Code == "HCSL-SERVER-DEPLOYED",
+                "deploy-only action not delegated.");
+            Check(!host2.Server.Active, "deploy-only must not mark the server active.");
+            var preset = host2.Selected!.Entry.Presets[0];
+            Check(await host2.OpenPresetDirectoryAsync(deployer.First, preset.Id, "addons"), "preset addons open failed.");
+            Check(opener.Last == Path.Combine(deployer.DataRoot, "instances", deployer.First.ToString("D"), "presets", preset.Id.ToString("D"), "addons"),
+                "preset addons path wrong: " + opener.Last);
+            Check(await host2.OpenRuntimeDirectoryAsync(deployer.First), "runtime open failed.");
+            Check(opener.Last == Path.Combine(deployer.LibraryRoot, "runtime", deployer.First.ToString("D")), "runtime path wrong: " + opener.Last);
+            Check(!await host2.OpenPresetDirectoryAsync(deployer.First, preset.Id, "../escape"), "unknown preset directory accepted.");
+            Check(host2.Error.Contains("HCSL-PRESET-DIR"), "unknown directory error code missing.");
+            Console.WriteLine("PASS host.controller.deploy-only-and-directory-entries");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    private sealed class StubOpener : HCSL.Application.Abstractions.ILocalDirectoryOpener
+    {
+        public string? Last;
+        public Task OpenAsync(string directory, CancellationToken cancellationToken = default) { Last = directory; return Task.CompletedTask; }
     }
     private sealed class FakeDaemon : IDaemonClient
     {
+        public string DataRoot = "/data", LibraryRoot = "/library";
         public Guid First { get; } = Guid.NewGuid();
         public Guid Second { get; } = Guid.NewGuid();
         public Guid Run { get; } = Guid.NewGuid();
         public bool Recover;
         public Guid? Recovered, StopRun;
-        public int PasswordCalls, StopCalls;
+        public int PasswordCalls, StopCalls, DeployCalls;
         public ServerCommand? LastStart;
         private bool hasPassword, active;
         private Guid current;
@@ -58,7 +90,7 @@ public static class HostServerControllerTests
         public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
         {
             if (request.Kind == RequestKind.Hello)
-                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: new("/settings", "/data", "/library")));
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: new("/settings", DataRoot, LibraryRoot)));
             if (request.Kind == RequestKind.Instances)
             {
                 var c = JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson!)!;
@@ -67,12 +99,14 @@ public static class HostServerControllerTests
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(new InstanceCatalog([Item(First, "First", 27015), Item(Second, "Second", 27016)]))));
             }
             var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!;
-            if (command.Action == ServerAction.Start) { LastStart = command; current = command.InstanceId; active = true; }
+            var code = "HCSL-SERVER-STOPPED";
+            if (command.Action == ServerAction.Start) { LastStart = command; current = command.InstanceId; active = true; code = "HCSL-SERVER-MAP-READY"; }
             if (command.Action == ServerAction.Stop) { StopCalls++; StopRun = command.RunId; active = false; }
             if (command.Action == ServerAction.Recover) { Recovered = command.InstanceId; Recover = false; }
+            if (command.Action == ServerAction.Deploy) { DeployCalls++; current = command.InstanceId; active = false; code = "HCSL-SERVER-DEPLOYED"; }
             var snapshot = new ServerSnapshot(active || Recover ? Run : null, Recover ? Second : current == Guid.Empty ? null : current,
                 Recover ? ServerState.RecoveryRequired : active ? ServerState.Running : ServerState.Stopped,
-                active, Recover ? "HCSL-SERVER-RECOVERY" : active ? "HCSL-SERVER-MAP-READY" : "HCSL-SERVER-STOPPED", active, !active && !Recover,
+                active, Recover ? "HCSL-SERVER-RECOVERY" : code, active, !active && !Recover,
                 null, 1, false, [], Map: active ? "de_dust2" : null);
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot)));
         }

@@ -169,6 +169,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             ServerAction.Status => servers.Snapshot(hint: command.InstanceId),
             ServerAction.Logs => servers.Snapshot(command.AfterSequence, command.RunId),
             ServerAction.Stop => servers.Stop(command.RunId),
+            ServerAction.Deploy => servers.Deploy(Workspace(), command.InstanceId),
             ServerAction.Recover => servers.Recover(Workspace(), command.InstanceId, command.RunId),
             _ => throw new ServerException("HCSL-SERVER-OPTIONS", "Unknown server action.")
         };

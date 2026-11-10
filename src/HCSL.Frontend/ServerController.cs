@@ -253,6 +253,12 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             ? SendAsync(new(ServerAction.Start, attached, null, 0, timeoutSeconds, autoDeploy, allowLowMemory), true, "start", 4000)
             : Task.FromResult(false);
 
+    /// <summary>Deploy the selected preset without starting CS2; same admission as Start.</summary>
+    public bool CanDeploy => CanStart;
+
+    public Task<bool> DeployAsync() =>
+        CanDeploy ? SendAsync(new(ServerAction.Deploy, attached), true, "deploy", 4000) : Task.FromResult(false);
+
     public Task<bool> StopAsync() =>
         CanStop && snapshot?.RunId is { } run
             ? SendAsync(new(ServerAction.Stop, snapshot.InstanceId ?? attached, run), false, "stop", 4000)

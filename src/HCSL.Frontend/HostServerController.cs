@@ -143,6 +143,15 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         Server.Attach(Selected.Entry.Id);
         return Server.StartAsync(autoDeploy: true, allowLowMemory: allowLowMemory);
     }
+    /// <summary>Deploy-only action for the UI: no AutoDeploy, no start.</summary>
+    public Task<bool> DeployAsync()
+    {
+        if (Busy || Selected?.Entry.Definition is null || !Server.CanDeploy) return Task.FromResult(false);
+        Server.Attach(Selected.Entry.Id);
+        return Server.DeployAsync();
+    }
+    public bool CanDeploy => !Busy && Selected?.Entry.Definition is not null && Server.CanDeploy;
+
     public Task<bool> RecoverAsync()
     {
         if (!Server.CanRecover) return Task.FromResult(false);
