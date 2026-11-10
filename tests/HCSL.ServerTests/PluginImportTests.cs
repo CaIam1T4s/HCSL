@@ -49,11 +49,15 @@ public static class PluginImportTests
             var sm = Path.Combine(root, "sm");
             WriteFile(sm, "addons/sourcemod/bin/sourcemod_mm");
             WriteFile(sm, "addons/sourcemod/translations/common.phrases");
+            WriteFile(sm, "cfg/sourcemod/sourcemod.cfg", "sm_test 1");
             var sourcemod = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, sm, "sourcemod", "SourceMod", "1.12.0"));
             var smPackage = Path.Combine(workspace.LibraryRoot, "plugin-packages", "sourcemod", "1.12.0");
             var meta = Path.Combine(smPackage, "files/csgo/addons/metamod/metaplugins.ini");
             Check(File.Exists(meta) && File.ReadAllText(meta).Contains("addons/sourcemod/bin/sourcemod_mm", StringComparison.Ordinal), "metaplugins.ini not generated.");
             Check(sourcemod.CurrentPlatformSupported, "SourceMod binary must count as a Linux binary.");
+            Check(sourcemod.Warnings.Any(w => w.Contains("Skipped", StringComparison.Ordinal) && w.Contains("sourcemod.cfg", StringComparison.Ordinal)),
+                "Mapped cfg files must be skipped with a warning.");
+            Check(!Directory.Exists(Path.Combine(smPackage, "files/csgo/cfg")), "Skipped cfg files must not be written.");
 
             // 3) Windows-only package imports but warns on Linux.
             var win = Path.Combine(root, "win");
@@ -64,10 +68,17 @@ public static class PluginImportTests
             Reject("HCSL-PLUGIN-PACKAGE", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, win, "sourcemod", "SourceMod", "9.9.9")));
             importer.Execute(workspace, new(Guid.Empty, Guid.Empty, win, "sourcemod", "SourceMod", "9.9.9", Force: true));
 
-            // 4) Reserved mapped paths are rejected before anything is written.
+            // 4) Mapped cfg files are skipped (not written); replacing the addons root is still rejected.
             var bad = Path.Combine(root, "bad");
             WriteFile(bad, "files/csgo/cfg/server.cfg");
-            Reject("HCSL-PLUGIN-PATH", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, bad, "bad", "Bad", "1.0.0")));
+            WriteFile(bad, "files/csgo/addons/demo/demo.txt");
+            var skipped = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, bad, "bad", "Bad", "1.0.0"));
+            Check(skipped.Warnings.Any(w => w.Contains("Skipped", StringComparison.Ordinal)), "Reserved cfg must be skipped with a warning.");
+            Check(!File.Exists(Path.Combine(workspace.LibraryRoot, "plugin-packages", "bad", "1.0.0", "files/csgo/cfg/server.cfg")),
+                "Skipped cfg must not be written.");
+            var addonsRoot = Path.Combine(root, "addons-root");
+            WriteFile(addonsRoot, "files/csgo/addons");
+            Reject("HCSL-PLUGIN-PATH", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, addonsRoot, "addonsroot", "Bad", "1.0.0")));
 
             // 5) Enabling uses the preset revision/hash path and appends at the end.
             var instances = new LocalInstanceStore();

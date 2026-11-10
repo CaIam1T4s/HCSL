@@ -90,9 +90,18 @@ public partial class MainWindow
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap
             });
             if (await ShowOverlayAsync(body, ["取消", "导入"]) != 1) return;
-            var result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id, path,
-                importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "", meta,
-                importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision));
+            PluginImportResult result;
+            try
+            {
+                result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id, path,
+                    importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "", meta,
+                    importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision));
+            }
+            catch (Exception e) when (e is IOException or InstanceException)
+            {
+                await ChooseAsync("导入失败", e is InstanceException failure ? failure.Code + ": " + failure.Message : e.Message, "返回");
+                return;
+            }
             await Load();
             status.Text = $"已导入 {result.Id} {result.Version}（{result.Files} 文件，{result.Bytes / 1024} KiB）；"
                 + (result.Enabled ? "已启用。" : "未启用。")

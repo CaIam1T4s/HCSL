@@ -25,7 +25,11 @@ public sealed class LocalPluginImporter : IPluginImporter
 
         var warnings = new List<string>();
         var (filesRoot, prefix) = Layout(source);
-        var files = Enumerate(source, filesRoot, prefix, warnings);
+        var skipped = new List<string>();
+        var files = Enumerate(source, filesRoot, prefix, warnings, skipped);
+        if (skipped.Count > 0)
+            warnings.Add("Skipped " + skipped.Count + " file(s) under mapped directories (csgo/cfg, csgo/logs, csgo/recordings): "
+                + string.Join(", ", skipped.Take(3)) + (skipped.Count > 3 ? ", …" : "") + "; copy them into the preset manually if needed.");
         if (files.Count == 0) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "No plugin files were found in the source directory.");
         if (files.Count > PluginRules.MaxPackageFiles) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Package exceeds the 4096-file limit.");
         var total = files.Sum(f => f.Bytes);
@@ -50,15 +54,23 @@ public sealed class LocalPluginImporter : IPluginImporter
                 Directory.Delete(destination, true);
             }
             var filesDir = Path.Combine(destination, "files");
-            Directory.CreateDirectory(filesDir);
-            LocalPaths.RejectLink(filesDir);
-            foreach (var file in files)
+            try
             {
-                var target = Path.Combine(filesDir, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
-                if (!IsUnder(filesDir, target)) throw new InstanceException("HCSL-PLUGIN-PATH", "Import path escapes the package root.");
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(file.Source, target, false);
-                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(target, File.GetUnixFileMode(file.Source));
+                Directory.CreateDirectory(filesDir);
+                LocalPaths.RejectLink(filesDir);
+                foreach (var file in files)
+                {
+                    var target = Path.Combine(filesDir, file.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+                    if (!IsUnder(filesDir, target)) throw new InstanceException("HCSL-PLUGIN-PATH", "Import path escapes the package root (" + file.RelativePath + ").");
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Copy(file.Source, target, false);
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(target, File.GetUnixFileMode(file.Source));
+                }
+            }
+            catch
+            {
+                try { if (Directory.Exists(destination)) Directory.Delete(destination, true); } catch (IOException) { }
+                throw;
             }
             if (generateGameInfo)
             {
@@ -135,7 +147,7 @@ public sealed class LocalPluginImporter : IPluginImporter
             "Source must contain addons/, csgo/, core/ or files/csgo/ (the release root, not a single addon folder).");
     }
 
-    private static List<SourceFile> Enumerate(string source, string root, string prefix, List<string> warnings)
+    private static List<SourceFile> Enumerate(string source, string root, string prefix, List<string> warnings, List<string> skipped)
     {
         var files = new List<SourceFile>();
         void Walk(string directory)
@@ -152,8 +164,11 @@ public sealed class LocalPluginImporter : IPluginImporter
         {
             var relative = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
             if (prefix.Length > 0 && !relative.StartsWith("csgo/", StringComparison.Ordinal)) relative = prefix + relative;
-            if (PluginRules.IsReservedDeploymentPath(relative) || PluginRules.IsAddonsRoot(relative))
-                throw new InstanceException("HCSL-PLUGIN-PATH", "Plugin files may not replace " + relative + ".");
+            if (PluginRules.IsAddonsRoot(relative))
+                throw new InstanceException("HCSL-PLUGIN-PATH", "A package file may not replace the addons directory (" + relative + ").");
+            // Mapped persistent directories (cfg/logs/recordings) belong to the preset, not to a package.
+            // Import skips them with a warning instead of failing the whole release.
+            if (PluginRules.IsReservedDeploymentPath(relative)) { skipped.Add(relative); return; }
             try { PluginRules.RelativePath(relative); }
             catch (InstanceException e) { throw new InstanceException("HCSL-PLUGIN-PATH", e.Message + " (" + relative + ")"); }
             var info = new FileInfo(path);
