@@ -136,6 +136,21 @@ public static class PluginImportTests
             Check(unnamedProbe.Id == "source2mod" && unnamedProbe.Version == "1.0.46",
                 $"binary version fallback failed: {unnamedProbe.Id}/{unnamedProbe.Version}");
 
+            // 7c) Compiler/runtime version strings must not win over the plugin's own version.
+            var metamodTar = Path.Combine(root, "mm.tar.gz");
+            using (var file = File.Create(metamodTar))
+            using (var gzip = new GZipStream(file, CompressionMode.Compress))
+            using (var writer = new TarWriter(gzip))
+            {
+                var binary = System.Text.Encoding.ASCII.GetBytes(
+                    "Debian clang version 22.1.8 (1~deb11u1)\0google8protobuf8internalContainer\0 2.0.0-dev+1490\0"
+                    + "Plugin uses old SourceHook Metamod build, probably 1.12.x or an early 2.0 version (%d < %d).\0");
+                writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so") { DataStream = new MemoryStream(binary) });
+            }
+            var metamodProbe = importer.Probe(workspace, new(metamodTar));
+            Check(metamodProbe.Id == "metamod" && metamodProbe.Version == "2.0.0-dev+1490",
+                $"compiler version won over the plugin version: {metamodProbe.Version}");
+
             // 8) .tar.gz import and version detection from a directory name with a git suffix.
             var tarPath = Path.Combine(root, "mmsource-2.0.0-git1234-linux.tar.gz");
             using (var file = File.Create(tarPath))

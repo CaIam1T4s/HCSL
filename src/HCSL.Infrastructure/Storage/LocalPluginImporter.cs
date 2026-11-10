@@ -16,7 +16,10 @@ namespace HCSL.Infrastructure.Storage;
 public sealed class LocalPluginImporter : IPluginImporter
 {
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
-    private static readonly Regex VersionPattern = new(@"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:-git\d+)?(?:-(?:dev|beta|stable))?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex VersionPattern = new(@"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:-git\d+)?(?:-(?:dev|beta|stable|rc\d*))?(?:\+[A-Za-z0-9.]+)?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex EmbeddedToken = new(@"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:-(?:dev|beta|stable|rc\d*))?(?:\+[A-Za-z0-9.]+)?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex CompilerToken = new(@"(?i)clang|gcc|compiler|debian|ubuntu|glibc|openssl|libressl|curl|zlib|protobuf|python|cmake|boost");
+    private static readonly Regex ProseToken = new(@"(?i)probably|requires|required|older|newer|\buses\b|failed|cannot|early|plugin uses|plugin requires|interface version|build\b");
 
     public PluginImportResult Execute(WorkspaceRequest workspace, PluginImportCommand command)
     {
@@ -260,19 +263,54 @@ public sealed class LocalPluginImporter : IPluginImporter
             try
             {
                 using var stream = File.OpenRead(file.Source);
-                var length = (int)Math.Min(stream.Length, 16L * 1024 * 1024);
+                var length = (int)Math.Min(stream.Length, 32L * 1024 * 1024);
                 var buffer = new byte[length];
                 stream.ReadExactly(buffer);
                 var text = Encoding.ASCII.GetString(buffer);
-                var preferred = Regex.Match(text, @"(?i)(?:version|\bv)\D{0,16}(\d+\.\d+(?:\.\d+)?)", RegexOptions.CultureInvariant);
-                if (preferred.Success) return preferred.Groups[1].Value;
-                var any = VersionPattern.Match(text);
-                if (any.Success) return any.Groups[1].Value;
+                if (ScanEmbeddedVersion(text) is { } version) return version;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         }
         return null;
     }
+
+    /// <summary>
+    /// A binary embeds its own version and its toolchain version (e.g. "Debian clang version 22.1.8").
+    /// Prefer brand lines and pre-release/build metadata; never trust compiler/lib versions.
+    /// </summary>
+    private static string? ScanEmbeddedVersion(string text)
+    {
+        // Strip ANSI colour codes so "Source2Mod version" and "v1.0.46 @ 0613502" stay near each other.
+        text = Regex.Replace(text, "\u001B\\[[0-9;]*[A-Za-z]", "");
+        string? best = null;
+        var bestScore = 0;
+        foreach (Match match in EmbeddedToken.Matches(text))
+        {
+            var value = match.Groups[1].Value;
+            // Compiler/lib markers belong to the version's own token; unrelated neighbours must not hide it.
+            var tokenStart = match.Index;
+            while (tokenStart > 0 && IsPrintable(text[tokenStart - 1]) && match.Index - tokenStart < 400) tokenStart--;
+            var tokenEnd = match.Index + match.Length;
+            while (tokenEnd < text.Length && IsPrintable(text[tokenEnd]) && tokenEnd - tokenStart < 400) tokenEnd++;
+            var token = text[tokenStart..tokenEnd];
+            if (CompilerToken.IsMatch(token)) continue;
+            var from = Math.Max(0, match.Index - 120);
+            var window = text[from..Math.Min(text.Length, match.Index + value.Length + 120)];
+            var score = 0;
+            if (window.Contains("metamod", StringComparison.OrdinalIgnoreCase)
+                || window.Contains("source2mod", StringComparison.OrdinalIgnoreCase)
+                || window.Contains("sourcemod", StringComparison.OrdinalIgnoreCase)) score += 5;
+            if (window.Contains("version", StringComparison.OrdinalIgnoreCase)) score += 3;
+            if (value.Contains('-') || value.Contains('+')) score += 4;
+            if (token.Trim() == value) score += 3;
+            if (match.Length < 40) score += 1;
+            if (ProseToken.IsMatch(token)) score -= 6;
+            if (score > bestScore) { bestScore = score; best = value; }
+        }
+        return bestScore >= 6 ? best : null;
+    }
+
+    private static bool IsPrintable(char value) => value is >= ' ' and <= '~';
 
     private static string Sanitize(string value)
     {
