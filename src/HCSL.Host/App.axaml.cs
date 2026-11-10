@@ -23,9 +23,10 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
+            var daemon = new DaemonClient();
             var servers = new HostServerController(
-                new ServerController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
-                new InstanceClient(new DaemonClient()), new HCSL.Infrastructure.Storage.LocalDirectoryOpener());
+                new ServerController(daemon, action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
+                new InstanceClient(daemon), new HCSL.Infrastructure.Storage.LocalDirectoryOpener(), daemon);
             desktop.Exit += (_, _) => { servers.Dispose(); steamCmd.Dispose(); };
             desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers) };
             desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); };

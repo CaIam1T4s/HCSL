@@ -17,9 +17,12 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
     private HostInstanceItem? selected;
     private bool disposed, userSelected;
     private int logConsumers;
-    public HostServerController(ServerController server, InstanceClient instances, HCSL.Application.Abstractions.ILocalDirectoryOpener? directoryOpener = null)
+    private readonly FrameworkClient? frameworks;
+    public HostServerController(ServerController server, InstanceClient instances, HCSL.Application.Abstractions.ILocalDirectoryOpener? directoryOpener = null,
+        IDaemonClient? daemon = null)
     {
         Server = server; this.instances = instances; this.directoryOpener = directoryOpener;
+        frameworks = daemon is null ? null : new FrameworkClient(daemon);
         Server.PropertyChanged += ServerChanged;
     }
     public ServerController Server { get; }

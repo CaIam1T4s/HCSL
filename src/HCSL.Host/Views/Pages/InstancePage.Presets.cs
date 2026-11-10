@@ -43,6 +43,7 @@ public partial class InstancePage
         DeletePresetButton.IsEnabled = editable && p is not null && m.Selected?.Entry.Presets.Length > 1
             && p.Id != m.Selected.Entry.Definition?.SelectedPresetId;
         EditCfgButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
+        FrameworksButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         PluginsButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         MapPoolButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         OpenCfgButton.IsEnabled = !operating && !m.Busy && m.Server.Connected && p is not null;
@@ -86,6 +87,11 @@ public partial class InstancePage
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
         await owner.EditCfgAsync(m, instance, p);
     });
+    private async void EditPresetFrameworks(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
+        await owner.EditFrameworksAsync(m, instance, p);
+    }
     private async void EditPresetPlugins(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;

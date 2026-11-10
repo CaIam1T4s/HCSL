@@ -34,6 +34,12 @@ public sealed class PluginDraft
     {
         var next = plugins.Append(new PluginSelection(id, version)).ToArray(); PluginRules.Validate(next); plugins.Add(new(id, version));
     }
+    /// <summary>Replace the draft after a framework switch without pretending it was saved.</summary>
+    public void SetSelections(IEnumerable<PluginSelection> selections)
+    {
+        var next = selections.ToArray(); PluginRules.Validate(next);
+        plugins.Clear(); plugins.AddRange(next);
+    }
     public void Remove(int index) { if (index >= 0 && index < plugins.Count) plugins.RemoveAt(index); }
     public void Toggle(int index) { if (index >= 0 && index < plugins.Count) plugins[index] = plugins[index] with { Enabled = !plugins[index].Enabled }; }
     /// <summary>Swap one step within the manifest; array order is deployment/load order.</summary>

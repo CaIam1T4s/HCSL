@@ -17,18 +17,61 @@ public partial class MainWindow
             Text = "插件包来自内容库 plugin-packages；这里只选择版本和顺序，不联网下载。启用的包在下次部署时复制到预设 addons，禁用后重新部署会移除未被修改的包文件。Metamod/CSS 需要包本身提供正确的 addons 和 gameinfo 覆盖。",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
+        var frameworkSelect = new Select();
+        content.Children.Add(new TextBlock { Text = "当前脚本框架" });
+        content.Children.Add(frameworkSelect);
         var list = new Select(); content.Children.Add(list);
         var status = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; content.Children.Add(status);
+        var updatingFramework = false;
+        int[] visible = [];
         string Label(PluginSelection p)
         {
             var info = draft.Loaded?.Selected.FirstOrDefault(s => s.Id == p.Id && s.Version == p.Version);
             var name = info?.Name ?? p.Id;
             return $"{(p.Enabled ? "[启用]" : "[禁用]")} {name} ({p.Id}) {p.Version}";
         }
-        void Refresh(int index = 0)
+        PluginPackageInfo? PackageFor(PluginSelection p) =>
+            draft.Loaded?.Available.FirstOrDefault(a => a.Id == p.Id && a.Version == p.Version);
+        string? CurrentFramework()
         {
-            list.ItemsSource = draft.Plugins.Select(Label).ToArray();
-            list.SelectedIndex = draft.Plugins.Count == 0 ? -1 : Math.Clamp(index, 0, draft.Plugins.Count - 1);
+            foreach (var p in draft.Plugins.Where(x => x.Enabled))
+            {
+                var package = PackageFor(p);
+                if (package?.Framework is { } f && package.FrameworkPayload
+                    && FrameworkRules.Find(f)?.Kind == FrameworkKind.ScriptFramework && p.Id == f) return f;
+            }
+            return null;
+        }
+        bool Visible(PluginSelection p)
+        {
+            if (p.Id == "metamod") return true;
+            var package = PackageFor(p);
+            if (package?.Framework is null or "metamod") return true;
+            return string.Equals(package.Framework, CurrentFramework(), StringComparison.Ordinal);
+        }
+        void Refresh(int draftIndex = 0)
+        {
+            var current = CurrentFramework();
+            updatingFramework = true;
+            try
+            {
+                var choices = new List<(string? Id, string Label)> { (null, "无脚本框架") };
+                choices.AddRange(FrameworkRules.Known.Where(f => f.Kind == FrameworkKind.ScriptFramework)
+                    .Select(f => ((string?)f.Id, f.DisplayName + (draft.Loaded?.Available.Any(a => a.Id == f.Id && a.FrameworkPayload) == true ? "" : "（未安装）"))));
+                frameworkSelect.ItemsSource = choices.Select(c => c.Label).ToArray();
+                frameworkSelect.SelectedIndex = Math.Max(0, choices.FindIndex(c => c.Id == current));
+            }
+            finally { updatingFramework = false; }
+            var indices = Enumerable.Range(0, draft.Plugins.Count).Where(i => Visible(draft.Plugins[i])).ToArray();
+            visible = indices;
+            list.ItemsSource = indices.Select(i => Label(draft.Plugins[i])).ToArray();
+            var wanted = Array.IndexOf(indices, draftIndex);
+            list.SelectedIndex = indices.Length == 0 ? -1 : Math.Max(0, wanted >= 0 ? wanted : Math.Min(list.SelectedIndex, indices.Length - 1));
+        }
+        int SelectedDraftIndex()
+        {
+            var at = list.SelectedIndex;
+            return at >= 0 && at < visible.Length ? visible[at] : -1;
         }
         static string RejectionText(PluginResult result) => result.Rejected is { Length: > 0 } rejected
             ? " " + rejected.Length + " 个包被拒绝：" + string.Join("；", rejected.Take(3).Select(x => $"{x.Id}/{x.Version} {x.Code}"))
@@ -39,10 +82,39 @@ public partial class MainWindow
             draft.Load(result);
             Refresh(); status.Text = "已读取插件清单；未部署。" + RejectionText(result);
         }
+        async void FrameworkChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (updatingFramework || model.Busy) return;
+            var labels = frameworkSelect.ItemsSource?.Cast<string>().ToArray() ?? [];
+            var at = frameworkSelect.SelectedIndex;
+            var ids = new List<string?> { null };
+            ids.AddRange(FrameworkRules.Known.Where(f => f.Kind == FrameworkKind.ScriptFramework).Select(f => f.Id));
+            if (at < 0 || at >= ids.Count) return;
+            var target = ids[at];
+            try
+            {
+                if (target is not null && draft.Loaded is { } loaded && !loaded.Available.Any(a => a.Id == target && a.FrameworkPayload))
+                {
+                    status.Text = "安装中… " + (FrameworkRules.Find(target)?.DisplayName ?? target);
+                    await model.InstallFrameworkAsync(target);
+                    draft.Load(await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id)));
+                }
+                var choice = FrameworkSelection.Apply(draft.Plugins.ToArray(), target, draft.Loaded!);
+                if (choice.MissingFramework is not null) { status.Text = "框架尚未安装：" + target; return; }
+                draft.SetSelections(choice.Selections);
+                Refresh(); status.Text = "已切换脚本框架草稿；旧框架插件已禁用但保留，保存后生效。"
+                    + (choice.Warnings.Length > 0 ? " " + string.Join("；", choice.Warnings) : "");
+            }
+            catch (Exception error) { status.Text = error.Message; Refresh(); }
+        }
+        frameworkSelect.SelectionChanged += FrameworkChanged;
+
         async Task<bool> Discard() => !draft.Dirty || await ChooseAsync("未保存的插件清单", "丢弃未保存的插件选择？", "继续编辑", "丢弃草稿") == 1;
         async Task AddPlugin()
         {
-            var available = draft.Loaded?.Available.Where(a => draft.Plugins.All(p => p.Id != a.Id)).ToArray() ?? [];
+            var current = CurrentFramework();
+            var available = draft.Loaded?.Available.Where(a => draft.Plugins.All(p => p.Id != a.Id)
+                && (a.Framework is null or "metamod" || a.Framework == current)).ToArray() ?? [];
             if (available.Length == 0)
             {
                 await ChooseAsync("没有可添加的插件", "内容库 plugin-packages 中没有未选择的包版本。请先把包放到 <library>/plugin-packages/<id>/<version>/plugin.json + files/。", "返回");
@@ -161,7 +233,7 @@ public partial class MainWindow
                     // Importing into the library is allowed while running; enabling is gated by the controller.
                     if (!model.CanEditPlugins && choice != 2)
                         throw new IOException("HCSL-PLUGIN-BUSY: 请先停服并完成恢复/工具任务。");
-                    var index = list.SelectedIndex;
+                    var index = SelectedDraftIndex();
                     switch (choice)
                     {
                         case 1: await AddPlugin(); break;

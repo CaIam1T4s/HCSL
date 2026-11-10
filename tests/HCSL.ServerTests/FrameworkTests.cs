@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
+using HCSL.Frontend;
 using HCSL.Infrastructure.Frameworks;
 using HCSL.Infrastructure.Storage;
 namespace HCSL.ServerTests;
@@ -75,6 +76,36 @@ public static class FrameworkTests
             throw new Exception("A sub-plugin masquerading as a framework was accepted.");
         }
         catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
+
+        // Framework switch: disable old framework/plugins, enable metamod + target, keep native plugins.
+        var available = new PluginResult(
+        [
+            new("metamod", "Metamod", "1.0.0", "h", 1, 1, "metamod", true),
+            new("counterstrikesharp", "CSSharp", "1.0.0", "h", 1, 1, "counterstrikesharp", true),
+            new("source2mod", "Source2Mod", "1.0.0", "h", 1, 1, "source2mod", true),
+            new("matchzy", "MatchZy", "1.0.0", "h", 1, 1, "counterstrikesharp", false),
+            new("cs2fixes", "CS2Fixes", "1.0.0", "h", 1, 1, null, false)
+        ],
+        [
+            new("metamod", "Metamod", "1.0.0", true, true),
+            new("counterstrikesharp", "CSSharp", "1.0.0", true, true),
+            new("matchzy", "MatchZy", "1.0.0", true, true),
+            new("cs2fixes", "CS2Fixes", "1.0.0", true, true)
+        ], 1, "hash");
+        var switched = FrameworkSelection.Apply(
+            [new("metamod", "1.0.0"), new("counterstrikesharp", "1.0.0"), new("matchzy", "1.0.0"), new("cs2fixes", "1.0.0")],
+            "source2mod", available);
+        Check(switched.MissingFramework is null, "Installed target framework reported missing.");
+        Check(switched.Selections.Single(s => s.Id == "metamod").Enabled, "Metamod was not kept enabled.");
+        Check(switched.Selections.Single(s => s.Id == "source2mod").Enabled, "Target framework was not enabled.");
+        Check(!switched.Selections.Single(s => s.Id == "counterstrikesharp").Enabled, "Old framework was not disabled.");
+        Check(!switched.Selections.Single(s => s.Id == "matchzy").Enabled, "Old framework plugin was not disabled.");
+        Check(switched.Selections.Single(s => s.Id == "cs2fixes").Enabled, "Native plugin was disabled.");
+        Check(switched.Selections[0].Id == "metamod" && switched.Selections[1].Id == "source2mod", "Metamod/target order is wrong.");
+        var none = FrameworkSelection.Apply([new("metamod", "1.0.0"), new("counterstrikesharp", "1.0.0"), new("matchzy", "1.0.0")], null, available);
+        Check(!none.Selections.Single(s => s.Id == "counterstrikesharp").Enabled && !none.Selections.Single(s => s.Id == "matchzy").Enabled, "Switching to none did not disable scripts.");
+        var missing = FrameworkSelection.Apply([new("metamod", "1.0.0")], "swiftlys2", available);
+        Check(missing.MissingFramework == "swiftlys2", "Missing framework was not reported.");
 
         var root = Path.Combine(Path.GetTempPath(), "hcsl-frameworks-" + Guid.NewGuid().ToString("N"));
         try

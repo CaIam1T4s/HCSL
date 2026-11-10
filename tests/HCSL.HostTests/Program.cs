@@ -28,7 +28,7 @@ if (only is "input")
 if (only is null) InputPointerPlacementTests.Run();
 var daemon = new FakeDaemon();
 using var server = new ServerController(daemon, a => Dispatcher.UIThread.Post(a));
-using var model = new HostServerController(server, new InstanceClient(daemon));
+using var model = new HostServerController(server, new InstanceClient(daemon), daemon: daemon);
 using var steam = new SteamCmdController(daemon, a => Dispatcher.UIThread.Post(a));
 PumpUntil(server.ConnectAsync());
 var owner = new MainWindow
@@ -244,7 +244,7 @@ if (only is "forms") return 0;
 
 HCSL.Host.Views.Pages.InstancePage presetPage = null!;
 PresetDefinition firstPreset = null!;
-if (only is null or "presets" or "pools" or "plugins" or "cfg" or "maps" or "start")
+if (only is null or "presets" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
 {
 firstPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Selected preset");
 var secondPreset = firstPreset with { Id = Guid.NewGuid(), Name = "Browsed preset", Map = "de_nuke" };
@@ -294,16 +294,51 @@ if (only is null or "plugins")
 var pluginQueries = daemon.Queries;
 var pluginDialog = owner.EditPluginsAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
 WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Any(s => s.IsEffectivelyVisible && s.ItemsSource is string[]));
-var pluginSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Single(s => s.IsEffectivelyVisible && s.ItemsSource is string[]);
+var pluginSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().First(s => s.IsEffectivelyVisible
+    && s.ItemsSource is string[] items && items.Any(x => x.Contains("Metamod", StringComparison.Ordinal)));
 Check(pluginSelect.ItemsSource!.Cast<string>().Single().Contains("Metamod"), "Plugin list missing selected package.");
 Click(owner, "启用/禁用");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("已切换启用状态草稿") == true));
 Click(owner, "保存清单");
 WaitUntil(() => daemon.PluginWrites == 1);
 Check(daemon.Plugins.Selected.Single().Enabled == false && daemon.Queries == pluginQueries, "Plugin save changed live game state or lost toggle.");
+var frameworkSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().First(s => s.IsEffectivelyVisible
+    && s.ItemsSource is string[] items && items.Any(x => x.Contains("无脚本框架", StringComparison.Ordinal)));
+var targetIndex = frameworkSelect.ItemsSource!.Cast<string>().ToList().FindIndex(x => x.Contains("Source2Mod", StringComparison.Ordinal));
+Check(targetIndex > 0, "Plugin page framework selector is missing Source2Mod.");
+frameworkSelect.SelectedIndex = targetIndex;
+WaitUntil(() => daemon.FrameworkInstalls == 1);
 Click(owner, "关闭"); PumpUntil(pluginDialog);
 Console.WriteLine("PASS gui.plugins.toggle-save-no-console");
 if (only is "plugins") return 0;
+}
+
+if (only is null or "frameworks")
+{
+daemon.Plugins = new(
+    [new("metamod", "Metamod", "1.0.0", "hash", 2, 2, "metamod", true),
+     new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", "hash", 1, 1, "counterstrikesharp", true),
+     new("source2mod", "Source2Mod", "1.0.0", "hash", 1, 1, "source2mod", true)],
+    [new("metamod", "Metamod", "1.0.0", true, true)], 1, "plugin-fw");
+var frameworkInstalls = daemon.FrameworkInstalls;
+var frameworkDialog = owner.EditFrameworksAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("当前预设未启用脚本框架") == true));
+WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新")));
+var download = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "下载最新"));
+Check(download.IsEffectivelyEnabled, "Available framework download was disabled.");
+Click(owner, "下载最新");
+WaitUntil(() => daemon.FrameworkInstalls == frameworkInstalls + 1);
+Click(owner, "关闭"); PumpUntil(frameworkDialog);
+daemon.Plugins = new(
+    [new("metamod", "Metamod", "1.0.0", "hash", 2, 2, "metamod", true),
+     new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", "hash", 1, 1, "counterstrikesharp", true)],
+    [new("metamod", "Metamod", "1.0.0", true, true), new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", true, true)], 1, "plugin-fw2");
+var compatDialog = owner.EditFrameworksAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("当前预设脚本框架：CounterStrikeSharp") == true));
+WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("与 CounterStrikeSharp 不兼容") == true));
+Click(owner, "关闭"); PumpUntil(compatDialog);
+Console.WriteLine("PASS gui.frameworks.download-and-incompatible-card");
+if (only is "frameworks") return 0;
 }
 
 if (only is null or "errors")
@@ -509,6 +544,12 @@ sealed class FakeDaemon : IDaemonClient
     public int PoolWrites;
     public bool RejectPoolWrites;
     public int PluginWrites;
+    public int FrameworkInstalls;
+    public FrameworkCheckResult FrameworkCheck = new([
+        new("metamod", "Metamod:Source", true, true, "2.0.0-dev+1490", "2.0.0-dev+1490", "mmsource-2.0.0-git1490-linux.tar.gz", false, null, null),
+        new("counterstrikesharp", "CounterStrikeSharp", false, true, "1.0.0", "1.0.379", "counterstrikesharp-with-runtime-linux-1.0.379.zip", true, "metamod", null),
+        new("source2mod", "Source2Mod", false, true, null, "1.0.46", "source2mod_v1.0.46-linux.tar.gz", false, "metamod", null)
+    ]);
     public PluginResult Plugins = new([new("metamod", "Metamod", "1.0.0", "hash", 1024, 2)], [new("metamod", "Metamod", "1.0.0", true, true)], 1, "plugin-1");
     public MapPoolResult Pool = new(new(1, 1, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_mirage")]), "pool-1");
     private string cfgText = "status\n";
@@ -532,6 +573,15 @@ sealed class FakeDaemon : IDaemonClient
                 PoolWrites++; Pool = new(new(1, Pool.Pool.Revision + 1, c.Maps!), "pool-" + (Pool.Pool.Revision + 1));
             }
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(Pool)));
+        }
+        if (request.Kind == RequestKind.FrameworkCheck)
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(FrameworkCheck)));
+        if (request.Kind == RequestKind.FrameworkInstall)
+        {
+            var command = JsonSerializer.Deserialize<FrameworkInstallCommand>(request.FrameworkInstallJson!)!;
+            FrameworkInstalls++;
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(
+                new FrameworkInstallResult(command.Id, command.Version ?? "1.0.46", "/library/plugin-packages/" + command.Id + "/1.0.46", 1, 1, "sha", true, []))));
         }
         if (request.Kind == RequestKind.Plugin)
         {
