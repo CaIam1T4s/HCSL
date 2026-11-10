@@ -44,6 +44,20 @@ public sealed class InstanceClient(IDaemonClient client)
             ?? throw new IOException("Missing plugin import preview.");
     }
 
+    public Task<PluginCfgPreview> PluginCfgPreviewAsync(PluginCfgCommand command, CancellationToken ct = default) =>
+        PluginCfgAsync<PluginCfgPreview>(command, ct);
+    public Task<PluginCfgResult> PluginCfgApplyAsync(PluginCfgCommand command, CancellationToken ct = default) =>
+        PluginCfgAsync<PluginCfgResult>(command, ct);
+    private async Task<T> PluginCfgAsync<T>(PluginCfgCommand command, CancellationToken ct)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginCfg,
+            Options: new(hello.Defaults), PluginCfgJson: JsonSerializer.Serialize(command)), ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<T>(response.PluginCfgResultJson ?? "null") ?? throw new IOException("Missing plugin cfg result.");
+    }
+
     public async Task<PresetCfgResult> CfgAsync(PresetCfgCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);

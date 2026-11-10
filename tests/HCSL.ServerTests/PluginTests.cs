@@ -105,6 +105,34 @@ public static class PluginTests
             var disabledConflict = store.Execute(workspace, new(PluginAction.Save, d.Id, p.Id, gateRevision, s2mSelection.Hash,
                 [.. metamodSelection, new("source2mod", "1.0.0"), new("counterstrikesharp", "1.0.0", false)]));
             Check(disabledConflict.Selected.Count(s => s.Enabled) == 2, "A disabled conflicting framework was rejected.");
+            // Plugin cfg sync: preview/apply/cleanup with provenance and no silent overwrite.
+            var cfgRevision = instances.Execute(workspace, new(InstanceAction.List)).Instances.Single(x => x.Id == d.Id).Definition!.Revision;
+            var cfgPackage = Path.Combine(workspace.LibraryRoot, "plugin-packages", "cfgplug", "1.0.0");
+            Directory.CreateDirectory(Path.Combine(cfgPackage, "files", "csgo", "addons", "source2mod"));
+            Directory.CreateDirectory(Path.Combine(cfgPackage, "cfg", "pt", "map"));
+            Directory.CreateDirectory(Path.Combine(cfgPackage, "cfg", "MatchZy"));
+            File.WriteAllText(Path.Combine(cfgPackage, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"cfgplug\",\"Name\":\"cfgplug\",\"Version\":\"1.0.0\"}");
+            File.WriteAllText(Path.Combine(cfgPackage, "files", "csgo", "addons", "source2mod", "x.smx"), "binary");
+            File.WriteAllText(Path.Combine(cfgPackage, "cfg", "pt", "map", "x.cfg"), "echo plugin");
+            File.WriteAllText(Path.Combine(cfgPackage, "cfg", "MatchZy", "admins.json"), "{}");
+            var sync = new LocalPluginCfgSync();
+            var syncSelection = new[] { new PluginSelection("cfgplug", "1.0.0") };
+            var cfgPreview = sync.Preview(workspace, new(PluginCfgAction.Preview, d.Id, p.Id, cfgRevision, syncSelection, null));
+            Check(cfgPreview.Import.Length == 2 && cfgPreview.Conflicts.Length == 0, "Cfg preview did not list new files.");
+            var cfgApplied = sync.Apply(workspace, new(PluginCfgAction.Apply, d.Id, p.Id, cfgRevision, syncSelection, null, []));
+            Check(cfgApplied.Imported == 2, "Cfg apply did not import new files.");
+            var presetCfg = Path.Combine(workspace.DataRoot, "instances", d.Id.ToString("D"), "presets", p.Id.ToString("D"), "cfg");
+            var nestedCfg = Path.Combine(presetCfg, "pt", "map", "x.cfg");
+            Check(File.ReadAllText(nestedCfg) == "echo plugin", "Nested cfg was not written.");
+            File.WriteAllText(nestedCfg, "echo user");
+            var cleanupPreview = sync.CleanupPreview(workspace, new(PluginCfgAction.CleanupPreview, d.Id, p.Id, cfgRevision, null, syncSelection));
+            Check(cleanupPreview.Removable.Length == 1 && cleanupPreview.Modified.Length == 1, "Cleanup preview did not separate modified files.");
+            var cleanup = sync.CleanupApply(workspace, new(PluginCfgAction.CleanupApply, d.Id, p.Id, cfgRevision, null, syncSelection, null, [cleanupPreview.Removable[0].Path]));
+            Check(cleanup.Deleted == 1 && !File.Exists(Path.Combine(presetCfg, "MatchZy", "admins.json")) && File.Exists(nestedCfg), "Cleanup deleted the wrong cfg files.");
+            var conflictPreview = sync.Preview(workspace, new(PluginCfgAction.Preview, d.Id, p.Id, cfgRevision, syncSelection, null));
+            Check(conflictPreview.Conflicts.Length == 1 && conflictPreview.Conflicts[0].Path == "pt/map/x.cfg", "Existing modified cfg was not reported as a conflict.");
+            var overwritten = sync.Apply(workspace, new(PluginCfgAction.Apply, d.Id, p.Id, cfgRevision, syncSelection, null, ["pt/map/x.cfg"]));
+            Check(overwritten.Overwritten == 1 && File.ReadAllText(nestedCfg) == "echo plugin", "Confirmed cfg overwrite did not apply.");
             if (OperatingSystem.IsLinux())
             {
                 var linked = Path.Combine(workspace.LibraryRoot, "plugin-packages", "bad", "1.0.0");

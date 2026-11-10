@@ -29,6 +29,41 @@ public sealed partial class HostServerController
         finally { Busy = false; Notify(); }
     }
 
+    public async Task<PluginCfgPreview> PreviewPluginCfgAsync(Guid instanceId, Guid presetId, long revision,
+        PluginSelection[] enable, PluginSelection[] disable)
+    {
+        if (Busy || !Server.Connected) throw new IOException("HCSL-PLUGIN-BUSY: Host is disconnected or another operation is active.");
+        Busy = true; Notify();
+        try { return await instances.PluginCfgPreviewAsync(new(PluginCfgAction.Preview, instanceId, presetId, revision, enable, disable)); }
+        finally { Busy = false; Notify(); }
+    }
+
+    public async Task<PluginCfgResult> ApplyPluginCfgAsync(Guid instanceId, Guid presetId, long revision,
+        PluginSelection[] enable, string[] overwrite)
+    {
+        if (Busy || !Server.Connected || !CanEditPlugins) throw new IOException("HCSL-PLUGIN-BUSY: Stop the server and finish recovery before changing cfg files.");
+        Busy = true; Notify();
+        try { return await instances.PluginCfgApplyAsync(new(PluginCfgAction.Apply, instanceId, presetId, revision, enable, null, overwrite)); }
+        finally { Busy = false; Notify(); }
+    }
+
+    public async Task<PluginCfgPreview> PreviewPluginCfgCleanupAsync(Guid instanceId, Guid presetId, long revision, PluginSelection[] disable)
+    {
+        if (Busy || !Server.Connected) throw new IOException("HCSL-PLUGIN-BUSY: Host is disconnected or another operation is active.");
+        Busy = true; Notify();
+        try { return await instances.PluginCfgPreviewAsync(new(PluginCfgAction.CleanupPreview, instanceId, presetId, revision, null, disable)); }
+        finally { Busy = false; Notify(); }
+    }
+
+    public async Task<PluginCfgResult> CleanupPluginCfgAsync(Guid instanceId, Guid presetId, long revision,
+        PluginSelection[] disable, string[] delete)
+    {
+        if (Busy || !Server.Connected || !CanEditPlugins) throw new IOException("HCSL-PLUGIN-BUSY: Stop the server and finish recovery before changing cfg files.");
+        Busy = true; Notify();
+        try { return await instances.PluginCfgApplyAsync(new(PluginCfgAction.CleanupApply, instanceId, presetId, revision, null, disable, null, delete)); }
+        finally { Busy = false; Notify(); }
+    }
+
     public async Task<PluginResult> PluginsAsync(PluginCommand command)
     {
         if (Busy || !Server.Connected || (command.Action != PluginAction.List && !CanEditPlugins))

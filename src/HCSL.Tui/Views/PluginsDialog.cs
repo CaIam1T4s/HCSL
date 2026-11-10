@@ -7,6 +7,7 @@ using Application = global::Terminal.Gui.Application;
 public sealed class PluginsDialog : Dialog
 {
     private readonly PresetPluginClient client;
+    private readonly InstanceClient instances;
     private readonly InstanceDefinition instance;
     private readonly PresetDefinition preset;
     private readonly bool english;
@@ -15,9 +16,9 @@ public sealed class PluginsDialog : Dialog
     private readonly Label status = new() { X = 0, Y = Pos.AnchorEnd(4), Width = Dim.Fill(), Height = 2 };
     private readonly List<Button> actions = [];
     private bool busy, closed;
-    public PluginsDialog(PresetPluginClient client, InstanceDefinition instance, PresetDefinition preset, bool english = false)
+    public PluginsDialog(PresetPluginClient client, InstanceClient instances, InstanceDefinition instance, PresetDefinition preset, bool english = false)
     {
-        this.client = client; this.instance = instance; this.preset = preset; this.english = english;
+        this.client = client; this.instances = instances; this.instance = instance; this.preset = preset; this.english = english;
         Title = T("插件", "Plugins") + " | " + instance.Name + " / " + preset.Name;
         X = 1; Y = 1; Width = Dim.Fill(1); Height = Dim.Fill(1);
         Add(new Label(T("顺序即启用顺序；包由 library/plugin-packages 提供，保存不会立即部署。", "Order is enable order. Packages live in library/plugin-packages; saving does not deploy.")) { X = 0, Y = 0, Width = Dim.Fill(), Height = 2 });
@@ -77,8 +78,76 @@ public sealed class PluginsDialog : Dialog
     private void Save()
     {
         if (busy) return;
-        try { Run(draft.SaveCommand(instance.Id, preset.Id, instance.Revision)); }
-        catch (IOException e) { status.Text = e.Message; }
+        PluginCommand command;
+        try { command = draft.SaveCommand(instance.Id, preset.Id, instance.Revision); }
+        catch (IOException e) { status.Text = e.Message; return; }
+        var before = draft.Loaded!.Selected.Where(s => s.Enabled)
+            .Select(s => new PluginSelection(s.Id, s.Version, true)).ToArray();
+        var after = draft.Plugins.Where(p => p.Enabled).ToArray();
+        var enabledNew = after.Where(a => !before.Any(b => b.Id == a.Id && b.Version == a.Version)).ToArray();
+        var disabled = before.Where(b => !after.Any(a => a.Id == b.Id && a.Version == b.Version)).ToArray();
+        RunTask(async () =>
+        {
+            PluginCfgPreview? preview = null;
+            string[]? overwrite = [];
+            if (enabledNew.Length > 0)
+            {
+                preview = await instances.PluginCfgPreviewAsync(new(PluginCfgAction.Preview, instance.Id, preset.Id, instance.Revision, enabledNew, disabled));
+                if (preview.Import.Length > 0 || preview.Conflicts.Length > 0)
+                {
+                    var items = preview.Conflicts.Select(c => (c.Path, false, false))
+                        .Concat(preview.Import.Select(c => (c.Path, false, true)));
+                    overwrite = CfgSyncDialog.Choose(T("插件 cfg 同步", "Plugin cfg sync"),
+                        T($"将导入 {preview.Import.Length} 个新文件；冲突 {preview.Conflicts.Length} 个。勾选=覆盖现有文件。", $"Import {preview.Import.Length} new; {preview.Conflicts.Length} conflicts. Check to overwrite."),
+                        items, T("应用", "Apply"), T("仅保存清单", "Save manifest only"));
+                    if (overwrite is null) return () => status.Text = T("已取消保存。", "Save cancelled.");
+                }
+            }
+            var result = await client.ExecuteAsync(command);
+            var text = T("已读取/保存；重新部署后生效。", "Loaded/saved. Deploy again to apply.");
+            if (overwrite is { Length: > 0 } && preview is not null)
+            {
+                var applied = await instances.PluginCfgApplyAsync(new(PluginCfgAction.Apply, instance.Id, preset.Id, instance.Revision, enabledNew, null, overwrite));
+                text += $" cfg: {applied.Imported}+{applied.Overwritten}";
+            }
+            if (disabled.Length > 0)
+            {
+                var cleanup = await instances.PluginCfgPreviewAsync(new(PluginCfgAction.CleanupPreview, instance.Id, preset.Id, instance.Revision, null, disabled));
+                if (cleanup.Removable.Length > 0 || cleanup.Modified.Length > 0)
+                {
+                    var items = cleanup.Removable.Select(c => (c.Path, true, false))
+                        .Concat(cleanup.Modified.Select(c => (c.Path, false, true)));
+                    var delete = CfgSyncDialog.Choose(T("禁用插件 cfg 清理", "Disabled plugin cfg cleanup"),
+                        T("默认勾选删除未修改的导入文件；已修改的文件保留。", "Checked files are unmodified imports; modified files are kept."),
+                        items, T("删除选中", "Delete selected"), T("跳过", "Skip"));
+                    if (delete is { Length: > 0 })
+                    {
+                        var removed = await instances.PluginCfgApplyAsync(new(PluginCfgAction.CleanupApply, instance.Id, preset.Id, instance.Revision, null, disabled, null, delete));
+                        text += $" cfg: -{removed.Deleted}";
+                    }
+                }
+            }
+            return () => { draft.Load(result); Refresh(); status.Text = text; };
+        });
+    }
+
+    private void RunTask(Func<Task<Action>> operation)
+    {
+        if (busy) return;
+        busy = true; list.Enabled = false; foreach (var button in actions) button.Enabled = false;
+        _ = RunAsync();
+        async Task RunAsync()
+        {
+            Action apply;
+            try { apply = await operation(); }
+            catch (Exception e) { var message = e.Message; apply = () => status.Text = message; }
+            Application.MainLoop.Invoke(() =>
+            {
+                if (closed) return;
+                busy = false; list.Enabled = true; foreach (var button in actions) button.Enabled = true;
+                try { apply(); } catch (Exception e) { status.Text = e.Message; }
+            });
+        }
     }
     private async void Run(PluginCommand command)
     {

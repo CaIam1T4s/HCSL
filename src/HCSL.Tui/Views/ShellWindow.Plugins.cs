@@ -100,7 +100,7 @@ public sealed partial class ShellWindow
         _pluginBusy = true; RefreshPluginPage();
         try
         {
-            using var dialog = new PluginsDialog(new(_instanceClient, _server), d, preset, _options.English);
+            using var dialog = new PluginsDialog(new(_instanceClient, _server), _instanceClient, d, preset, _options.English);
             dialog.Ready += dialog.Initialize;
             Application.Run(dialog);
         }

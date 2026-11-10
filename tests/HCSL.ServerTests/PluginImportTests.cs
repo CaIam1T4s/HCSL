@@ -102,6 +102,22 @@ public static class PluginImportTests
             var selected = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id)).Selected;
             Check(selected.Single().Id == "sourcemod" && selected.Single().Enabled, "Imported package not selected.");
 
+            // 6b) Opt-in cfg copy keeps nested paths and records provenance.
+            var cfgAdd = Path.Combine(root, "cfgadd");
+            WriteFile(cfgAdd, "addons/source2mod/plugins/cfgadd.smx", "binary");
+            WriteFile(cfgAdd, "cfg/pt/map/x.cfg", "echo plugin");
+            WriteFile(cfgAdd, "cfg/MatchZy/admins.json", "{}");
+            var cfgImported = importer.Execute(workspace, new(entry.Id, preset.Id, cfgAdd, "cfgadd", "Cfg Add", "1.0.0",
+                InstanceRevision: entry.Definition!.Revision, CfgIntoPreset: true));
+            Check(cfgImported.ImportedCfg == 2, "Opt-in cfg import did not copy nested files: " + cfgImported.ImportedCfg + " / " + string.Join(" | ", cfgImported.Warnings));
+            var cfgRoot = Path.Combine(workspace.DataRoot, "instances", entry.Id.ToString("D"), "presets", preset.Id.ToString("D"), "cfg");
+            Check(File.ReadAllText(Path.Combine(cfgRoot, "pt", "map", "x.cfg")) == "echo plugin", "Nested cfg not imported.");
+            Check(File.Exists(Path.Combine(workspace.DataRoot, "instances", entry.Id.ToString("D"), "presets", preset.Id.ToString("D"), ".hcsl-cfg-ledger.json")), "Cfg provenance missing.");
+            File.WriteAllText(Path.Combine(cfgRoot, "pt", "map", "x.cfg"), "echo user");
+            var cfgAgain = importer.Execute(workspace, new(entry.Id, preset.Id, cfgAdd, "cfgadd", "Cfg Add", "1.0.0",
+                Force: true, InstanceRevision: entry.Definition!.Revision, CfgIntoPreset: true));
+            Check(cfgAgain.ImportedCfg == 0 && File.ReadAllText(Path.Combine(cfgRoot, "pt", "map", "x.cfg")) == "echo user", "Re-import overwrote user cfg.");
+
             // 7) Archive import (.zip) with version detection from the archive name.
             var zip = Path.Combine(root, "source2mod-1.0.46-linux.zip");
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))

@@ -18,7 +18,7 @@ public static class DevCommandLine
     ];
 
     private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe", "--no-runtime"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe", "--no-runtime", "--import-cfg"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -63,6 +63,7 @@ public static class DevCommandLine
           --follow --after <n>   logs: stream new lines / start after a sequence.
           --install <id>         frameworks: install metamod, counterstrikesharp or source2mod.
           --no-runtime           frameworks: CounterStrikeSharp without the bundled .NET runtime.
+          --import-cfg           import: copy package cfg/** into the selected preset (no overwrite).
 
         Examples:
           hcsl status

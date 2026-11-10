@@ -390,7 +390,7 @@ static int Import(DevInvocation invocation, JsonSerializerOptions json)
         return 0;
     }
     var instanceId = Guid.Empty; var presetId = Guid.Empty; long revision = 0;
-    if (invocation.Has("--enable"))
+    if (invocation.Has("--enable") || invocation.Has("--import-cfg"))
     {
         var (entry, preset) = Target(workspace, invocation);
         instanceId = entry.Id; presetId = preset.Id; revision = entry.Definition!.Revision;
@@ -402,13 +402,14 @@ static int Import(DevInvocation invocation, JsonSerializerOptions json)
     var result = importer.Execute(workspace, new(instanceId, presetId, archive is null ? path : "",
         invocation.Get("--id") ?? preview.Id, invocation.Get("--name") ?? preview.Name,
         invocation.Get("--version") ?? preview.Version, invocation.Get("--meta") ?? preview.MetaPlugin,
-        invocation.Has("--enable"), invocation.Has("--force"), revision, archive));
+        invocation.Has("--enable"), invocation.Has("--force"), revision, archive, invocation.Has("--import-cfg")));
     if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(result, json));
     else
     {
         Console.WriteLine("imported   " + result.Id + " " + result.Version + " → " + result.PackagePath);
         Console.WriteLine("size       " + result.Files + " files · " + DevFormat.Bytes(result.Bytes));
         Console.WriteLine("enabled    " + (result.Enabled ? "yes" : "no"));
+        if (result.ImportedCfg > 0 || result.KeptCfg > 0) Console.WriteLine("cfg        imported " + result.ImportedCfg + " · kept " + result.KeptCfg);
         if (!result.CurrentPlatformSupported) Console.WriteLine("warn       no binary for this platform");
         foreach (var warning in result.Warnings) Console.WriteLine("warn       " + warning);
     }

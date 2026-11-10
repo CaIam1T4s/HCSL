@@ -108,10 +108,11 @@ public partial class MainWindow
             var importVersion = new Input { Text = preview.Version };
             var importEnable = new TKCode.Arc.Checkbox { Content = "导入后加入当前预设并启用（需要停服）", IsChecked = false };
             var importForce = new TKCode.Arc.Checkbox { Content = "覆盖同名版本", IsChecked = false };
+            var importCfg = new TKCode.Arc.Checkbox { Content = "导入包内 cfg 到当前预设（不覆盖已有文件）", IsChecked = false };
             body.Children.Add(new TextBlock { Text = "Id" }); body.Children.Add(importId);
             body.Children.Add(new TextBlock { Text = "名称" }); body.Children.Add(importName);
             body.Children.Add(new TextBlock { Text = "版本" }); body.Children.Add(importVersion);
-            body.Children.Add(importEnable); body.Children.Add(importForce);
+            body.Children.Add(importEnable); body.Children.Add(importForce); body.Children.Add(importCfg);
             body.Children.Add(new TextBlock
             {
                 Text = preview.MetaPlugin is null
@@ -132,7 +133,8 @@ public partial class MainWindow
             {
                 result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id,
                     archive is null ? path : "", importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "",
-                    preview.MetaPlugin, importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision, archive));
+                    preview.MetaPlugin, importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision, archive,
+                    CfgIntoPreset: importCfg.IsChecked == true));
             }
             catch (Exception e) when (e is IOException or InstanceException)
             {
@@ -142,6 +144,7 @@ public partial class MainWindow
             await Load();
             status.Text = $"已导入 {result.Id} {result.Version}（{result.Files} 文件，{result.Bytes / 1024} KiB）；"
                 + (result.Enabled ? "已启用。" : "未启用。")
+                + (result.ImportedCfg > 0 || result.KeptCfg > 0 ? $" cfg：导入 {result.ImportedCfg}，保留 {result.KeptCfg}。" : "")
                 + (result.Warnings.Length == 0 ? "" : " 警告：" + string.Join("；", result.Warnings.Take(3)))
                 + " 重新部署后生效。";
         }
@@ -168,8 +171,72 @@ public partial class MainWindow
                         case 5: Refresh(draft.Move(index, -1)); status.Text = "已上移草稿；数组顺序即部署顺序。"; break;
                         case 6: Refresh(draft.Move(index, 1)); status.Text = "已下移草稿；数组顺序即部署顺序。"; break;
                         case 7:
+                        {
+                            var before = draft.Loaded!.Selected.Where(s => s.Enabled)
+                                .Select(s => new PluginSelection(s.Id, s.Version, true)).ToArray();
+                            var after = draft.Plugins.Where(p => p.Enabled).ToArray();
+                            var enabledNew = after.Where(a => !before.Any(b => b.Id == a.Id && b.Version == a.Version)).ToArray();
+                            var disabled = before.Where(b => !after.Any(a => a.Id == b.Id && a.Version == b.Version)).ToArray();
+                            var overwrite = new List<string>();
+                            var applyCfg = false;
+                            if (enabledNew.Length > 0)
+                            {
+                                var preview = await model.PreviewPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabledNew, disabled);
+                                if (preview.Import.Length > 0 || preview.Conflicts.Length > 0)
+                                {
+                                    var body = new StackPanel { Spacing = 6 };
+                                    body.Children.Add(new TextBlock { Text = "插件 cfg 同步", FontSize = 18 });
+                                    body.Children.Add(new TextBlock { Text = $"将导入 {preview.Import.Length} 个新文件；冲突 {preview.Conflicts.Length} 个（勾选表示用插件版本覆盖）；相同跳过 {preview.Identical.Length} 个。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                                    var checks = new List<(PluginCfgEntry Entry, TKCode.Arc.Checkbox Box)>();
+                                    foreach (var entry in preview.Conflicts.Take(30))
+                                    {
+                                        var box = new TKCode.Arc.Checkbox { Content = $"{entry.Path}（现有 {entry.ExistingHash?[..8]} → 插件 {entry.SourceHash[..8]}）", IsChecked = false };
+                                        checks.Add((entry, box)); body.Children.Add(box);
+                                    }
+                                    if (preview.Truncated) body.Children.Add(new TextBlock { Text = "文件过多，仅显示前 30 个冲突。" });
+                                    var choice2 = await ShowOverlayAsync(body, ["取消", "仅保存清单", "应用"]);
+                                    if (choice2 == 0) break;
+                                    if (choice2 == 2)
+                                    {
+                                        applyCfg = true;
+                                        overwrite.AddRange(checks.Where(c => c.Box.IsChecked == true).Select(c => c.Entry.Path));
+                                    }
+                                }
+                            }
                             draft.Load(await model.PluginsAsync(draft.SaveCommand(instance.Id, preset.Id, instance.Revision)));
-                            Refresh(index); status.Text = "插件清单已保存；下次部署/启动会应用，未自动部署。"; break;
+                            Refresh(index);
+                            var saved = "插件清单已保存；下次部署/启动会应用，未自动部署。";
+                            if (applyCfg && enabledNew.Length > 0)
+                            {
+                                var applied = await model.ApplyPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabledNew, [.. overwrite]);
+                                saved += $" cfg：导入 {applied.Imported}，覆盖 {applied.Overwritten}。";
+                            }
+                            if (disabled.Length > 0)
+                            {
+                                var cleanup = await model.PreviewPluginCfgCleanupAsync(instance.Id, preset.Id, instance.Revision, disabled);
+                                if (cleanup.Removable.Length > 0 || cleanup.Modified.Length > 0)
+                                {
+                                    var body = new StackPanel { Spacing = 6 };
+                                    body.Children.Add(new TextBlock { Text = "禁用插件的 cfg 清理", FontSize = 18 });
+                                    body.Children.Add(new TextBlock { Text = "以下文件由该插件导入且未被修改；默认勾选删除，取消勾选则保留。已修改的文件永不自动删除。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                                    var checks = new List<(PluginCfgEntry Entry, TKCode.Arc.Checkbox Box)>();
+                                    foreach (var entry in cleanup.Removable)
+                                    {
+                                        var box = new TKCode.Arc.Checkbox { Content = entry.Path, IsChecked = true };
+                                        checks.Add((entry, box)); body.Children.Add(box);
+                                    }
+                                    foreach (var entry in cleanup.Modified) body.Children.Add(new TextBlock { Text = "保留（已修改）：" + entry.Path });
+                                    if (await ShowOverlayAsync(body, ["跳过", "删除选中"]) == 1 && checks.Any(c => c.Box.IsChecked == true))
+                                    {
+                                        var removed = await model.CleanupPluginCfgAsync(instance.Id, preset.Id, instance.Revision, disabled,
+                                            checks.Where(c => c.Box.IsChecked == true).Select(c => c.Entry.Path).ToArray());
+                                        saved += $" cfg：删除 {removed.Deleted}。";
+                                    }
+                                }
+                            }
+                            status.Text = saved;
+                            break;
+                        }
                     }
                 }
                 catch (Exception e) when (e is IOException or InstanceException) { status.Text = e is InstanceException i ? i.Code + ": " + i.Message : e.Message; }

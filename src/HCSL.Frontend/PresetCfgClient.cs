@@ -19,7 +19,7 @@ public sealed class PresetCfgClient(InstanceClient instances, ServerController s
 
     public async Task<string> ExecAsync(Guid instanceId, Guid presetId, Guid expectedRun, string name, string expectedHash)
     {
-        name = PresetCfgRules.Name(name);
+        name = PresetCfgRules.Path(name, requireCfgFile: true);
         void CheckRun()
         {
             if (!CanExec(instanceId, presetId) || server.RunId != expectedRun)

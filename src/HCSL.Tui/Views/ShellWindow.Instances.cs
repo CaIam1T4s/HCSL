@@ -163,7 +163,7 @@ public sealed partial class ShellWindow
         var p = entry.Presets[row];
         if (index == 5)
         {
-            using var cfgDialog = new CfgEditorDialog(new PresetCfgClient(_instanceClient, _server), _server, d, p, _options.English);
+            using var cfgDialog = new CfgBrowserDialog(new PresetCfgClient(_instanceClient, _server), _server, d, p, _options.English);
             cfgDialog.Ready += cfgDialog.Initialize;
             Application.Run(cfgDialog);
             return;

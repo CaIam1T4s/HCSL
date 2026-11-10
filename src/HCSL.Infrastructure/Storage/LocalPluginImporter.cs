@@ -33,10 +33,12 @@ public sealed class LocalPluginImporter : IPluginImporter
         var warnings = new List<string>();
         var skipped = new List<string>();
         var cleanup = (string?)null;
+        var cfgFiles = new List<SourceFile>();
         try
         {
             var (root, archive, hint) = ResolveSource(command.SourceDirectory, command.ArchivePath, out cleanup);
             var analysis = Analyze(root, hint, name, command.Id, command.Version, skipped, warnings);
+            cfgFiles = analysis.CfgFiles;
             var files = analysis.Files;
             allFiles.AddRange(files);
 
@@ -68,6 +70,18 @@ public sealed class LocalPluginImporter : IPluginImporter
                         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                         File.Copy(file.Source, target, false);
                         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(target, File.GetUnixFileMode(file.Source));
+                    }
+                    foreach (var cfg in cfgFiles)
+                    {
+                        var relative = cfg.RelativePath["csgo/cfg/".Length..];
+                        var safeRelative = PresetCfgRules.Path(relative, requireCfgFile: false);
+                        var target = Path.Combine(filesDir, "..", "cfg", safeRelative.Replace('/', Path.DirectorySeparatorChar));
+                        target = Path.GetFullPath(target);
+                        var cfgRoot = Path.GetFullPath(Path.Combine(filesDir, "..", "cfg"));
+                        if (!target.StartsWith(cfgRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                            throw new InstanceException("HCSL-PLUGIN-PATH", "Package cfg path escapes its destination (" + relative + ").");
+                        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                        File.Copy(cfg.Source, target, false);
                     }
                     if (NeedsGameInfo(files))
                     {
@@ -101,6 +115,35 @@ public sealed class LocalPluginImporter : IPluginImporter
         }
         finally { Cleanup(cleanup); }
 
+        var importedCfg = 0; var keptCfg = 0;
+        if (command.CfgIntoPreset)
+        {
+            if (cfgFiles.Count == 0) warnings.Add("The package contains no csgo/cfg files to import.");
+            else if (command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)
+                warnings.Add("Package cfg files were not imported because no instance/preset was supplied.");
+            else
+            {
+                try
+                {
+                    var sync = new LocalPluginCfgSync();
+                    var selection = new[] { new PluginSelection(command.Id, command.Version) };
+                    var preview = sync.Preview(workspace, new(PluginCfgAction.Preview, command.InstanceId, command.PresetId,
+                        command.InstanceRevision, selection, null));
+                    var applied = sync.Apply(workspace, new(PluginCfgAction.Apply, command.InstanceId, command.PresetId,
+                        command.InstanceRevision, selection, null, []));
+                    importedCfg = applied.Imported;
+                    keptCfg = preview.Conflicts.Length + preview.Identical.Length;
+                    if (preview.Truncated) warnings.Add("Too many cfg files; only the preview limit was imported.");
+                    if (preview.Conflicts.Length > 0)
+                        warnings.Add("Kept " + preview.Conflicts.Length + " existing cfg file(s); overwrite them from the plugin page if needed.");
+                }
+                catch (Exception e) when (e is InstanceException or WorkspaceException or IOException)
+                {
+                    warnings.Add("Package imported but cfg files were not copied: " + e.Message);
+                }
+            }
+        }
+
         var enabled = false;
         if (command.Enable)
         {
@@ -129,7 +172,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var supported = CurrentPlatform(allFiles);
         if (!supported) warnings.Insert(0, "The package has no binary for this platform (" + (OperatingSystem.IsWindows() ? "Windows" : "Linux") + ").");
         return new(Path.Combine(workspace.LibraryRoot, "plugin-packages", command.Id, command.Version),
-            command.Id, command.Version, allFiles.Count, allFiles.Sum(f => f.Bytes), supported, [.. warnings], enabled);
+            command.Id, command.Version, allFiles.Count, allFiles.Sum(f => f.Bytes), supported, [.. warnings], enabled, importedCfg, keptCfg);
     }
 
     public PluginImportPreview Probe(WorkspaceRequest workspace, PluginImportProbeCommand command)
@@ -149,12 +192,13 @@ public sealed class LocalPluginImporter : IPluginImporter
 
     private sealed record SourceFile(string Source, string RelativePath, long Bytes);
     private sealed record PackageManifest(int FormatVersion, string? Id, string? Name, string? Version, string? FilesRoot);
-    private sealed record Analysis(List<SourceFile> Files, string Id, string Name, string Version, string? MetaPlugin);
+    private sealed record Analysis(List<SourceFile> Files, string Id, string Name, string Version, string? MetaPlugin, List<SourceFile> CfgFiles);
 
     private static Analysis Analyze(string root, string hint, string? fallbackName, string? forcedId, string? forcedVersion, List<string> skipped, List<string> warnings)
     {
         var (filesRoot, prefix) = Layout(root);
-        var files = Enumerate(filesRoot, prefix, skipped);
+        var cfgFiles = new List<SourceFile>();
+        var files = Enumerate(filesRoot, prefix, skipped, cfgFiles);
         if (files.Count == 0) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "No plugin files were found in the source.");
         if (files.Count > PluginRules.MaxPackageFiles) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Package exceeds the 4096-file limit.");
         if (files.Sum(f => f.Bytes) > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Package exceeds the 512 MiB limit.");
@@ -169,7 +213,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var metaPlugin = DetectMetaPlugin(files);
         WarnWrongSourceModBuild(files, warnings);
         WarnMissingMetaBinary(files, metaPlugin, warnings);
-        return new(files, id, name, version, metaPlugin);
+        return new(files, id, name, version, metaPlugin, cfgFiles);
     }
 
     private static (string Root, string Prefix) Layout(string source)
@@ -182,7 +226,7 @@ public sealed class LocalPluginImporter : IPluginImporter
             "Source must contain addons/, csgo/, core/ or files/csgo/ (the release root, not a single addon folder).");
     }
 
-    private static List<SourceFile> Enumerate(string root, string prefix, List<string> skipped)
+    private static List<SourceFile> Enumerate(string root, string prefix, List<string> skipped, List<SourceFile> cfgFiles)
     {
         var files = new List<SourceFile>();
         void Walk(string directory)
@@ -201,10 +245,15 @@ public sealed class LocalPluginImporter : IPluginImporter
             if (prefix.Length > 0 && !relative.StartsWith("csgo/", StringComparison.Ordinal)) relative = prefix + relative;
             if (PluginRules.IsAddonsRoot(relative))
                 throw new InstanceException("HCSL-PLUGIN-PATH", "A package file may not replace the addons directory (" + relative + ").");
-            if (PluginRules.IsReservedDeploymentPath(relative)) { skipped.Add(relative); return; }
+            var info = new FileInfo(path);
+            if (PluginRules.IsReservedDeploymentPath(relative))
+            {
+                if (PluginRules.IsPathUnder(relative, "csgo/cfg")) cfgFiles.Add(new(path, relative, info.Length));
+                skipped.Add(relative);
+                return;
+            }
             try { PluginRules.RelativePath(relative); }
             catch (InstanceException e) { throw new InstanceException("HCSL-PLUGIN-PATH", e.Message + " (" + relative + ")"); }
-            var info = new FileInfo(path);
             files.Add(new(path, relative, info.Length));
         }
         Walk(root);

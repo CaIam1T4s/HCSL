@@ -44,7 +44,7 @@ try
         Console.WriteLine("PASS tui.log-paging-up-down-bounds-and-input-focus (FakeDriver; not a real terminal key decoder)");
     }
     finally { Application.End(state); }
-    CfgEditorTests.Run();
+    CfgBrowserTests.Run();
     MapPoolTests.Run();
     PluginTests.Run();
 }

@@ -49,19 +49,21 @@ public sealed class LocalPresetCfgStore : IPresetCfgStore
         var preset = Path.Combine(instance, "presets", c.PresetId.ToString("D"));
         var directory = Path.Combine(preset, "cfg"); Safe(directory);
         if (!Directory.Exists(directory)) throw new InstanceException("HCSL-CFG-DIRECTORY", "Preset CFG directory is missing.");
-        if (c.Action == PresetCfgAction.List) return new(List(directory));
-        var name = PresetCfgRules.Name(c.Name);
-        var file = Path.Combine(directory, name); Safe(file);
+        if (c.Action == PresetCfgAction.List) return List(directory, c.Path);
         if (c.Action == PresetCfgAction.Read)
         {
-            var bytes = Read(file); var text = Decode(bytes); PresetCfgRules.Content(text);
-            return new([], name, text, Hash(bytes));
+            var relative = PresetCfgRules.Path(c.Name, requireCfgFile: true);
+            var readFile = Path.Combine(directory, relative.Replace('/', Path.DirectorySeparatorChar)); Safe(readFile);
+            var bytes = Read(readFile); var text = Decode(bytes); PresetCfgRules.Content(text);
+            return new([], relative, text, Hash(bytes));
         }
+        var name = PresetCfgRules.Name(c.Name);
+        var file = Path.Combine(directory, name); Safe(file);
         if (c.Action == PresetCfgAction.Save)
         {
             PresetCfgRules.Content(c.Content);
             CheckVersion(file, c.ExpectedHash);
-            if (!File.Exists(file) && List(directory).Length >= PresetCfgRules.MaxFiles)
+            if (!File.Exists(file) && CountFiles(directory) >= PresetCfgRules.MaxFiles)
                 throw new InstanceException("HCSL-CFG-LIMIT", "CFG file limit reached.");
             var temp = Path.Combine(directory, ".cfg-tmp-" + Guid.NewGuid().ToString("N"));
             try
@@ -92,19 +94,42 @@ public sealed class LocalPresetCfgStore : IPresetCfgStore
         }
         return new([]);
     }
-    private static PresetCfgFile[] List(string directory)
+    private static PresetCfgResult List(string directory, string? relativePath)
     {
+        var relative = PresetCfgRules.Path(relativePath, requireCfgFile: false);
+        var target = relative.Length == 0 ? directory : Path.Combine(directory, relative.Replace('/', Path.DirectorySeparatorChar));
+        Safe(target);
+        if (!Directory.Exists(target)) throw new InstanceException("HCSL-CFG-DIRECTORY", "CFG directory does not exist.");
         var result = new List<PresetCfgFile>();
-        foreach (var path in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        var total = 0;
+        foreach (var path in Directory.EnumerateDirectories(target).Order(StringComparer.Ordinal))
+        {
+            var info = new DirectoryInfo(path);
+            if (info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            var child = relative.Length == 0 ? info.Name : relative + "/" + info.Name;
+            try { PresetCfgRules.Path(child, requireCfgFile: false); } catch (InstanceException) { continue; }
+            total++;
+            if (result.Count >= PresetCfgRules.MaxListedEntries) continue;
+            result.Add(new(info.Name, 0, PresetCfgKind.Directory, child));
+        }
+        foreach (var path in Directory.EnumerateFiles(target, "*", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
         {
             var info = new FileInfo(path);
             try { PresetCfgRules.Name(info.Name); } catch (InstanceException) { continue; }
             if (info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-            result.Add(new(info.Name, info.Length));
-            if (result.Count > PresetCfgRules.MaxFiles) throw new InstanceException("HCSL-CFG-LIMIT", "Too many CFG files; use the directory tool instead.");
+            var child = relative.Length == 0 ? info.Name : relative + "/" + info.Name;
+            try { PresetCfgRules.Path(child, requireCfgFile: true); } catch (InstanceException) { continue; }
+            total++;
+            if (result.Count >= PresetCfgRules.MaxListedEntries) continue;
+            result.Add(new(info.Name, info.Length, PresetCfgKind.File, child));
         }
-        return result.ToArray();
+        var parent = relative.Length == 0 ? null : (relative.Contains('/') ? relative[..relative.LastIndexOf('/')] : "");
+        return new([.. result], Path: relative, Parent: parent, Truncated: total > result.Count, Total: total);
     }
+
+    private static int CountFiles(string directory) =>
+        Directory.EnumerateFiles(directory, "*.cfg", SearchOption.TopDirectoryOnly).Count();
+
     private static byte[] Read(string file)
     {
         Safe(file);

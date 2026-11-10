@@ -207,6 +207,18 @@ try
         try { Reject("HCSL-DEPLOY-ROTATION", () => service.Plan(workspace, Options(first))); }
         finally { File.Delete(baseRotation); }
     });
+    Test("nested preset cfg is visible and survives redeploy", () =>
+    {
+        var cfg = Path.Combine(Preset(first), "cfg", "pt", "map");
+        Directory.CreateDirectory(cfg);
+        File.WriteAllText(Path.Combine(cfg, "dust2.cfg"), "echo nested");
+        service.Deploy(workspace, Options(first));
+        var runtime = Path.Combine(Runtime(first), "game", "csgo", "cfg", "pt", "map", "dust2.cfg");
+        Check(File.Exists(runtime) && File.ReadAllText(runtime) == "echo nested", "Nested preset cfg missing from the runtime.");
+        File.WriteAllText(Path.Combine(cfg, "dust2.cfg"), "echo edited");
+        service.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(runtime) == "echo edited", "Redeploy overwrote a nested user cfg.");
+    });
     Test("enabled plugin packages overlay the runtime and disabling removes only tracked files", () =>
     {
         var presetId = first.Definition!.SelectedPresetId;

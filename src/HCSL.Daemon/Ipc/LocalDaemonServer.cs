@@ -101,6 +101,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
                 if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall)
                     deadline.CancelAfter(TimeSpan.FromMinutes(20));
+                else if (request.Kind == RequestKind.PluginCfg)
+                    deadline.CancelAfter(TimeSpan.FromMinutes(5));
                 LocalResponse response;
                 try { response = request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
@@ -179,6 +181,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.Plugin => Plugin(request),
             RequestKind.PluginImport => PluginImport(request),
             RequestKind.PluginImportProbe => PluginImportProbe(request),
+            RequestKind.PluginCfg => PluginCfg(request),
             RequestKind.Server => Server(request),
             RequestKind.Status => new(LocalProtocol.Version, request.Id, true, Snapshot: operations.Snapshot()),
             RequestKind.StartProbe => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request)),
@@ -250,6 +253,25 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before enabling an imported package.");
         var result = new LocalPluginImporter().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
         return new(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(result));
+    }
+    private LocalResponse PluginCfg(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<PluginCfgCommand>(request.PluginCfgJson ?? "null")
+            ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin cfg command is required.");
+        if (command.Action is PluginCfgAction.Apply or PluginCfgAction.CleanupApply &&
+            (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
+            throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before changing cfg files.");
+        var sync = new HCSL.Infrastructure.Storage.LocalPluginCfgSync();
+        var result = command.Action switch
+        {
+            PluginCfgAction.Apply => sync.Apply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
+            PluginCfgAction.CleanupApply => sync.CleanupApply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
+            _ => (object)(command.Action == PluginCfgAction.Preview
+                ? sync.Preview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command)
+                : sync.CleanupPreview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command))
+        };
+        return new(LocalProtocol.Version, request.Id, true, PluginCfgResultJson: JsonSerializer.Serialize(result));
     }
     private LocalResponse Plugin(LocalRequest request)
     {

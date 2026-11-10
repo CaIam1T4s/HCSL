@@ -11,7 +11,8 @@ public static class PluginTests
         var daemon = new Fake();
         using var server = new ServerController(daemon, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1));
         server.ConnectAsync().GetAwaiter().GetResult();
-        using var dialog = new PluginsDialog(new(new InstanceClient(daemon), server), daemon.Instance, daemon.Preset, english: true);
+        var instanceClient = new InstanceClient(daemon);
+        using var dialog = new PluginsDialog(new(instanceClient, server), instanceClient, daemon.Instance, daemon.Preset, english: true);
         var state = Application.Begin(dialog);
         try
         {
@@ -49,6 +50,14 @@ public static class PluginTests
         {
             LocalResponse Response() => new(LocalProtocol.Version, request.Id, true, Defaults: new("/settings", "/data", "/library"));
             if (request.Kind == RequestKind.Hello) return Task.FromResult(Response());
+            if (request.Kind == RequestKind.PluginCfg)
+            {
+                var cfgCommand = JsonSerializer.Deserialize<PluginCfgCommand>(request.PluginCfgJson!)!;
+                var json = cfgCommand.Action is PluginCfgAction.Preview or PluginCfgAction.CleanupPreview
+                    ? JsonSerializer.Serialize(new PluginCfgPreview([], [], [], [], []))
+                    : JsonSerializer.Serialize(new PluginCfgResult(0, 0, 0, []));
+                return Task.FromResult(Response() with { PluginCfgResultJson = json });
+            }
             if (request.Kind == RequestKind.Server) return Task.FromResult(Response() with { ServerSnapshotJson = JsonSerializer.Serialize(Status) });
             if (request.Kind == RequestKind.ServerConsole) { ConsoleCalls++; throw new Exception("Plugins must not send console commands."); }
             var command = JsonSerializer.Deserialize<PluginCommand>(request.PluginJson!)!;
