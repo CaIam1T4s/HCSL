@@ -111,6 +111,8 @@ public partial class MainWindow
         static (string Id, string Name, string? Meta) DetectImport(string path)
         {
             static bool Has(string root, params string[] parts) => Directory.Exists(Path.Combine([root, .. parts]));
+            if (Has(path, "addons", "source2mod") || Has(path, "csgo", "addons", "source2mod") || Has(path, "files", "csgo", "addons", "source2mod"))
+                return ("source2mod", "Source2Mod", null);
             if (Has(path, "addons", "sourcemod") || Has(path, "csgo", "addons", "sourcemod") || Has(path, "files", "csgo", "addons", "sourcemod"))
                 return ("sourcemod", "SourceMod", "addons/sourcemod/bin/sourcemod_mm");
             if (Has(path, "addons", "metamod") || Has(path, "csgo", "addons", "metamod") || Has(path, "files", "csgo", "addons", "metamod"))

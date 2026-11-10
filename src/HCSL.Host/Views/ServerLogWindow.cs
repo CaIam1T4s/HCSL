@@ -51,6 +51,7 @@ public sealed class ServerLogWindow : Window
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
         Title = "HCSL · 启动进度 / 服务器日志"; Width = 960; Height = 620; MinWidth = 600; MinHeight = 400;
+        text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,Auto,*,Auto,Auto") };
         grid.Children.Add(summary);
         Grid.SetRow(detail, 1); grid.Children.Add(detail);

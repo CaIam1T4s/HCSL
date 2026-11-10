@@ -54,7 +54,7 @@
             </Grid>
           </StackPanel>
           <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="11"/>
-          <arc:Textarea Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="task-log"/>
+          <arc:Textarea x:Name="TaskLogOutput" Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="task-log"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">

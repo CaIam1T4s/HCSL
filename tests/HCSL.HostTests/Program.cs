@@ -48,6 +48,7 @@ for (var attempt = 0; attempt < 2; attempt++)
     var area = log.GetVisualDescendants().OfType<Textarea>().Single();
     var scroll = area.GetVisualDescendants().OfType<ScrollViewer>().Single();
     Check(area.FrameHeight > 0 && area.FrameHeight < log.ClientSize.Height, "Editor must fit the finite window height.");
+    Check(area.FontFamily?.Name == HCSL.UI.Shared.Services.MonospaceFont.Resolve().Name, "Log content must use an installed monospace family.");
     Check(scroll.Extent.Height > scroll.Viewport.Height, "Long logs must have a vertical scroll range.");
     Check(scroll.Extent.Width > scroll.Viewport.Width, "Long lines must have a horizontal scroll range.");
     scroll.Offset = new Vector(40, 100);

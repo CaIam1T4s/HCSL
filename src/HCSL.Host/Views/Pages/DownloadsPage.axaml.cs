@@ -14,6 +14,7 @@ public partial class DownloadsPage : UserControl
     public DownloadsPage()
     {
         InitializeComponent();
+        TaskLogOutput.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => { if (subscribed is not null) subscribed.PropertyChanged -= Changed; subscribed = null; SecretInput.Text = ""; };
