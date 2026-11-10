@@ -10,4 +10,5 @@ public interface IPluginStore
 public interface IPluginImporter
 {
     PluginImportResult Execute(WorkspaceRequest workspace, PluginImportCommand command);
+    PluginImportPreview Probe(WorkspaceRequest workspace, PluginImportProbeCommand command);
 }

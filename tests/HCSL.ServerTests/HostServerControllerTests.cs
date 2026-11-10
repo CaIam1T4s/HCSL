@@ -58,6 +58,8 @@ public static class HostServerControllerTests
                 "deploy-only action not delegated.");
             Check(!host2.Server.Active, "deploy-only must not mark the server active.");
             var preset = host2.Selected!.Entry.Presets[0];
+            var probed = await host2.ProbePluginImportAsync("/tmp/source2mod-1.0.46.zip");
+            Check(probed.Id == "source2mod" && probed.Version == "1.0.46" && deployer.ProbeCalls == 1, "plugin import probe not delegated.");
             var imported = await host2.ImportPluginAsync(new(deployer.First, preset.Id, "/tmp/src", "metamod", "Metamod", "2.0.0"));
             Check(imported.Id == "metamod" && deployer.ImportCalls == 1, "plugin import not delegated.");
             var preview = await host2.DeployPreviewAsync(deployer.First, preset.Id);
@@ -89,7 +91,7 @@ public static class HostServerControllerTests
         public Guid Run { get; } = Guid.NewGuid();
         public bool Recover;
         public Guid? Recovered, StopRun;
-        public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments, ImportCalls;
+        public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments, ImportCalls, ProbeCalls;
         public ServerCommand? LastStart;
         private bool hasPassword, active;
         private Guid current;
@@ -98,6 +100,13 @@ public static class HostServerControllerTests
         {
             if (request.Kind == RequestKind.Hello)
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: new("/settings", DataRoot, LibraryRoot)));
+            if (request.Kind == RequestKind.PluginImportProbe)
+            {
+                var c = JsonSerializer.Deserialize<PluginImportProbeCommand>(request.PluginImportProbeJson!)!;
+                ProbeCalls++;
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(
+                    new PluginImportPreview(c.SourcePath, c.SourcePath.EndsWith(".zip") ? "archive" : "directory", "source2mod", "Source2Mod", "1.0.46", null, 3, 10, []))));
+            }
             if (request.Kind == RequestKind.PluginImport)
             {
                 var c = JsonSerializer.Deserialize<PluginImportCommand>(request.PluginImportJson!)!;

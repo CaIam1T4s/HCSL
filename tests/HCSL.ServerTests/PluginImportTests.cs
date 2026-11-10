@@ -1,3 +1,5 @@
+using System.Formats.Tar;
+using System.IO.Compression;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Storage;
@@ -99,8 +101,67 @@ public static class PluginImportTests
             Check(enabled.Enabled, "Enable after import failed: " + string.Join(";", enabled.Warnings));
             var selected = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id)).Selected;
             Check(selected.Single().Id == "sourcemod" && selected.Single().Enabled, "Imported package not selected.");
+
+            // 7) Archive import (.zip) with version detection from the archive name.
+            var zip = Path.Combine(root, "source2mod-1.0.46-linux.zip");
+            using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
+            {
+                void Entry(string name, string text)
+                {
+                    var writer = new StreamWriter(archive.CreateEntry(name).Open());
+                    writer.Write(text); writer.Dispose();
+                }
+                Entry("addons/source2mod/bin/linuxsteamrt64/source2mod.so", "ELF");
+                Entry("addons/metamod/source2mod.vdf", "\"Plugin\"{}");
+                Entry("addons/source2mod/configs/core.example.json", "{}");
+            }
+            var probe = importer.Probe(workspace, new(zip));
+            Check(probe.Kind == "archive" && probe.Id == "source2mod" && probe.Version == "1.0.46",
+                $"archive probe wrong: {probe.Id}/{probe.Version}/{probe.Kind}");
+            var fromZip = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, "", probe.Id, probe.Name, probe.Version,
+                probe.MetaPlugin, ArchivePath: zip));
+            Check(fromZip.Files >= 3 && Directory.Exists(Path.Combine(workspace.LibraryRoot, "plugin-packages", "source2mod", "1.0.46")),
+                "archive import did not write the package.");
+
+            // 8) .tar.gz import and version detection from a directory name with a git suffix.
+            var tarPath = Path.Combine(root, "mmsource-2.0.0-git1234-linux.tar.gz");
+            using (var file = File.Create(tarPath))
+            using (var gzip = new GZipStream(file, CompressionMode.Compress))
+            using (var writer = new TarWriter(gzip))
+            {
+                void Add(string name, string text)
+                {
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+                    writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, name) { DataStream = new MemoryStream(bytes) });
+                }
+                Add("addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so", "ELF");
+                Add("addons/metamod/metaplugins.ini", "");
+            }
+            var tarProbe = importer.Probe(workspace, new(tarPath));
+            Check(tarProbe.Kind == "archive" && tarProbe.Id == "metamod" && tarProbe.Version == "2.0.0-git1234",
+                $"tar probe wrong: {tarProbe.Id}/{tarProbe.Version}");
+            importer.Execute(workspace, new(Guid.Empty, Guid.Empty, "", tarProbe.Id, tarProbe.Name, tarProbe.Version, ArchivePath: tarPath));
+
+            // 9) Traversal and link entries are refused.
+            var evil = Path.Combine(root, "evil.zip");
+            using (var archive = ZipFile.Open(evil, ZipArchiveMode.Create))
+            using (var writer = new StreamWriter(archive.CreateEntry("../escape.txt").Open())) writer.Write("x");
+            Reject("HCSL-PLUGIN-PATH", () => importer.Probe(workspace, new(evil)));
+            var linkTar = Path.Combine(root, "link.tar.gz");
+            using (var file = File.Create(linkTar))
+            using (var gzip = new GZipStream(file, CompressionMode.Compress))
+            using (var writer = new TarWriter(gzip))
+                writer.WriteEntry(new PaxTarEntry(TarEntryType.SymbolicLink, "addons/link") { LinkName = "/etc/passwd" });
+            Reject("HCSL-PLUGIN-PACKAGE", () => importer.Probe(workspace, new(linkTar)));
+
+            // 10) A packaged plugin.json supplies identity when present.
+            var packaged = Path.Combine(root, "mmsource-2.0.0-linux");
+            WriteFile(packaged, "plugin.json", "{\"FormatVersion\":1,\"Id\":\"metamod\",\"Name\":\"Metamod:Source\",\"Version\":\"2.0.0\"}");
+            WriteFile(packaged, "files/csgo/addons/metamod/bin/linuxsteamrt64/metamod.2.cs2.so");
+            var packagedProbe = importer.Probe(workspace, new(packaged));
+            Check(packagedProbe.Id == "metamod" && packagedProbe.Version == "2.0.0", "packaged manifest identity not used.");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-        Console.WriteLine("PASS plugins.import-layouts-overlays-platform-warnings-limits-and-enable");
+        Console.WriteLine("PASS plugins.import-layouts-archives-probe-traversal-and-enable");
     }
 }

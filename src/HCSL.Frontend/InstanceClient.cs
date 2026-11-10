@@ -33,6 +33,17 @@ public sealed class InstanceClient(IDaemonClient client)
             ?? throw new IOException("Missing plugin import result.");
     }
 
+    public async Task<PluginImportPreview> PluginImportProbeAsync(PluginImportProbeCommand command, CancellationToken ct = default)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginImportProbe,
+            Options: new(hello.Defaults), PluginImportProbeJson: JsonSerializer.Serialize(command)), ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<PluginImportPreview>(response.PluginImportPreviewJson ?? "null")
+            ?? throw new IOException("Missing plugin import preview.");
+    }
+
     public async Task<PresetCfgResult> CfgAsync(PresetCfgCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);

@@ -155,6 +155,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.MapPool => MapPool(request),
             RequestKind.Plugin => Plugin(request),
             RequestKind.PluginImport => PluginImport(request),
+            RequestKind.PluginImportProbe => PluginImportProbe(request),
             RequestKind.Server => Server(request),
             RequestKind.Status => new(LocalProtocol.Version, request.Id, true, Snapshot: operations.Snapshot()),
             RequestKind.StartProbe => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request)),
@@ -207,6 +208,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
         return response;
+    }
+    private LocalResponse PluginImportProbe(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<PluginImportProbeCommand>(request.PluginImportProbeJson ?? "null")
+            ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin import probe command is required.");
+        var preview = new LocalPluginImporter().Probe(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
+        return new(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(preview));
     }
     private LocalResponse PluginImport(LocalRequest request)
     {

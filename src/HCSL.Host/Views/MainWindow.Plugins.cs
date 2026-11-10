@@ -62,20 +62,50 @@ public partial class MainWindow
         }
         async Task ImportPlugin()
         {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            var source = await ChooseAsync("导入插件包", "选择来源：压缩包（.zip / .tar.gz / .tgz / .tar）或已解压的发行目录（含 addons/、csgo/ 或 files/csgo/）。", "取消", "压缩包", "目录");
+            string? path = null, archive = null;
+            if (source == 1)
             {
-                Title = "选择插件发行目录（含 addons/、csgo/ 或 files/csgo/）",
-                AllowMultiple = false
-            });
-            var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+                var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "选择插件压缩包",
+                    AllowMultiple = false,
+                    FileTypeFilter = [new FilePickerFileType("插件压缩包") { Patterns = ["*.zip", "*.tar.gz", "*.tgz", "*.tar"] }]
+                });
+                path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
+                archive = path;
+            }
+            else if (source == 2)
+            {
+                var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "选择插件发行目录（含 addons/、csgo/ 或 files/csgo/）",
+                    AllowMultiple = false
+                });
+                path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+            }
             if (string.IsNullOrWhiteSpace(path)) return;
-            var (defaultId, defaultName, meta) = DetectImport(path);
+
+            PluginImportPreview preview;
+            try { preview = await model.ProbePluginImportAsync(path); }
+            catch (Exception e) when (e is IOException or InstanceException)
+            {
+                await ChooseAsync("无法读取插件包", e is InstanceException failure ? failure.Code + ": " + failure.Message : e.Message, "返回");
+                return;
+            }
+
             var body = new StackPanel { Spacing = 8 };
             body.Children.Add(new TextBlock { Text = "导入插件包", FontSize = 20 });
-            body.Children.Add(new TextBlock { Text = "目录：" + path, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-            var importId = new Input { Text = defaultId };
-            var importName = new Input { Text = defaultName };
-            var importVersion = new Input { Text = "1.0.0" };
+            body.Children.Add(new TextBlock
+            {
+                Text = (preview.Kind == "archive" ? "压缩包：" : "目录：") + path
+                    + "\n识别：Id=" + preview.Id + "，名称=" + preview.Name + "，版本=" + preview.Version
+                    + "\n规模：" + preview.Files + " 文件，" + preview.Bytes / 1024 + " KiB",
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            var importId = new Input { Text = preview.Id };
+            var importName = new Input { Text = preview.Name };
+            var importVersion = new Input { Text = preview.Version };
             var importEnable = new TKCode.Arc.Checkbox { Content = "导入后加入当前预设并启用（需要停服）", IsChecked = false };
             var importForce = new TKCode.Arc.Checkbox { Content = "覆盖同名版本", IsChecked = false };
             body.Children.Add(new TextBlock { Text = "Id" }); body.Children.Add(importId);
@@ -84,18 +114,25 @@ public partial class MainWindow
             body.Children.Add(importEnable); body.Children.Add(importForce);
             body.Children.Add(new TextBlock
             {
-                Text = meta is null
-                    ? "未检测到 Metamod 子插件二进制；普通 addons 包不需要 metaplugins.ini。"
-                    : "将生成 addons/metamod/metaplugins.ini：" + meta + "（清单中需排在 Metamod:Source 之后）。",
+                Text = preview.MetaPlugin is null
+                    ? "未检测到需要显式加载的 Metamod 子插件；Source2Mod 依赖自带 .vdf 自动加载。"
+                    : "将生成 addons/metamod/metaplugins.ini：" + preview.MetaPlugin + "（清单中需排在 Metamod:Source 之后）。",
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap
             });
+            if (preview.Warnings.Length > 0)
+                body.Children.Add(new TextBlock
+                {
+                    Text = "提示：" + string.Join("；", preview.Warnings.Take(4)),
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                });
             if (await ShowOverlayAsync(body, ["取消", "导入"]) != 1) return;
+
             PluginImportResult result;
             try
             {
-                result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id, path,
-                    importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "", meta,
-                    importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision));
+                result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id,
+                    archive is null ? path : "", importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "",
+                    preview.MetaPlugin, importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision, archive));
             }
             catch (Exception e) when (e is IOException or InstanceException)
             {
@@ -107,17 +144,6 @@ public partial class MainWindow
                 + (result.Enabled ? "已启用。" : "未启用。")
                 + (result.Warnings.Length == 0 ? "" : " 警告：" + string.Join("；", result.Warnings.Take(3)))
                 + " 重新部署后生效。";
-        }
-        static (string Id, string Name, string? Meta) DetectImport(string path)
-        {
-            static bool Has(string root, params string[] parts) => Directory.Exists(Path.Combine([root, .. parts]));
-            if (Has(path, "addons", "source2mod") || Has(path, "csgo", "addons", "source2mod") || Has(path, "files", "csgo", "addons", "source2mod"))
-                return ("source2mod", "Source2Mod", null);
-            if (Has(path, "addons", "sourcemod") || Has(path, "csgo", "addons", "sourcemod") || Has(path, "files", "csgo", "addons", "sourcemod"))
-                return ("sourcemod", "SourceMod", "addons/sourcemod/bin/sourcemod_mm");
-            if (Has(path, "addons", "metamod") || Has(path, "csgo", "addons", "metamod") || Has(path, "files", "csgo", "addons", "metamod"))
-                return ("metamod", "Metamod:Source", null);
-            return (Path.GetFileName(path).TrimEnd('/').ToLowerInvariant().Replace(' ', '-'), Path.GetFileName(path.TrimEnd('/')), null);
         }
         try
         {
