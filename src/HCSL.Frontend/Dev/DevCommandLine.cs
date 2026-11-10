@@ -14,11 +14,11 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "gc", "test"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version"];
-    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta"];
+    private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe"];
 
     public const string Usage = """
         hcsl - HCSL developer/test console (Linux)
@@ -36,6 +36,7 @@ public static class DevCommandLine
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
+          import <path>          Probe (--probe) or import a folder/archive into plugin-packages.
           doctor                 Check workspace, permissions, packages, leftovers and report fixes.
           gc                     Delete stale .previous-*/.staging-* deployments (needs --yes).
           test mms <dir|tar.gz>  Import a Metamod:Source release as a plugin package (--enable to select it).

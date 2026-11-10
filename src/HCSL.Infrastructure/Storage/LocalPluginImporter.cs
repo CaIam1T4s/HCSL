@@ -162,7 +162,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var manifest = ReadPackagedManifest(root);
         var id = forcedId ?? manifest?.Id ?? DetectId(files, hint);
         var name = fallbackName ?? manifest?.Name ?? DetectName(id, hint);
-        var version = forcedVersion ?? manifest?.Version ?? DetectVersion(hint);
+        var version = forcedVersion ?? manifest?.Version ?? DetectVersion(hint) ?? DetectVersionFromBinaries(files) ?? "1.0.0";
         var metaPlugin = DetectMetaPlugin(files);
         WarnWrongSourceModBuild(files, warnings);
         WarnMissingMetaBinary(files, metaPlugin, warnings);
@@ -237,10 +237,41 @@ public sealed class LocalPluginImporter : IPluginImporter
         _ => hint is { Length: > 0 } ? hint : "Plugin"
     };
 
-    private static string DetectVersion(string hint)
+    private static string? DetectVersion(string hint)
     {
         var match = VersionPattern.Match(hint);
-        return match.Success ? match.Groups[1].Value : "1.0.0";
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    /// <summary>
+    /// Archives named like "sm.tar.gz" carry no version hint. Read the main plugin binary's
+    /// embedded ASCII strings and prefer a value next to "version" (e.g. "Source2Mod v1.0.46").
+    /// </summary>
+    private static string? DetectVersionFromBinaries(List<SourceFile> files)
+    {
+        var candidates = files
+            .Where(f => (f.RelativePath.EndsWith(".so", StringComparison.OrdinalIgnoreCase) || f.RelativePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                && (f.RelativePath.Contains("source2mod", StringComparison.OrdinalIgnoreCase)
+                    || f.RelativePath.Contains("sourcemod", StringComparison.OrdinalIgnoreCase)
+                    || f.RelativePath.Contains("metamod", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(f => f.Bytes).Take(4);
+        foreach (var file in candidates)
+        {
+            try
+            {
+                using var stream = File.OpenRead(file.Source);
+                var length = (int)Math.Min(stream.Length, 16L * 1024 * 1024);
+                var buffer = new byte[length];
+                stream.ReadExactly(buffer);
+                var text = Encoding.ASCII.GetString(buffer);
+                var preferred = Regex.Match(text, @"(?i)(?:version|\bv)\D{0,16}(\d+\.\d+(?:\.\d+)?)", RegexOptions.CultureInvariant);
+                if (preferred.Success) return preferred.Groups[1].Value;
+                var any = VersionPattern.Match(text);
+                if (any.Success) return any.Groups[1].Value;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return null;
     }
 
     private static string Sanitize(string value)

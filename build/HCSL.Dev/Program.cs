@@ -47,6 +47,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "logs" => await LogsAsync(invocation, json, ct),
     "doctor" => Doctor(invocation, json),
     "plugins" => Plugins(invocation, json),
+    "import" => Import(invocation, json),
     "gc" => Gc(invocation),
     "test" => await TestAsync(invocation, json, ct),
     _ => throw new DevUsageException("Unknown command. Run: hcsl help")
@@ -331,6 +332,56 @@ static int Doctor(DevInvocation invocation, JsonSerializerOptions json)
         Console.WriteLine(problems.Count == 0 ? "result     no problems found" : "result     " + problems.Count + " problem(s) listed above");
         return problems.Count == 0 ? 0 : 2;
     }
+}
+
+static int Import(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var path = invocation.Positionals.FirstOrDefault()
+        ?? throw new DevUsageException("import needs a folder or archive. Example: hcsl import ~/Downloads/sm.tar.gz --probe");
+    if (!Directory.Exists(path) && !File.Exists(path))
+        throw new DevUsageException("Source does not exist: " + path);
+    var workspace = Workspace(invocation);
+    var importer = new LocalPluginImporter();
+    var preview = importer.Probe(workspace, new(path));
+    if (invocation.Has("--probe"))
+    {
+        if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(preview, json));
+        else
+        {
+            Console.WriteLine("kind       " + preview.Kind);
+            Console.WriteLine("id         " + preview.Id);
+            Console.WriteLine("name       " + preview.Name);
+            Console.WriteLine("version    " + preview.Version);
+            Console.WriteLine("files      " + preview.Files + " · " + DevFormat.Bytes(preview.Bytes));
+            if (preview.MetaPlugin is not null) Console.WriteLine("meta       " + preview.MetaPlugin);
+            foreach (var warning in preview.Warnings) Console.WriteLine("warn       " + warning);
+        }
+        return 0;
+    }
+    var instanceId = Guid.Empty; var presetId = Guid.Empty; long revision = 0;
+    if (invocation.Has("--enable"))
+    {
+        var (entry, preset) = Target(workspace, invocation);
+        instanceId = entry.Id; presetId = preset.Id; revision = entry.Definition!.Revision;
+    }
+    var archive = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".tar", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+        || path.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase) ? path : null;
+    var result = importer.Execute(workspace, new(instanceId, presetId, archive is null ? path : "",
+        invocation.Get("--id") ?? preview.Id, invocation.Get("--name") ?? preview.Name,
+        invocation.Get("--version") ?? preview.Version, invocation.Get("--meta") ?? preview.MetaPlugin,
+        invocation.Has("--enable"), invocation.Has("--force"), revision, archive));
+    if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(result, json));
+    else
+    {
+        Console.WriteLine("imported   " + result.Id + " " + result.Version + " → " + result.PackagePath);
+        Console.WriteLine("size       " + result.Files + " files · " + DevFormat.Bytes(result.Bytes));
+        Console.WriteLine("enabled    " + (result.Enabled ? "yes" : "no"));
+        if (!result.CurrentPlatformSupported) Console.WriteLine("warn       no binary for this platform");
+        foreach (var warning in result.Warnings) Console.WriteLine("warn       " + warning);
+    }
+    return 0;
 }
 
 static int Gc(DevInvocation invocation)

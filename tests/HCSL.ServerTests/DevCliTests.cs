@@ -43,6 +43,9 @@ public static class DevCliTests
         var deploy = DevCommandLine.Parse(["deploy", "--dry-run", "--explain"]);
         Check(deploy.Has("--dry-run") && deploy.Has("--explain"), "deploy flags lost.");
         Check(DevCommandLine.Parse(["deploy", "--recover"]).Has("--recover"), "deploy --recover flag lost.");
+        var importCli = DevCommandLine.Parse(["import", "/tmp/sm.tar.gz", "--probe", "--version", "1.0.46"]);
+        Check(importCli.Command == "import" && importCli.Positionals[0] == "/tmp/sm.tar.gz" && importCli.Has("--probe")
+            && importCli.Get("--version") == "1.0.46", "import parse failed.");
         var start = DevCommandLine.Parse(["start", "--wait", "--allow-low-memory"]);
         Check(start.Has("--wait") && start.Has("--allow-low-memory"), "start flags lost.");
         // Every flag the usage text advertises must parse; regression for --wait being documented but rejected.

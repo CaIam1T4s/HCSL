@@ -123,6 +123,19 @@ public static class PluginImportTests
             Check(fromZip.Files >= 3 && Directory.Exists(Path.Combine(workspace.LibraryRoot, "plugin-packages", "source2mod", "1.0.46")),
                 "archive import did not write the package.");
 
+            // 7b) Version fallback from the binary when the archive name has none ("sm.tar.gz").
+            var unnamed = Path.Combine(root, "sm.tar.gz");
+            using (var file = File.Create(unnamed))
+            using (var gzip = new GZipStream(file, CompressionMode.Compress))
+            using (var writer = new TarWriter(gzip))
+            {
+                var binary = System.Text.Encoding.ASCII.GetBytes("pad\0Source2Mod v1.0.46 @ 0613502\0pad");
+                writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, "addons/source2mod/bin/linuxsteamrt64/source2mod.so") { DataStream = new MemoryStream(binary) });
+            }
+            var unnamedProbe = importer.Probe(workspace, new(unnamed));
+            Check(unnamedProbe.Id == "source2mod" && unnamedProbe.Version == "1.0.46",
+                $"binary version fallback failed: {unnamedProbe.Id}/{unnamedProbe.Version}");
+
             // 8) .tar.gz import and version detection from a directory name with a git suffix.
             var tarPath = Path.Combine(root, "mmsource-2.0.0-git1234-linux.tar.gz");
             using (var file = File.Create(tarPath))
