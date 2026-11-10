@@ -80,7 +80,17 @@ public static class PluginImportTests
             WriteFile(addonsRoot, "files/csgo/addons");
             Reject("HCSL-PLUGIN-PATH", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, addonsRoot, "addonsroot", "Bad", "1.0.0")));
 
-            // 5) Enabling uses the preset revision/hash path and appends at the end.
+            // 5) CS:GO-era SourceMod (32-bit, no cs2 engine) imports but is flagged as unusable in CS2.
+            var oldSm = Path.Combine(root, "sm-csgo");
+            var logic = Path.Combine(oldSm, "addons/sourcemod/bin/sourcemod.logic.so");
+            Directory.CreateDirectory(Path.GetDirectoryName(logic)!);
+            File.WriteAllBytes(logic, [0x7F, (byte)'E', (byte)'L', (byte)'F', 1, 1, 1, 0]);
+            WriteFile(oldSm, "addons/sourcemod/bin/sourcemod_mm.x64.so");
+            var csgo = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, oldSm, "sourcemod", "SourceMod", "1.11.0"));
+            Check(csgo.Warnings.Any(w => w.Contains("sourcemod.2.cs2.so", StringComparison.Ordinal)), "Missing CS2 engine warning.");
+            Check(csgo.Warnings.Any(w => w.Contains("32-bit", StringComparison.Ordinal)), "32-bit binary warning missing.");
+
+            // 6) Enabling uses the preset revision/hash path and appends at the end.
             var instances = new LocalInstanceStore();
             var entry = instances.Execute(workspace, new(InstanceAction.Create, Name: "Import")).Instances.Single();
             var preset = entry.Presets.Single();

@@ -129,6 +129,8 @@ public sealed class LocalPluginImporter : IPluginImporter
 
         var supported = CurrentPlatform(files);
         if (!supported) warnings.Insert(0, "The package has no binary for this platform (" + (OperatingSystem.IsWindows() ? "Windows" : "Linux") + ").");
+        WarnWrongSourceModBuild(files, warnings);
+        WarnMissingMetaBinary(files, metaPlugin, warnings);
         return new(Path.Combine(workspace.LibraryRoot, "plugin-packages", command.Id, command.Version),
             command.Id, command.Version, files.Count, files.Sum(f => f.Bytes), supported, [.. warnings], enabled);
     }
@@ -190,6 +192,39 @@ public sealed class LocalPluginImporter : IPluginImporter
             throw new InstanceException("HCSL-PLUGIN-PATH", "MetaPlugin must be a game-relative addons path.");
         if (!metaPlugin.StartsWith("addons/", StringComparison.Ordinal))
             throw new InstanceException("HCSL-PLUGIN-PATH", "MetaPlugin must start with addons/.");
+    }
+
+    /// <summary>A CS:GO-era SourceMod package has 32-bit engines and no sourcemod.2.cs2.so; CS2 cannot load it.</summary>
+    private static void WarnWrongSourceModBuild(List<SourceFile> files, List<string> warnings)
+    {
+        if (!files.Any(f => f.RelativePath.StartsWith("csgo/addons/sourcemod/", StringComparison.OrdinalIgnoreCase))) return;
+        var hasCs2 = files.Any(f => f.RelativePath.Contains("sourcemod.2.cs2.so", StringComparison.OrdinalIgnoreCase));
+        if (!hasCs2)
+            warnings.Add("No sourcemod.2.cs2.so found: this looks like a CS:GO/Source 1 SourceMod build and will not load in CS2.");
+        var engine = files.FirstOrDefault(f => f.RelativePath.Equals("csgo/addons/sourcemod/bin/sourcemod.logic.so", StringComparison.OrdinalIgnoreCase));
+        if (engine is not null && Is32BitElf(engine.Source))
+            warnings.Add("sourcemod.logic.so is a 32-bit binary; the CS2 server is 64-bit and will report <ERROR>.");
+    }
+
+    private static void WarnMissingMetaBinary(List<SourceFile> files, string? metaPlugin, List<string> warnings)
+    {
+        if (metaPlugin is null) return;
+        var binary = "csgo/" + metaPlugin;
+        var found = files.Any(f => f.RelativePath.Equals(binary, StringComparison.OrdinalIgnoreCase)
+            || f.RelativePath.StartsWith(binary + ".", StringComparison.OrdinalIgnoreCase)
+            || f.RelativePath.StartsWith(binary + "_", StringComparison.OrdinalIgnoreCase));
+        if (!found) warnings.Add("metaplugins.ini points at " + metaPlugin + " but no matching binary was found in the package.");
+    }
+
+    private static bool Is32BitElf(string path)
+    {
+        try
+        {
+            var header = new byte[5];
+            using var stream = File.OpenRead(path);
+            return stream.Read(header, 0, 5) == 5 && header[0] == 0x7F && header[1] == (byte)'E' && header[2] == (byte)'L' && header[3] == (byte)'F' && header[4] == 1;
+        }
+        catch (IOException) { return false; }
     }
 
     private static bool CurrentPlatform(List<SourceFile> files)
