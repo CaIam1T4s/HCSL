@@ -61,7 +61,7 @@ public static class DevCommandLine
           --force                test mms/gc: overwrite an existing package version.
           --allow-low-memory     start: allow 3072..4095 MiB free memory.
           --follow --after <n>   logs: stream new lines / start after a sequence.
-          --install <id>         frameworks: install this framework (metamod, counterstrikesharp).
+          --install <id>         frameworks: install metamod, counterstrikesharp or source2mod.
           --no-runtime           frameworks: CounterStrikeSharp without the bundled .NET runtime.
 
         Examples:

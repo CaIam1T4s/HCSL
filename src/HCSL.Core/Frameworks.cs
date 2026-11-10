@@ -34,7 +34,7 @@ public static class FrameworkRules
     [
         new("metamod", "Metamod:Source", "alliedmodders/metamod-source", FrameworkKind.Base, Installable: true),
         new("counterstrikesharp", "CounterStrikeSharp", "roflmuffin/CounterStrikeSharp", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
-        new("source2mod", "Source2Mod", "Source2Mod/source2mod", FrameworkKind.ScriptFramework, Installable: false, Requires: "metamod"),
+        new("source2mod", "Source2Mod", "Source2Mod/source2mod", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
         new("swiftlys2", "SwiftlyS2", "SwiftlyS2/SwiftlyS2", FrameworkKind.ScriptFramework, Installable: false, Requires: "metamod"),
         new("modsharp", "ModSharp", "Kxnrl/modsharp-public", FrameworkKind.ScriptFramework, Installable: false, Requires: "metamod")
     ];
@@ -43,6 +43,8 @@ public static class FrameworkRules
     private static readonly Regex MetamodAsset = new(@"(?i)\Ammsource-2\.0\.0-git(?<build>\d+)-(?<os>linux|windows)\.(?<ext>tar\.gz|zip)\z", RegexOptions.CultureInvariant);
     private static readonly Regex CssTag = new(@"\Av?(?<version>\d+\.\d+\.\d+)\z", RegexOptions.CultureInvariant);
     private static readonly Regex CssAsset = new(@"(?i)\Acounterstrikesharp-(?<runtime>with-runtime-)?(?<os>linux|windows)-(?<version>\d+\.\d+\.\d+)\.zip\z", RegexOptions.CultureInvariant);
+    private static readonly Regex S2mTag = new(@"\Av?(?<version>\d+\.\d+\.\d+)\z", RegexOptions.CultureInvariant);
+    private static readonly Regex S2mAsset = new(@"(?i)\Asource2mod_v(?<version>\d+\.\d+\.\d+)-(?<os>linux|windows)\.tar\.gz\z", RegexOptions.CultureInvariant);
 
     public static FrameworkDefinition? Find(string? id) =>
         Known.FirstOrDefault(f => string.Equals(f.Id, id, StringComparison.Ordinal));
@@ -70,6 +72,11 @@ public static class FrameworkRules
             var match = CssTag.Match(tag);
             return match.Success ? match.Groups["version"].Value : null;
         }
+        if (string.Equals(id, "source2mod", StringComparison.Ordinal))
+        {
+            var match = S2mTag.Match(tag);
+            return match.Success ? match.Groups["version"].Value : null;
+        }
         return null;
     }
 
@@ -82,6 +89,15 @@ public static class FrameworkRules
             foreach (var name in assets)
             {
                 var match = MetamodAsset.Match(name);
+                if (match.Success && match.Groups["os"].Value.Equals(os, StringComparison.OrdinalIgnoreCase)) return name;
+            }
+            return null;
+        }
+        if (string.Equals(id, "source2mod", StringComparison.Ordinal))
+        {
+            foreach (var name in assets)
+            {
+                var match = S2mAsset.Match(name);
                 if (match.Success && match.Groups["os"].Value.Equals(os, StringComparison.OrdinalIgnoreCase)) return name;
             }
             return null;
@@ -112,6 +128,11 @@ public static class FrameworkRules
         if (string.Equals(id, "counterstrikesharp", StringComparison.Ordinal))
         {
             var match = CssAsset.Match(asset);
+            return match.Success ? match.Groups["version"].Value : null;
+        }
+        if (string.Equals(id, "source2mod", StringComparison.Ordinal))
+        {
+            var match = S2mAsset.Match(asset);
             return match.Success ? match.Groups["version"].Value : null;
         }
         return null;
