@@ -36,8 +36,14 @@ public sealed class LocalPluginImporter : IPluginImporter
         var cfgFiles = new List<SourceFile>();
         try
         {
-            var (root, archive, hint) = ResolveSource(command.SourceDirectory, command.ArchivePath, out cleanup);
-            var analysis = Analyze(root, hint, name, command.Id, command.Version, skipped, warnings);
+            Analysis analysis;
+            if (IsSmxFile(command.SourceDirectory))
+                analysis = AnalyzeSmx(command.SourceDirectory, name, command.Id, command.Version, warnings);
+            else
+            {
+                var (root, _, hint) = ResolveSource(command.SourceDirectory, command.ArchivePath, out cleanup);
+                analysis = Analyze(root, hint, name, command.Id, command.Version, skipped, warnings);
+            }
             cfgFiles = analysis.CfgFiles;
             var files = analysis.Files;
             allFiles.AddRange(files);
@@ -182,6 +188,12 @@ public sealed class LocalPluginImporter : IPluginImporter
         string? cleanup = null;
         try
         {
+            if (IsSmxFile(command.SourcePath))
+            {
+                var smx = AnalyzeSmx(command.SourcePath, null, null, null, warnings);
+                return new(command.SourcePath, "file", smx.Id, smx.Name, smx.Version,
+                    smx.MetaPlugin, smx.Files.Count, smx.Files.Sum(f => f.Bytes), [.. warnings]);
+            }
             var (root, archive, hint) = ResolveSource(command.SourcePath, IsArchive(command.SourcePath) ? command.SourcePath : null, out cleanup);
             var analysis = Analyze(root, hint, null, null, null, skipped, warnings);
             return new(command.SourcePath, archive ? "archive" : "directory", analysis.Id, analysis.Name, analysis.Version,
@@ -193,6 +205,25 @@ public sealed class LocalPluginImporter : IPluginImporter
     private sealed record SourceFile(string Source, string RelativePath, long Bytes);
     private sealed record PackageManifest(int FormatVersion, string? Id, string? Name, string? Version, string? FilesRoot);
     private sealed record Analysis(List<SourceFile> Files, string Id, string Name, string Version, string? MetaPlugin, List<SourceFile> CfgFiles);
+
+    private static bool IsSmxFile(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && path.EndsWith(".smx", StringComparison.OrdinalIgnoreCase) && File.Exists(path);
+
+    /// <summary>A bare SourcePawn plugin becomes an independent package under source2mod/plugins/.</summary>
+    private static Analysis AnalyzeSmx(string path, string? fallbackName, string? forcedId, string? forcedVersion, List<string> warnings)
+    {
+        LocalPaths.RejectLink(path);
+        var info = new FileInfo(path);
+        if (!info.Exists) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "The .smx file does not exist.");
+        if (info.Length > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "The .smx file is too large.");
+        var hint = Path.GetFileNameWithoutExtension(path);
+        var id = forcedId ?? Sanitize(hint);
+        var name = fallbackName ?? hint;
+        var version = forcedVersion ?? DetectVersion(hint) ?? "1.0.0";
+        warnings.Add("This is a Source2Mod sub-plugin; the preset must enable source2mod and metamod.");
+        return new([new(path, "csgo/addons/source2mod/plugins/" + Path.GetFileName(path), info.Length)], id, name, version, null, []);
+    }
+
 
     private static Analysis Analyze(string root, string hint, string? fallbackName, string? forcedId, string? forcedVersion, List<string> skipped, List<string> warnings)
     {
@@ -483,12 +514,14 @@ public sealed class LocalPluginImporter : IPluginImporter
 
     private static bool CurrentPlatform(List<SourceFile> files)
     {
-        static bool Linux(SourceFile f) => f.RelativePath.EndsWith("/bin/sourcemod_mm", StringComparison.OrdinalIgnoreCase)
+        static bool Linux(SourceFile f) => f.RelativePath.EndsWith(".smx", StringComparison.OrdinalIgnoreCase)
+            || f.RelativePath.EndsWith("/bin/sourcemod_mm", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.Contains("/linuxsteamrt64/", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.Contains("/linux64/", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.Contains("/bin/linux", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.EndsWith(".so", StringComparison.OrdinalIgnoreCase);
-        static bool Windows(SourceFile f) => f.RelativePath.Contains("/win64/", StringComparison.OrdinalIgnoreCase)
+        static bool Windows(SourceFile f) => f.RelativePath.EndsWith(".smx", StringComparison.OrdinalIgnoreCase)
+            || f.RelativePath.Contains("/win64/", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.Contains("/bin/windows", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
         return OperatingSystem.IsWindows() ? files.Any(Windows) : files.Any(Linux);

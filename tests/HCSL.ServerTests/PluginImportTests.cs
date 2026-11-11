@@ -103,6 +103,15 @@ public static class PluginImportTests
             WriteFile(cssFramework, "addons/counterstrikesharp/api/CounterStrikeSharp.API.dll", "binary");
             Check(importer.Probe(workspace, new(cssFramework)).Id == "counterstrikesharp", "Real CSSharp framework was not detected.");
 
+            // 5c) A bare .smx becomes an independent Source2Mod sub-plugin package.
+            var smx = Path.Combine(root, "sp_sample.smx");
+            File.WriteAllText(smx, "SourcePawn binary");
+            var smxProbe = importer.Probe(workspace, new(smx));
+            Check(smxProbe.Kind == "file" && smxProbe.Id == "sp_sample", ".smx probe did not produce a file package.");
+            var smxImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, smx, "sp_sample", "sp_sample", "1.0.0"));
+            Check(smxImport.CurrentPlatformSupported && File.Exists(Path.Combine(smxImport.PackagePath, "files", "csgo", "addons", "source2mod", "plugins", "sp_sample.smx")),
+                ".smx was not stored under source2mod/plugins.");
+
             // 6) Enabling uses the preset revision/hash path and appends at the end.
             var instances = new LocalInstanceStore();
             var entry = instances.Execute(workspace, new(InstanceAction.Create, Name: "Import")).Instances.Single();

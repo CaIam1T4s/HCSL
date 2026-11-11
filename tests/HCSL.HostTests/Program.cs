@@ -298,6 +298,8 @@ var pluginSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Firs
     && s.ItemsSource is string[] items && items.Any(x => x.Contains("Metamod", StringComparison.Ordinal)));
 Check(pluginSelect.ItemsSource!.Cast<string>().Single().Contains("Metamod"), "Plugin list missing selected package.");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("Metamod:Source", StringComparison.Ordinal) == true));
+var smxImport = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && (b.Content?.ToString() ?? "").Contains(".smx", StringComparison.Ordinal));
+Check(!smxImport.IsEffectivelyEnabled, ".smx import was enabled without source2mod + metamod.");
 Click(owner, "启用/禁用");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("已切换启用状态草稿") == true));
 Click(owner, "保存清单");

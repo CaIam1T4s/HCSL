@@ -23,6 +23,8 @@ public partial class MainWindow
         content.Children.Add(baseText);
         content.Children.Add(new TextBlock { Text = "当前脚本框架" });
         content.Children.Add(frameworkSelect);
+        var smxButton = new TKCode.Arc.Button { Content = "导入 .smx 子插件（需要 source2mod + metamod）", Variant = ButtonVariant.Secondary, IsEnabled = false };
+        content.Children.Add(smxButton);
         var list = new Select(); content.Children.Add(list);
         var status = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; content.Children.Add(status);
         var updatingFramework = false;
@@ -59,6 +61,7 @@ public partial class MainWindow
             baseText.Text = baseSelection is null
                 ? "Metamod:Source：未选择（未安装或尚未加入预设）"
                 : "Metamod:Source " + baseSelection.Version + (baseSelection.Enabled ? "（已启用）" : "（已禁用，部署前需启用）");
+            smxButton.IsEnabled = !model.Busy && current == "source2mod" && baseSelection?.Enabled == true;
             updatingFramework = true;
             try
             {
@@ -139,29 +142,32 @@ public partial class MainWindow
                 catch (InstanceException e) { status.Text = e.Code + ": " + e.Message; }
             }
         }
-        async Task ImportPlugin()
+        async Task ImportPlugin(string? direct = null)
         {
-            var source = await ChooseAsync("导入插件包", "选择来源：压缩包（.zip / .tar.gz / .tgz / .tar）或已解压的发行目录（含 addons/、csgo/ 或 files/csgo/）。", "取消", "压缩包", "目录");
-            string? path = null, archive = null;
-            if (source == 1)
+            string? path = direct, archive = null;
+            if (direct is null)
             {
-                var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                var source = await ChooseAsync("导入插件包", "选择来源：压缩包（.zip / .tar.gz / .tgz / .tar）或已解压的发行目录（含 addons/、csgo/ 或 files/csgo/）。单文件 .smx 使用上方专用按钮。", "取消", "压缩包", "目录");
+                if (source == 1)
                 {
-                    Title = "选择插件压缩包",
-                    AllowMultiple = false,
-                    FileTypeFilter = [new FilePickerFileType("插件压缩包") { Patterns = ["*.zip", "*.tar.gz", "*.tgz", "*.tar"] }]
-                });
-                path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-                archive = path;
-            }
-            else if (source == 2)
-            {
-                var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                    var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                    {
+                        Title = "选择插件压缩包",
+                        AllowMultiple = false,
+                        FileTypeFilter = [new FilePickerFileType("插件压缩包") { Patterns = ["*.zip", "*.tar.gz", "*.tgz", "*.tar"] }]
+                    });
+                    path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
+                    archive = path is not null && !path.EndsWith(".smx", StringComparison.OrdinalIgnoreCase) ? path : null;
+                }
+                else if (source == 2)
                 {
-                    Title = "选择插件发行目录（含 addons/、csgo/ 或 files/csgo/）",
-                    AllowMultiple = false
-                });
-                path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+                    var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                    {
+                        Title = "选择插件发行目录（含 addons/、csgo/ 或 files/csgo/）",
+                        AllowMultiple = false
+                    });
+                    path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+                }
             }
             if (string.IsNullOrWhiteSpace(path)) return;
 
@@ -177,7 +183,7 @@ public partial class MainWindow
             body.Children.Add(new TextBlock { Text = "导入插件包", FontSize = 20 });
             body.Children.Add(new TextBlock
             {
-                Text = (preview.Kind == "archive" ? "压缩包：" : "目录：") + path
+                Text = (preview.Kind == "archive" ? "压缩包：" : preview.Kind == "file" ? "单文件：" : "目录：") + path
                     + "\n识别：Id=" + preview.Id + "，名称=" + preview.Name + "，版本=" + preview.Version
                     + "\n规模：" + preview.Files + " 文件，" + preview.Bytes / 1024 + " KiB",
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap
@@ -185,7 +191,7 @@ public partial class MainWindow
             var importId = new Input { Text = preview.Id };
             var importName = new Input { Text = preview.Name };
             var importVersion = new Input { Text = preview.Version };
-            var importEnable = new TKCode.Arc.Checkbox { Content = "导入后加入当前预设并启用（需要停服）", IsChecked = false };
+            var importEnable = new TKCode.Arc.Checkbox { Content = "导入后加入当前预设并启用（需要停服）", IsChecked = preview.Kind == "file" };
             var importForce = new TKCode.Arc.Checkbox { Content = "覆盖同名版本", IsChecked = false };
             var importCfg = new TKCode.Arc.Checkbox { Content = "导入包内 cfg 到当前预设（不覆盖已有文件）", IsChecked = false };
             body.Children.Add(new TextBlock { Text = "Id" }); body.Children.Add(importId);
@@ -221,12 +227,29 @@ public partial class MainWindow
                 return;
             }
             await Load();
+            if (!result.Enabled && draft.Plugins.All(p => p.Id != result.Id))
+            {
+                try { draft.Add(result.Id, result.Version); Refresh(draft.Plugins.Count - 1); }
+                catch (InstanceException) { }
+            }
             status.Text = $"已导入 {result.Id} {result.Version}（{result.Files} 文件，{result.Bytes / 1024} KiB）；"
-                + (result.Enabled ? "已启用。" : "未启用。")
+                + (result.Enabled || draft.Plugins.Any(p => p.Id == result.Id) ? "已加入草稿/启用。" : "未启用。")
                 + (result.ImportedCfg > 0 || result.KeptCfg > 0 ? $" cfg：导入 {result.ImportedCfg}，保留 {result.KeptCfg}。" : "")
                 + (result.Warnings.Length == 0 ? "" : " 警告：" + string.Join("；", result.Warnings.Take(3)))
-                + " 重新部署后生效。";
+                + " 保存清单并部署后生效。";
         }
+        smxButton.Click += async (_, _) =>
+        {
+            if (!smxButton.IsEnabled) return;
+            var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选择 Source2Mod 子插件（.smx）",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("Source2Mod 子插件") { Patterns = ["*.smx"] }]
+            });
+            var selected = picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+            if (!string.IsNullOrWhiteSpace(selected)) await ImportPlugin(selected);
+        };
         try
         {
             try { await Load(); } catch (Exception e) { status.Text = e.Message; }
