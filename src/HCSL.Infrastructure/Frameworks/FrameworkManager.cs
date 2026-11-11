@@ -165,7 +165,7 @@ public sealed class FrameworkManager : IFrameworkManager
 
     private (ReleaseInfo Release, ReleaseAsset Asset, string Version)? Select(FrameworkDefinition framework, ReleaseInfo[] releases, string? requested)
     {
-        foreach (var release in releases)
+        foreach (var release in Preferred(releases))
         {
             var version = FrameworkRules.VersionFromTag(framework.Id, release.Tag);
             if (version is null) continue;
@@ -184,7 +184,7 @@ public sealed class FrameworkManager : IFrameworkManager
 
     private static (string Version, string Asset)? Latest(FrameworkDefinition framework, ReleaseInfo[] releases)
     {
-        foreach (var release in releases)
+        foreach (var release in Preferred(releases))
         {
             var version = FrameworkRules.VersionFromTag(framework.Id, release.Tag);
             if (version is null) continue;
@@ -214,6 +214,7 @@ public sealed class FrameworkManager : IFrameworkManager
         {
             var draft = item.TryGetProperty("draft", out var d) && d.ValueKind == JsonValueKind.True;
             if (draft) continue;
+            var prerelease = item.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True;
             var tag = item.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
             if (string.IsNullOrWhiteSpace(tag)) continue;
             var assets = new List<ReleaseAsset>();
@@ -229,7 +230,7 @@ public sealed class FrameworkManager : IFrameworkManager
                     assets.Add(new(name, url, size, digest));
                 }
             }
-            releases.Add(new(tag, assets.ToArray()));
+            releases.Add(new(tag, prerelease, assets.ToArray()));
         }
         var result = releases.ToArray();
         if (cache.Count > FrameworkRules.MaxCatalogFrameworks * 4) cache.Clear();
@@ -267,6 +268,9 @@ public sealed class FrameworkManager : IFrameworkManager
         return best;
     }
 
-    private sealed record ReleaseInfo(string Tag, ReleaseAsset[] Assets);
+    private static IEnumerable<ReleaseInfo> Preferred(ReleaseInfo[] releases) =>
+        releases.Where(r => !r.Prerelease).Concat(releases.Where(r => r.Prerelease));
+
+    private sealed record ReleaseInfo(string Tag, bool Prerelease, ReleaseAsset[] Assets);
     private sealed record ReleaseAsset(string Name, string Url, long Size, string? Digest);
 }
