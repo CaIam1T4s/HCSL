@@ -31,6 +31,7 @@ public static class DevHints
         "HCSL-LOCK" => "Another HCSL process holds the workspace lease: close it (GUI/TUI/SteamCMD) and retry.",
         "HCSL-PLUGIN-CONFLICT" => "The plugin manifest changed externally: reload the list and retry.",
         "HCSL-PLUGIN-PACKAGE" => "A selected package is missing/invalid: `hcsl plugins` and `hcsl doctor`.",
+        "HCSL-PLUGIN-IN-USE" => "A preset still references this package version: remove it from those presets first.",
         "HCSL-PLUGIN-LIMIT" => "The selection or a package exceeds a documented limit (32 entries, 4096 files, 512 MiB).",
         "HCSL-INSTANCE-STALE" => "The instance changed: refresh the catalog (`hcsl status`) and retry.",
         "HCSL-FRAMEWORK-NET" => "Network/API failure: check connectivity/proxy, or import the release manually with `hcsl import`.",

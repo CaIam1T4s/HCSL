@@ -24,10 +24,16 @@ public sealed class LocalPluginStore : IPluginStore
 
     public PluginResult Execute(WorkspaceRequest workspace, PluginCommand command)
     {
-        if (!Enum.IsDefined(command.Action) || command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)
+        if (!Enum.IsDefined(command.Action)
+            || (command.Action != PluginAction.RemovePackage && (command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)))
             throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin action and stable instance/preset IDs are required.");
         try
         {
+            if (command.Action == PluginAction.RemovePackage)
+            {
+                using var removeLease = new LocalWorkspaceManager().Acquire(workspace);
+                return RemovePackage(removeLease.Layout.InstancesRoot, Path.Combine(removeLease.Layout.LibraryRoot, "plugin-packages"), command);
+            }
             if (command.Action == PluginAction.List)
             {
                 var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
@@ -43,6 +49,33 @@ public sealed class LocalPluginStore : IPluginStore
         catch (WorkspaceException) { throw; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         { throw new InstanceException("HCSL-PLUGIN-IO", "Plugin storage failed; no file content is logged."); }
+    }
+
+    private static PluginResult RemovePackage(string instancesRoot, string packagesRoot, PluginCommand command)
+    {
+        var id = PluginRules.Id(command.RemoveId);
+        var version = PluginRules.Version(command.RemoveVersion);
+        var root = SafePath(Path.Combine(packagesRoot, id, version));
+        if (!Directory.Exists(root)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin package version is not installed.");
+        if (Directory.EnumerateDirectories(instancesRoot).Any(instance =>
+        {
+            var presets = Path.Combine(instance, "presets");
+            if (!Directory.Exists(presets)) return false;
+            foreach (var preset in Directory.EnumerateDirectories(presets))
+            {
+                var file = Path.Combine(preset, "plugins.json");
+                if (!File.Exists(file)) continue;
+                try
+                {
+                    if (ReadManifest(file).Manifest.Plugins.Any(p => p.Id == id && p.Version == version)) return true;
+                }
+                catch (InstanceException) { return true; }
+            }
+            return false;
+        })) throw new InstanceException("HCSL-PLUGIN-IN-USE", "The package version is referenced by a preset; remove it from those presets first.");
+        SafePath(root);
+        Directory.Delete(root, true);
+        return new([], [], 0, "");
     }
 
     internal static Package LoadPackage(string packagesRoot, string id, string version)

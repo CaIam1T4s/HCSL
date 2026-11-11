@@ -36,6 +36,9 @@ public static class DevCommandLine
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
+          plugins versions       List every installed package version and size.
+          plugins remove <id> <version>
+                                 Delete an unused package version (needs --yes; refuses presets).
           import <path>          Probe (--probe) or import a folder/archive into plugin-packages.
           frameworks             Check Metamod/CounterStrikeSharp versions; --install <id> downloads
                                  the latest official release, verifies its SHA-256 and imports it.
@@ -113,7 +116,11 @@ public static class DevCommandLine
 
         if (command == "exec" && positionals.Count == 0)
             throw new DevUsageException("exec needs a command. Example: hcsl exec \"meta version\"");
-        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "plugins" or "gc" or "frameworks" && positionals.Count > 0)
+        if (command == "plugins" && positionals.Count > 0
+            && !(positionals.Count == 1 && positionals[0] == "versions")
+            && !(positionals.Count == 3 && positionals[0] == "remove"))
+            throw new DevUsageException("plugins accepts: no arguments, 'versions', or 'remove <id> <version> --yes'.");
+        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" && positionals.Count > 0)
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
         return new(command, [.. positionals], options);
     }

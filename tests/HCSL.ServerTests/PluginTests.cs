@@ -133,6 +133,13 @@ public static class PluginTests
             Check(conflictPreview.Conflicts.Length == 1 && conflictPreview.Conflicts[0].Path == "pt/map/x.cfg", "Existing modified cfg was not reported as a conflict.");
             var overwritten = sync.Apply(workspace, new(PluginCfgAction.Apply, d.Id, p.Id, cfgRevision, syncSelection, null, ["pt/map/x.cfg"]));
             Check(overwritten.Overwritten == 1 && File.ReadAllText(nestedCfg) == "echo plugin", "Confirmed cfg overwrite did not apply.");
+            var oldPackage = Path.Combine(workspace.LibraryRoot, "plugin-packages", "oldpkg", "9.9.9");
+            Directory.CreateDirectory(Path.Combine(oldPackage, "files"));
+            File.WriteAllText(Path.Combine(oldPackage, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"oldpkg\",\"Name\":\"oldpkg\",\"Version\":\"9.9.9\"}");
+            store.Execute(workspace, new(PluginAction.RemovePackage, Guid.Empty, Guid.Empty, RemoveId: "oldpkg", RemoveVersion: "9.9.9"));
+            Check(!Directory.Exists(oldPackage), "Unused package version was not removed.");
+            Reject(() => store.Execute(workspace, new(PluginAction.RemovePackage, Guid.Empty, Guid.Empty,
+                RemoveId: "counterstrikesharp", RemoveVersion: "1.0.0")), "HCSL-PLUGIN-IN-USE");
             if (OperatingSystem.IsLinux())
             {
                 var linked = Path.Combine(workspace.LibraryRoot, "plugin-packages", "bad", "1.0.0");

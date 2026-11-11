@@ -64,6 +64,15 @@ public sealed partial class HostServerController
         finally { Busy = false; Notify(); }
     }
 
+    public async Task RemovePluginPackageAsync(string id, string version)
+    {
+        if (Busy || !Server.Connected || !CanEditPlugins)
+            throw new IOException("HCSL-PLUGIN-BUSY: Stop the server/SteamCMD and finish recovery before removing packages.");
+        Busy = true; Notify();
+        try { await instances.PluginAsync(new(PluginAction.RemovePackage, Guid.Empty, Guid.Empty, RemoveId: id, RemoveVersion: version)); }
+        finally { Busy = false; Notify(); }
+    }
+
     public async Task<PluginResult> PluginsAsync(PluginCommand command)
     {
         if (Busy || !Server.Connected || (command.Action != PluginAction.List && !CanEditPlugins))

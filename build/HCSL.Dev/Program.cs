@@ -191,7 +191,7 @@ static async Task<int> FrameworksAsync(DevInvocation invocation, JsonSerializerO
         foreach (var warning in result.Warnings) Console.WriteLine("warning    " + warning);
         return 0;
     }
-    var check = await client.CheckAsync(ct);
+    var check = await client.CheckAsync(ct: ct);
     if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(check, json)); return 0; }
     Console.WriteLine("framework            installed     latest        state");
     foreach (var item in check.Frameworks)
@@ -303,8 +303,22 @@ static async Task<int> LogsAsync(DevInvocation invocation, JsonSerializerOptions
 static int Plugins(DevInvocation invocation, JsonSerializerOptions json)
 {
     var workspace = Workspace(invocation);
+    if (invocation.Positionals is ["remove", var removeId, var removeVersion])
+    {
+        if (!invocation.Has("--yes")) throw new DevUsageException("plugins remove needs --yes after reviewing the version.");
+        new LocalPluginStore().Execute(workspace, new(PluginAction.RemovePackage, Guid.Empty, Guid.Empty,
+            RemoveId: removeId, RemoveVersion: removeVersion));
+        Console.WriteLine("removed    " + removeId + " " + removeVersion);
+        return 0;
+    }
     var (entry, preset) = Target(workspace, invocation);
     var result = new LocalPluginStore().Execute(workspace, new(PluginAction.List, entry.Id, preset.Id));
+    if (invocation.Positionals is ["versions"])
+    {
+        foreach (var package in result.Available)
+            Console.WriteLine($"{package.Id,-20} {package.Version,-16} {package.Files,5} files · {DevFormat.Bytes(package.Bytes)}");
+        return 0;
+    }
     Console.WriteLine(invocation.Has("--json") ? JsonSerializer.Serialize(result, json) : DevFormat.Plugins(result));
     return 0;
 }

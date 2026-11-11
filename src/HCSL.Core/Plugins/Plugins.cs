@@ -6,11 +6,12 @@ namespace HCSL.Core;
 /// <summary>One package version selected by a preset. Array order is the intended load order.</summary>
 public sealed record PluginSelection(string Id, string Version, bool Enabled = true);
 
-public enum PluginAction { List, Save }
+public enum PluginAction { List, Save, RemovePackage }
 
 /// <summary>Plugin manifest editing. ExpectedHash protects against concurrent external edits.</summary>
 public sealed record PluginCommand(PluginAction Action, Guid InstanceId, Guid PresetId,
-    long InstanceRevision = 0, string? ExpectedHash = null, PluginSelection[]? Plugins = null)
+    long InstanceRevision = 0, string? ExpectedHash = null, PluginSelection[]? Plugins = null,
+    string? RemoveId = null, string? RemoveVersion = null)
 {
     public override string ToString() => $"PluginCommand {Action} {InstanceId}/{PresetId}";
 }

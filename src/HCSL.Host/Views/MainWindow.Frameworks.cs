@@ -74,8 +74,21 @@ public partial class MainWindow
                     busyId = framework.Id; status.Text = "安装中… " + framework.DisplayName; cards.IsEnabled = false;
                     try
                     {
+                        var wasCurrent = current == framework.Id;
                         var result = await model.InstallFrameworkAsync(framework.Id);
-                        status.Text = $"已安装 {result.Id} {result.Version}（{result.Files} 文件）；不会自动启用或部署。";
+                        var text = $"已安装 {result.Id} {result.Version}（{result.Files} 文件）；不会自动启用或部署。";
+                        if (wasCurrent)
+                        {
+                            var latest = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id));
+                            var selections = latest.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToArray();
+                            var choice = FrameworkSelection.Apply(selections, framework.Id, latest);
+                            if (choice.MissingFramework is null)
+                            {
+                                await model.PluginsAsync(new(PluginAction.Save, instance.Id, preset.Id, instance.Revision, latest.Hash, choice.Selections));
+                                text += " 当前预设已切换到 " + result.Version + "；需重新部署。旧版本仍保留在内容库。";
+                            }
+                        }
+                        status.Text = text;
                         await Refresh();
                     }
                     catch (Exception e) { status.Text = e.Message; }
@@ -118,10 +131,12 @@ public partial class MainWindow
                         : update ? "更新到 " + latest
                         : "已安装";
                     download.IsEnabled = framework.Installable && !incompatible && info?.Error is null && (installed is null || update);
-                    choose.Content = framework.Kind == FrameworkKind.Base ? "基础框架（必需）"
+                    choose.Content = incompatible ? "与 " + FrameworkRules.Find(current)?.DisplayName + " 不兼容"
+                        : framework.Kind == FrameworkKind.Base ? "基础框架（必需）"
                         : !installedPayload ? "未安装，先下载"
                         : current == framework.Id ? "当前预设框架" : "设为当前预设框架";
                     choose.IsEnabled = installedPayload && framework.Kind == FrameworkKind.ScriptFramework && !incompatible && current != framework.Id;
+                    note.Text = incompatible ? "" : OldVersionsText(framework, installed);
                 }
 
                 if (!framework.Installable) { Apply(null); continue; }
@@ -131,6 +146,17 @@ public partial class MainWindow
             foreach (var (framework, apply) in checks)
             {
                 _ = CheckOneAsync(framework, apply, gen);
+            }
+
+            string OldVersionsText(FrameworkDefinition framework, string? installed)
+            {
+                if (plugins is null) return "";
+                var selected = plugins.Selected.Where(s => s.Id == framework.Id).Select(s => s.Version).ToHashSet(StringComparer.Ordinal);
+                var highest = plugins.Available.Where(p => p.Id == framework.Id).OrderByDescending(p => p.Version,
+                    Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(framework.Id, a, b))).Select(p => p.Version).FirstOrDefault();
+                var old = plugins.Available.Where(p => p.Id == framework.Id && !selected.Contains(p.Version) && p.Version != highest)
+                    .Select(p => p.Version).Distinct().Order(StringComparer.Ordinal).ToArray();
+                return old.Length == 0 ? "" : "旧版本：" + string.Join(", ", old) + "（可在「清理旧版本」中删除）";
             }
 
             async Task CheckOneAsync(FrameworkDefinition framework, Action<FrameworkVersionInfo?> apply, int gen)
@@ -149,10 +175,41 @@ public partial class MainWindow
             }
         }
 
+        async Task CleanupOldVersions()
+        {
+            if (plugins is null) return;
+            var selected = plugins.Selected.Select(s => s.Id + "\0" + s.Version).ToHashSet(StringComparer.Ordinal);
+            var targets = new List<(string Id, string Version, long Bytes)>();
+            foreach (var framework in FrameworkRules.Known)
+            {
+                var highest = plugins.Available.Where(p => p.Id == framework.Id).OrderByDescending(p => p.Version,
+                    Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(framework.Id, a, b))).Select(p => p.Version).FirstOrDefault();
+                foreach (var package in plugins.Available.Where(p => p.Id == framework.Id))
+                    if (!selected.Contains(package.Id + "\0" + package.Version) && package.Version != highest)
+                        targets.Add((package.Id, package.Version, package.Bytes));
+            }
+            if (targets.Count == 0) { status.Text = "没有可清理的旧框架版本。"; return; }
+            var description = string.Join("\n", targets.Select(t => t.Id + " " + t.Version + " · " + (t.Bytes / 1024 / 1024) + " MiB"));
+            if (await ChooseAsync("清理旧框架版本", "只删除未被当前预设选中、且不是最高版本的框架包。\n被其他预设引用时会拒绝。\n\n" + description, "取消", "删除") != 1) return;
+            var removed = 0; var errors = new List<string>();
+            foreach (var target in targets)
+            {
+                try { await model.RemovePluginPackageAsync(target.Id, target.Version); removed++; }
+                catch (Exception e) { errors.Add(target.Id + " " + target.Version + ": " + e.Message); }
+            }
+            status.Text = "已删除 " + removed + " 个旧版本。" + (errors.Count == 0 ? "" : " 未删除：" + string.Join("；", errors.Take(3)));
+            await Refresh();
+        }
+
         try
         {
             await Refresh();
-            await ShowOverlayAsync(content, ["关闭"]);
+            while (!windowClosed)
+            {
+                var choice = await ShowOverlayAsync(content, ["关闭", "清理旧版本"]);
+                if (choice <= 0) break;
+                if (choice == 1) await CleanupOldVersions();
+            }
             generation++;
         }
         catch (Exception e) { await ChooseAsync("框架页错误", e.Message, "返回"); }
