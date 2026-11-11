@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
@@ -73,7 +74,7 @@ public sealed class LocalInstanceStore : IInstanceStore
     {
         Safe(path);
         var d = Read<InstanceDefinition>(Path.Combine(path, "instance.json"));
-        if (d.FormatVersion != 1 || d.Id != id || d.Revision < 1 || d.GamePort is < 1 or > 65535) throw new IOException("Invalid instance metadata.");
+        if (d.FormatVersion != 1 || d.Id != id || d.Revision < 1 || d.GamePort is < 1 or > 65535 || d.LayoutVersion is < 1 or > InstanceRules.CurrentLayoutVersion) throw new IOException("Invalid instance metadata.");
         InstanceRules.Name(d.Name);
         var presets = Path.Combine(path, "presets"); Safe(presets);
         var list = new List<PresetDefinition>();
@@ -148,6 +149,99 @@ public sealed class LocalInstanceStore : IInstanceStore
         foreach (var dir in Directory.GetDirectories(source))
         { Safe(dir); var target = Path.Combine(destination, Path.GetFileName(dir)); Directory.CreateDirectory(target); Copy(dir, target); }
     }
+    private static void MigrateLayout(string path, string file, InstanceDefinition d, InstanceEntry entry)
+    {
+        if (d.LayoutVersion >= InstanceRules.CurrentLayoutVersion) return;
+        var selected = entry.Presets.Single(p => p.Id == d.SelectedPresetId);
+        var homeSource = Path.Combine(path, "presets", selected.Id.ToString("D"), "home");
+        var userdataSource = Path.Combine(path, "presets", selected.Id.ToString("D"), "userdata");
+        var homeTarget = Path.Combine(path, "home");
+        var userdataTarget = Path.Combine(path, "userdata");
+        if (!CanMigrateTree(homeTarget, homeSource) || !CanMigrateTree(userdataTarget, userdataSource))
+            throw new InstanceException("HCSL-INSTANCE-LAYOUT-CONFLICT", "Instance-level home or userdata already contains different data.");
+        foreach (var preset in entry.Presets.Where(p => p.Id != selected.Id))
+        {
+            var otherUserdata = Path.Combine(path, "presets", preset.Id.ToString("D"), "userdata");
+            // HOME contains per-run Steam caches; the selected preset is the identity source.
+            // Different userdata can contain real per-preset settings and must not be merged.
+            if (!SameTree(userdataSource, otherUserdata))
+                throw new InstanceException("HCSL-INSTANCE-LAYOUT-CONFLICT", "Another preset has different userdata; choose a single source manually.");
+        }
+        var stage = path + ".layout-v2-" + Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(stage);
+        try
+        {
+            StageTree(homeSource, Path.Combine(stage, "home"));
+            StageTree(userdataSource, Path.Combine(stage, "userdata"));
+            PublishTree(Path.Combine(stage, "home"), homeTarget);
+            PublishTree(Path.Combine(stage, "userdata"), userdataTarget);
+            var backup = Path.Combine(path, "backups", "layout-v1-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff"));
+            foreach (var preset in entry.Presets)
+            {
+                var source = Path.Combine(path, "presets", preset.Id.ToString("D"));
+                foreach (var name in new[] { "home", "userdata" })
+                {
+                    var item = Path.Combine(source, name);
+                    if (!Directory.Exists(item)) continue;
+                    var target = Path.Combine(backup, "presets", preset.Id.ToString("D"), name);
+                    Directory.CreateDirectory(target);
+                    Copy(item, target);
+                }
+            }
+            Write(file, d with { LayoutVersion = InstanceRules.CurrentLayoutVersion, Revision = d.Revision + 1 });
+        }
+        finally
+        {
+            try { if (Directory.Exists(stage)) Directory.Delete(stage, true); } catch (IOException) { }
+        }
+    }
+    private static bool CanMigrateTree(string target, string source)
+    {
+        if (!Directory.Exists(target) || !Directory.EnumerateFileSystemEntries(target).Any()) return true;
+        return SameTree(source, target);
+    }
+    private static void StageTree(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        if (Directory.Exists(source)) Copy(source, target);
+    }
+    private static void PublishTree(string source, string target)
+    {
+        if (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target).Any())
+        {
+            if (!SameTree(source, target))
+                throw new InstanceException("HCSL-INSTANCE-LAYOUT-CONFLICT", "Instance-level data changed during migration.");
+            return;
+        }
+        if (Directory.Exists(target)) Directory.Delete(target, true);
+        Directory.Move(source, target);
+    }
+    private static bool SameTree(string left, string right)
+    {
+        var leftExists = Directory.Exists(left); var rightExists = Directory.Exists(right);
+        if (!leftExists && !rightExists) return true;
+        if (!leftExists || !rightExists) return !HasEntries(left) && !HasEntries(right);
+        var l = Files(left); var r = Files(right);
+        if (!l.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(r.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal)) return false;
+        foreach (var pair in l)
+            if (pair.Value.Length != r[pair.Key].Length || !Hash(pair.Value).SequenceEqual(Hash(r[pair.Key]))) return false;
+        return true;
+        static Dictionary<string, string> Files(string root)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                Safe(file);
+                var relative = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
+                // Steam writes rotating logs into HOME; they are not part of the instance identity.
+                if (relative.StartsWith("Steam/logs/", StringComparison.OrdinalIgnoreCase)) continue;
+                result[relative] = file;
+            }
+            return result;
+        }
+    }
+    private static bool HasEntries(string path) => Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any();
+    private static byte[] Hash(string path) { using var stream = File.OpenRead(path); return SHA256.HashData(stream); }
     private static void Recycle(string root, string source)
     {
         var trash = Path.Combine(root, ".trash"); Safe(trash); Directory.CreateDirectory(trash);
@@ -160,9 +254,9 @@ public sealed class LocalInstanceStore : IInstanceStore
             InstanceRules.Name(c.Name); Port(root, c.GamePort); InstanceRules.Network(c.Network);
             var id = Guid.NewGuid(); var pid = Guid.NewGuid();
             var stage = Path.Combine(root, ".creating-" + id); Directory.CreateDirectory(stage);
-            foreach (var dir in new[] { "presets", "recordings", "logs", "backups" }) Directory.CreateDirectory(Path.Combine(stage, dir));
+            foreach (var dir in new[] { "presets", "recordings", "logs", "backups", "home", "userdata" }) Directory.CreateDirectory(Path.Combine(stage, dir));
             CreatePreset(Path.Combine(stage, "presets", Id(pid)), new(1, pid, 1, "Default"));
-            Write(Path.Combine(stage, "instance.json"), new InstanceDefinition(1, id, 1, c.Name!.Trim(), c.GamePort, pid, c.Network));
+            Write(Path.Combine(stage, "instance.json"), new InstanceDefinition(1, id, 1, c.Name!.Trim(), c.GamePort, pid, c.Network, InstanceRules.CurrentLayoutVersion));
             Directory.Move(stage, Path.Combine(root, Id(id))); return;
         }
         var path = Path.Combine(root, Id(c.InstanceId));
@@ -188,6 +282,11 @@ public sealed class LocalInstanceStore : IInstanceStore
             // A command that omits Network leaves the stored address alone, so older callers cannot reset
             // an instance to loopback by accident.
             Write(file, d with { Name = c.Name!.Trim(), GamePort = c.GamePort, Network = c.Network ?? d.Network, Revision = d.Revision + 1 }); return;
+        }
+        if (c.Action == InstanceAction.MigrateLayout)
+        {
+            MigrateLayout(path, file, d, entry);
+            return;
         }
         var parent = Path.Combine(path, "presets");
         if (c.Action == InstanceAction.CreatePreset)

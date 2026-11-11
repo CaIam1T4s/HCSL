@@ -52,6 +52,33 @@ public static class HostInstanceCrudTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
+    public static async Task RunMigrationAsync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "hcsl-host-layout-" + Guid.NewGuid().ToString("N"));
+        var daemon = new StorageDaemon(root);
+        try
+        {
+            using var host = new HostServerController(new ServerController(daemon, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1)), new InstanceClient(daemon));
+            await host.InitializeAsync();
+            Check(await host.CreateInstanceAsync(new("Layout", 27100)), host.Error);
+            var d = host.Selected!.Entry.Definition!;
+            var instance = Path.Combine(root, "data", "instances", d.Id.ToString());
+            var preset = Path.Combine(instance, "presets", d.SelectedPresetId.ToString());
+            Directory.CreateDirectory(Path.Combine(preset, "home")); Directory.CreateDirectory(Path.Combine(preset, "userdata"));
+            File.WriteAllText(Path.Combine(preset, "home", "marker"), "home");
+            File.WriteAllText(Path.Combine(preset, "userdata", "marker"), "userdata");
+            Directory.Delete(Path.Combine(instance, "home"), true); Directory.Delete(Path.Combine(instance, "userdata"), true);
+            var metadata = Path.Combine(instance, "instance.json");
+            File.WriteAllText(metadata, File.ReadAllText(metadata).Replace("\"LayoutVersion\": 2", "\"LayoutVersion\": 1"));
+            await host.RefreshInstancesAsync();
+            Check(host.CanMigrateLayout, "Old instance did not expose migration.");
+            Check(await host.MigrateLayoutAsync(), host.Error);
+            Check(host.Selected?.Entry.Definition is { LayoutVersion: 2 } && !host.CanMigrateLayout, "Migration did not update the selected instance.");
+            Check(File.Exists(Path.Combine(instance, "home", "marker")) && File.Exists(Path.Combine(instance, "userdata", "marker")), "Migration did not publish instance data.");
+            Console.WriteLine("PASS host.instances.layout-migration-explicit-and-idempotent");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
     private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
     private sealed class StorageDaemon(string root) : IDaemonClient
     {

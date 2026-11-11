@@ -18,7 +18,7 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Plugin,
-            Options: new(hello.Defaults), PluginJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), PluginJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(2), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<PluginResult>(response.PluginResultJson ?? "null") ?? throw new IOException("Missing plugin result.");
     }
@@ -27,7 +27,7 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginImport,
-            Options: new(hello.Defaults), PluginImportJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), PluginImportJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(5), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<PluginImportResult>(response.PluginImportResultJson ?? "null")
             ?? throw new IOException("Missing plugin import result.");
@@ -38,7 +38,7 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginImportProbe,
-            Options: new(hello.Defaults), PluginImportProbeJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), PluginImportProbeJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(5), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<PluginImportPreview>(response.PluginImportPreviewJson ?? "null")
             ?? throw new IOException("Missing plugin import preview.");
@@ -53,7 +53,7 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginCfg,
-            Options: new(hello.Defaults), PluginCfgJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), PluginCfgJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(2), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<T>(response.PluginCfgResultJson ?? "null") ?? throw new IOException("Missing plugin cfg result.");
     }
@@ -70,11 +70,12 @@ public sealed class InstanceClient(IDaemonClient client)
     public Task<string> PresetCfgDirectoryAsync(Guid instanceId, Guid presetId, CancellationToken ct = default) =>
         PresetDirectoryAsync(instanceId, presetId, "cfg", ct);
 
-    /// <summary>Resolves a preset-owned directory (cfg, addons, userdata, home) without reading its contents.</summary>
+    /// <summary>Resolves a preset-owned directory (cfg, addons) without reading its contents.
+    /// home/userdata belong to the instance and are intentionally not exposed here.</summary>
     public async Task<string> PresetDirectoryAsync(Guid instanceId, Guid presetId, string subdirectory, CancellationToken ct = default)
     {
         if (instanceId == Guid.Empty || presetId == Guid.Empty) throw new IOException("HCSL-PRESET-DIR: Instance and preset IDs are required.");
-        if (subdirectory is not ("cfg" or "addons" or "userdata" or "home")) throw new IOException("HCSL-PRESET-DIR: Unknown preset directory.");
+        if (subdirectory is not ("cfg" or "addons")) throw new IOException("HCSL-PRESET-DIR: Unknown preset directory.");
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         return Path.Combine(hello.Defaults.DataRoot, "instances", instanceId.ToString("D"), "presets", presetId.ToString("D"), subdirectory);

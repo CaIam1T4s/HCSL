@@ -111,6 +111,9 @@ public sealed partial class ShellWindow
         }
         if (index == 4 && d != null && MessageBox.Query(68, 10, T("删除实例", "Delete instance"), T("将实例配置、录像和日志移入回收区。确定？", "Move instance configuration, recordings and logs to the recycle area?"), T("取消", "Cancel"), T("删除", "Delete")) == 1)
             _ = RefreshInstancesAsync(new(InstanceAction.Delete, d.Id, Revision: d.Revision));
+        if (index == 5 && d != null && d.LayoutVersion < InstanceRules.CurrentLayoutVersion
+            && MessageBox.Query(72, 10, T("迁移实例布局", "Migrate instance layout"), T("将旧 home/userdata 移到实例根目录，旧目录归档，不删除。确定？", "Move old home/userdata to the instance root; old directories are archived, not deleted. Continue?"), T("取消", "Cancel"), T("迁移", "Migrate")) == 1)
+            _ = RefreshInstancesAsync(new(InstanceAction.MigrateLayout, d.Id, Revision: d.Revision));
     }
     private void ShowInstancePassword(InstanceEntry entry)
     {

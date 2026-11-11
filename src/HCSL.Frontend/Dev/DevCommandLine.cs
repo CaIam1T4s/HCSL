@@ -17,7 +17,7 @@ public static class DevCommandLine
         "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework"];
     private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe", "--no-runtime", "--import-cfg"];
 
     public const string Usage = """
@@ -28,6 +28,7 @@ public static class DevCommandLine
         Commands:
           status                 Show workspace, instance, run state and connection addresses.
           instances              List instances (name, UUID, selected preset, port, deployment).
+          instances migrate      Move preset home/userdata to the instance layout (explicit, one-time).
           plan                   Validate a deployment without writing anything (add --explain).
           deploy                 Deploy the selected preset (auto reflink/full copy, add --explain).
                                  --recover first recovers an interrupted deployment journal.
@@ -67,9 +68,11 @@ public static class DevCommandLine
           --install <id>         frameworks: install metamod, counterstrikesharp or source2mod.
           --no-runtime           frameworks: CounterStrikeSharp without the bundled .NET runtime.
           --import-cfg           import: copy package cfg/** into the selected preset (no overwrite).
+          --framework <id>       import: choose swiftlys2 or modsharp for an ambiguous managed plugin.
 
         Examples:
           hcsl status
+          hcsl instances migrate --instance 565653a2-28fe-4fce-8bb6-6e231d55ac61
           hcsl plan --explain
           hcsl deploy --explain
           hcsl exec "meta version"
@@ -120,7 +123,9 @@ public static class DevCommandLine
             && !(positionals.Count == 1 && positionals[0] == "versions")
             && !(positionals.Count == 3 && positionals[0] == "remove"))
             throw new DevUsageException("plugins accepts: no arguments, 'versions', or 'remove <id> <version> --yes'.");
-        if (command is "status" or "instances" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" && positionals.Count > 0)
+        if (command == "instances" && positionals.Count > 0 && !(positionals.Count == 1 && positionals[0] == "migrate"))
+            throw new DevUsageException("instances accepts no arguments or 'migrate'. Run: hcsl help");
+        if (command is "status" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" && positionals.Count > 0)
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
         return new(command, [.. positionals], options);
     }

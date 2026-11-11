@@ -5,12 +5,33 @@ namespace HCSL.Core;
 /// <summary>Server-side plugin loader. Only Metamod:Source is a base; scripting frameworks are mutually exclusive.</summary>
 public enum FrameworkKind { Base, ScriptFramework, NativePluginHost }
 
+/// <summary>How the server emits enough evidence to mark a loaded map ready.</summary>
+public enum FrameworkReadinessProfile { Standard, ModSharp }
+
+/// <summary>Plugin UI grouping. FrameworkPayload packages use Framework and are excluded from plugin groups.</summary>
+public enum PluginCategory { Framework, Metamod, CounterStrikeSharp, SwiftlyS2, Source2Mod, ModSharp, Other }
+
+/// <summary>Framework inferred from a managed plugin's .deps.json.</summary>
+public enum ManagedPluginFramework { Unknown, SwiftlyS2, ModSharp, Ambiguous }
+
+/// <summary>Persistent data owned by a framework, not by the package archive.</summary>
+public enum FrameworkPersistentScope { Preset, Instance }
+
+/// <summary>
+/// One framework-owned directory that must survive redeployment. RuntimePath is game-root relative;
+/// PersistentRelativePath is relative to the chosen preset or instance.
+/// </summary>
+public sealed record FrameworkPersistentPath(string RuntimePath, FrameworkPersistentScope Scope,
+    string PersistentRelativePath, bool SeedPackageDefaults = true);
+
 /// <summary>
 /// One framework HCSL knows how to install. Downloading is limited to this closed catalog on purpose:
 /// unknown arbitrary plugins keep the manual import path.
 /// </summary>
 public sealed record FrameworkDefinition(string Id, string DisplayName, string Repository, FrameworkKind Kind,
-    bool Installable, string? Requires = null);
+    bool Installable, string? Requires = null, FrameworkReadinessProfile Readiness = FrameworkReadinessProfile.Standard,
+    FrameworkPersistentPath[]? PersistentPaths = null, string[]? PayloadRoots = null, string[]? MaterializedRoots = null,
+    string? PluginRoot = null, string? PluginDataRoot = null);
 
 public sealed record FrameworkVersionInfo(string Id, string DisplayName, bool Base, bool Installable,
     string? InstalledVersion, string? LatestVersion, string? LatestAsset, bool UpdateAvailable,
@@ -35,11 +56,24 @@ public static class FrameworkRules
 
     public static readonly FrameworkDefinition[] Known =
     [
-        new("metamod", "Metamod:Source", "alliedmodders/metamod-source", FrameworkKind.Base, Installable: true),
-        new("counterstrikesharp", "CounterStrikeSharp", "roflmuffin/CounterStrikeSharp", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
-        new("source2mod", "Source2Mod", "Source2Mod/source2mod", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
-        new("swiftlys2", "SwiftlyS2", "swiftly-solution/swiftlys2", FrameworkKind.ScriptFramework, Installable: true),
-        new("modsharp", "ModSharp", "Kxnrl/modsharp-public", FrameworkKind.ScriptFramework, Installable: true)
+        new("metamod", "Metamod:Source", "alliedmodders/metamod-source", FrameworkKind.Base, Installable: true,
+            PluginRoot: "csgo/addons/metamod"),
+        new("counterstrikesharp", "CounterStrikeSharp", "roflmuffin/CounterStrikeSharp", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod",
+            PayloadRoots: ["csgo/addons/counterstrikesharp"], PluginRoot: "csgo/addons/counterstrikesharp/plugins"),
+        new("source2mod", "Source2Mod", "Source2Mod/source2mod", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod",
+            PayloadRoots: ["csgo/addons/source2mod"], PluginRoot: "csgo/addons/source2mod/plugins"),
+        new("swiftlys2", "SwiftlyS2", "swiftly-solution/swiftlys2", FrameworkKind.ScriptFramework, Installable: true,
+            PersistentPaths:
+            [
+                new("csgo/addons/swiftlys2/plugins", FrameworkPersistentScope.Preset, "framework-data/swiftlys2/plugins", false),
+                new("csgo/addons/swiftlys2/configs", FrameworkPersistentScope.Preset, "framework-data/swiftlys2/configs")
+            ],
+            PayloadRoots: ["csgo/addons/swiftlys2"], MaterializedRoots: ["csgo/addons"],
+            PluginRoot: "csgo/addons/swiftlys2/plugins", PluginDataRoot: "framework-data/swiftlys2/plugins"),
+        new("modsharp", "ModSharp", "Kxnrl/modsharp-public", FrameworkKind.ScriptFramework, Installable: true,
+            Readiness: FrameworkReadinessProfile.ModSharp,
+            PersistentPaths: [new("sharp/configs", FrameworkPersistentScope.Preset, "framework/modsharp/configs")],
+            PayloadRoots: ["sharp"], PluginRoot: "sharp/modules", PluginDataRoot: "framework-data/modsharp/modules")
     ];
 
     private static readonly Regex MetamodTag = new(@"\A2\.0\.0\.(?<build>\d+)\z", RegexOptions.CultureInvariant);
@@ -55,6 +89,56 @@ public static class FrameworkRules
 
     public static FrameworkDefinition? Find(string? id) =>
         Known.FirstOrDefault(f => string.Equals(f.Id, id, StringComparison.Ordinal));
+
+    public static FrameworkReadinessProfile ReadinessProfileFor(string? id) =>
+        Find(id)?.Readiness ?? FrameworkReadinessProfile.Standard;
+
+    public static FrameworkPersistentPath[] PersistentPathsFor(string? id) =>
+        Find(id)?.PersistentPaths ?? [];
+
+    public static string[] PayloadRootsFor(string? id) =>
+        Find(id)?.PayloadRoots ?? [];
+
+    public static string[] MaterializedRootsFor(string? id) =>
+        Find(id)?.MaterializedRoots ?? [];
+    public static string? PluginRootFor(string? id) => Find(id)?.PluginRoot;
+    public static string? PluginDataRootFor(string? id) => Find(id)?.PluginDataRoot;
+
+    public static PluginCategory CategoryFor(string? framework, bool frameworkPayload)
+    {
+        if (frameworkPayload) return PluginCategory.Framework;
+        return framework switch
+        {
+            "metamod" => PluginCategory.Metamod,
+            "counterstrikesharp" => PluginCategory.CounterStrikeSharp,
+            "swiftlys2" => PluginCategory.SwiftlyS2,
+            "source2mod" => PluginCategory.Source2Mod,
+            "modsharp" => PluginCategory.ModSharp,
+            _ => PluginCategory.Other
+        };
+    }
+
+    /// <summary>Classify a managed plugin from deps.json package/assembly names without executing it.</summary>
+    public static ManagedPluginFramework ClassifyManagedDependencies(IEnumerable<string> dependencyNames)
+    {
+        var names = dependencyNames.Where(n => !string.IsNullOrWhiteSpace(n)).ToArray();
+        var swiftly = names.Any(n => n.Equals("SwiftlyS2.CS2", StringComparison.OrdinalIgnoreCase)
+            || n.Equals("SwiftlyS2.Shared", StringComparison.OrdinalIgnoreCase)
+            || n.StartsWith("SwiftlyS2.", StringComparison.OrdinalIgnoreCase));
+        var modsharp = names.Any(n => n.Equals("ModSharp.Sharp.Shared", StringComparison.OrdinalIgnoreCase)
+            || n.Equals("Sharp.Shared", StringComparison.OrdinalIgnoreCase)
+            || n.StartsWith("ModSharp.", StringComparison.OrdinalIgnoreCase));
+        if (swiftly && modsharp) return ManagedPluginFramework.Ambiguous;
+        return swiftly ? ManagedPluginFramework.SwiftlyS2
+            : modsharp ? ManagedPluginFramework.ModSharp : ManagedPluginFramework.Unknown;
+    }
+
+    public static string? FrameworkId(this ManagedPluginFramework framework) => framework switch
+    {
+        ManagedPluginFramework.SwiftlyS2 => "swiftlys2",
+        ManagedPluginFramework.ModSharp => "modsharp",
+        _ => null
+    };
 
     public static bool IsBase(string id) => string.Equals(id, "metamod", StringComparison.Ordinal);
 

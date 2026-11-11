@@ -117,7 +117,7 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         ConsoleSession? console = null;
         var networkReadiness = new ServerNetworkReadiness();
-        var parserLock = new object(); var maps = new ServerMapTracker(); bool publishedReady = false, everReady = false, mapWaitReported = false, seedReadyReported = false; long logBytes = 0, mapAt = 0, mapWaitSince = 0, downloadSince = 0;
+        var parserLock = new object(); var maps = new ServerMapTracker(launch.ReadinessProfile); bool publishedReady = false, everReady = false, mapWaitReported = false, seedReadyReported = false; long logBytes = 0, mapAt = 0, mapWaitSince = 0, downloadSince = 0;
         var collectionStart = launch.Preset?.MapKind == ServerMapKind.WorkshopCollection;
         var workshopContext = false; var workshopContextSignal = false;
         // A first Workshop collection download can exceed the normal 120-second start budget;

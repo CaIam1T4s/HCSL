@@ -13,6 +13,7 @@ internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, st
     internal string Runtime { get; } = runtime;
     internal string Map { get; } = map;
     internal ServerPresetIdentity? Preset { get; init; }
+    internal FrameworkReadinessProfile ReadinessProfile { get; init; } = FrameworkReadinessProfile.Standard;
     internal string Executable { get; } = executable;
     internal string[] Arguments { get; } = arguments;
     internal string Redact(string text) => password?.Redact(text) ?? text;
@@ -41,11 +42,14 @@ internal static class ServerPreparation
             // AutoDeploy is the operator's explicit "redeploy and start" choice, made in the UI after a
             // DEPLOYMENT/STALE rejection; it is never implied. The deploy reuses this session's lease,
             // because a second lease in the same process is refused with HCSL-LOCK.
-            var receipt = RuntimeDeploymentService.ValidateExisting(lease, options.InstanceId, plan.RuntimePath, verifyRotation: false);
+            var receipt = RuntimeDeploymentService.ValidateExisting(lease, options.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
+            var legacyLayout = receipt is not null && receipt.FormatVersion != 2;
             var rotationMissing = receipt is not null && !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath);
-            if (options.AutoDeploy && (receipt is null || IsStale(receipt, plan) || rotationMissing))
+            if (options.AutoDeploy && (receipt is null || legacyLayout || IsStale(receipt, plan) || rotationMissing))
                 receipt = deployment.Deploy(lease, deploymentOptions, cancellationToken: ct);
             if (receipt is null) throw new ServerException("HCSL-SERVER-DEPLOYMENT", "Deploy this instance before starting it.");
+            if (legacyLayout && !options.AutoDeploy)
+                throw new ServerException("HCSL-DEPLOY-LAYOUT", "This runtime uses the old persistent layout; redeploy before starting it.");
             if (IsStale(receipt, plan) || !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath))
                 throw new ServerException("HCSL-SERVER-STALE", "Deployment is stale. Redeploy after changing instance or preset settings.");
             deployment.VerifyBaseline(plan.RuntimePath, ct);
@@ -73,7 +77,7 @@ internal static class ServerPreparation
             password = InstancePasswordConfig.Bind(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), plan.PresetId.ToString("D"));
             var launch = new ServerLaunch(lease, plan.RuntimePath, startupMap, "/bin/bash",
                 [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-port", entry.Definition.GamePort.ToString(),
-                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, .. mapArgs], ports, access, password) { Preset = new(preset.Id, preset.Revision, preset.Name, startupMap, startupKind) };
+                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, .. mapArgs], ports, access, password) { Preset = new(preset.Id, preset.Revision, preset.Name, startupMap, startupKind), ReadinessProfile = plan.FrameworkReadiness };
             password = null;
             access = null;
             return launch;

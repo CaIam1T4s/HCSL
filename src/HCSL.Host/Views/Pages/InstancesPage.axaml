@@ -5,6 +5,7 @@
     <WrapPanel Orientation="Horizontal">
       <arc:Button Content="创建实例" Click="CreateInstance" IsEnabled="{Binding Servers.CanCreate}" Variant="Secondary" Margin="0,0,8,8"/>
       <arc:Button Content="编辑实例" Click="EditInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Secondary" Margin="0,0,8,8"/>
+      <arc:Button Content="迁移布局" Click="MigrateLayout" IsEnabled="{Binding Servers.CanMigrateLayout}" IsVisible="{Binding Servers.CanMigrateLayout}" Variant="Secondary" Margin="0,0,8,8"/>
       <arc:Button Content="删除实例" Click="DeleteInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Secondary" Margin="0,0,8,8"/>
       <arc:Button Content="刷新列表" Click="RefreshInstances" IsEnabled="{Binding !Servers.Busy}" Variant="Secondary" Margin="0,0,8,8"/>
     </WrapPanel>

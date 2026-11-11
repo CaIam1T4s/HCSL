@@ -28,6 +28,7 @@ if (only is null or "network")
 if (only is null or "instance")
 {
     await HCSL.ServerTests.HostInstanceCrudTests.RunAsync();
+    await HCSL.ServerTests.HostInstanceCrudTests.RunMigrationAsync();
     await HCSL.ServerTests.HostPresetTests.RunAsync();
     HCSL.ServerTests.InstancePasswordTests.Run();
     if (only is "instance") { Console.WriteLine("PASS only instance"); return 0; }

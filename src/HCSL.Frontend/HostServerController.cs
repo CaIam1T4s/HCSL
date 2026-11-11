@@ -117,6 +117,11 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
     public Task<bool> UpdateInstanceAsync(Guid id, long revision, HostInstanceDraft draft) => WriteInstanceAsync(
         new(InstanceAction.Update, id, Revision: revision, Name: draft.Name, GamePort: draft.GamePort, Network: draft.Network), draft);
     public Task<bool> DeleteInstanceAsync(Guid id, long revision) => WriteInstanceAsync(new(InstanceAction.Delete, id, Revision: revision));
+    public bool CanMigrateLayout => CanMutate && Selected?.Entry.Definition is { } d
+        && d.LayoutVersion < InstanceRules.CurrentLayoutVersion;
+    public Task<bool> MigrateLayoutAsync() => Selected?.Entry.Definition is { } d
+        ? WriteInstanceAsync(new(InstanceAction.MigrateLayout, d.Id, Revision: d.Revision))
+        : Task.FromResult(false);
     private async Task<bool> WriteInstanceAsync(InstanceCommand command, HostInstanceDraft? draft = null)
     {
         if (!CanCreate || (command.Action != InstanceAction.Create && !Instances.Any(i => i.Entry.Id == command.InstanceId && i.Entry.Definition is not null)))

@@ -53,6 +53,9 @@ try
     {
         var plan = service.Plan(workspace, Options(first));
         Check(plan.FileCount == sourceHashes.Count && plan.LogicalBytes > 0 && plan.PersistentMappings.Length == 6, "incomplete plan");
+        var instanceRoot = Path.Combine(workspace.DataRoot, "instances", first.Id.ToString());
+        Check(plan.PersistentMappings.Single(m => m.RuntimePath == "home").PersistentPath == Path.Combine(instanceRoot, "home"), "home is not instance-scoped");
+        Check(plan.PersistentMappings.Single(m => m.RuntimePath == "userdata").PersistentPath == Path.Combine(instanceRoot, "userdata"), "userdata is not instance-scoped");
         Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")), "plan wrote deployment data");
         Reject("HCSL-DEPLOY-CONFLICT", () => service.Plan(workspace, Options(first) with { ExpectedRevision = 999 }));
     });
@@ -80,13 +83,17 @@ try
         var previous = Directory.GetDirectories(Path.GetDirectoryName(Runtime(first))!, ".previous-" + first.Id + "-*");
         Check(previous.Any(p => File.Exists(Path.Combine(p, "unknown-demo.dem"))), "unknown writes discarded");
     });
-    Test("preset switching deploys separate writable data", () =>
+    Test("preset switching deploys separate plugin data but keeps instance data", () =>
     {
+        File.WriteAllText(Path.Combine(Runtime(first), "home", "instance-home.marker"), "home");
+        File.WriteAllText(Path.Combine(Runtime(first), "userdata", "instance-userdata.marker"), "userdata");
         first = store.Execute(workspace, new(InstanceAction.CreatePreset, first.Id, Revision: first.Definition!.Revision, Name: "Alternate")).Instances.Single(e => e.Id == first.Id);
         var alternate = first.Presets.Single(p => p.Id != first.Definition!.SelectedPresetId);
         first = store.Execute(workspace, new(InstanceAction.SelectPreset, first.Id, alternate.Id, first.Definition!.Revision)).Instances.Single(e => e.Id == first.Id);
         service.Deploy(workspace, Options(first));
         Check(!File.Exists(Path.Combine(Runtime(first), "game/csgo/addons/plugin.db")), "previous preset database reused");
+        Check(File.Exists(Path.Combine(Runtime(first), "home", "instance-home.marker")), "instance home lost across preset switch");
+        Check(File.Exists(Path.Combine(Runtime(first), "userdata", "instance-userdata.marker")), "instance userdata lost across preset switch");
     });
     foreach (var phase in new[] { "Journaled", "Cloned", "Prepared", "PluginsApplied", "PreviousMoved", "Published" })
         Test("interruption recovery at " + phase, () =>
@@ -331,6 +338,125 @@ try
         service.Recover(workspace, first.Id);
         var reset = plugins.Execute(workspace, new(PluginAction.List, first.Id, presetId));
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, reset.Hash, []));
+    });
+    Test("framework persistent config is seeded, linked, and survives redeploy", () =>
+    {
+        var mod = store.Execute(workspace, new(InstanceAction.Create, Name: "Mod", GamePort: 27804)).Instances.Single(e => e.Definition!.Name == "Mod");
+        var modPresetId = mod.Definition!.SelectedPresetId;
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "modsharp", "git224");
+        Directory.CreateDirectory(Path.Combine(package, "files", "sharp", "configs"));
+        Directory.CreateDirectory(Path.Combine(package, "files", "sharp", "bin"));
+        File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"modsharp\",\"Name\":\"ModSharp\",\"Version\":\"git224\"}");
+        File.WriteAllText(Path.Combine(package, "files", "sharp", "configs", "core.json"), "package default");
+        File.WriteAllText(Path.Combine(package, "files", "sharp", "bin", "libmodsharp.so"), "loader");
+        var plugins = new LocalPluginStore();
+        var modPlugins = plugins.Execute(workspace, new(PluginAction.List, mod.Id, modPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, mod.Id, modPresetId, mod.Definition.Revision, modPlugins.Hash, [new("modsharp", "git224")]));
+        var modPlan = service.Plan(workspace, Options(mod));
+        Check(modPlan.Framework == "modsharp" && modPlan.FrameworkReadiness == FrameworkReadinessProfile.ModSharp, "framework profile not planned");
+        Check(modPlan.PersistentMappings.Any(m => m.RuntimePath == "game/sharp/configs" && m.SeedDefaults), "framework persistent mapping missing");
+        service.Deploy(workspace, Options(mod));
+        var runtimeConfig = Path.Combine(Runtime(mod), "game/sharp/configs/core.json");
+        Check(File.ReadAllText(runtimeConfig) == "package default", "package default config not seeded");
+        Check(new DirectoryInfo(Path.Combine(Runtime(mod), "game/sharp/configs")).LinkTarget is not null, "framework config is not a persistent link");
+        File.WriteAllText(runtimeConfig, "user edited");
+        service.Deploy(workspace, Options(mod));
+        Check(File.ReadAllText(runtimeConfig) == "user edited", "framework config was overwritten on redeploy");
+    });
+    Test("ModSharp managed modules persist and keep built-in modules real", () =>
+    {
+        var mod = store.Execute(workspace, new(InstanceAction.Create, Name: "ModModules", GamePort: 27806)).Instances.Single(e => e.Definition!.Name == "ModModules");
+        var presetId = mod.Definition!.SelectedPresetId;
+        var presetPath = Path.Combine(workspace.DataRoot, "instances", mod.Id.ToString(), "presets", presetId.ToString());
+        var framework = Path.Combine(workspace.LibraryRoot, "plugin-packages", "modsharp", "git224");
+        Directory.CreateDirectory(Path.Combine(framework, "files", "sharp", "bin"));
+        Directory.CreateDirectory(Path.Combine(framework, "files", "sharp", "modules", "AdminManager"));
+        Directory.CreateDirectory(Path.Combine(framework, "files", "sharp", "configs"));
+        File.WriteAllText(Path.Combine(framework, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"modsharp\",\"Name\":\"ModSharp\",\"Version\":\"git224\"}");
+        File.WriteAllText(Path.Combine(framework, "files", "sharp", "bin", "libmodsharp.so"), "loader");
+        File.WriteAllText(Path.Combine(framework, "files", "sharp", "modules", "AdminManager", "AdminManager.dll"), "built in");
+        File.WriteAllText(Path.Combine(framework, "files", "sharp", "configs", "core.json"), "{}");
+        var join = Path.Combine(workspace.LibraryRoot, "plugin-packages", "joinsound", "1.2");
+        Directory.CreateDirectory(Path.Combine(join, "files", "sharp", "modules", "JoinSound"));
+        File.WriteAllText(Path.Combine(join, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"joinsound\",\"Name\":\"JoinSound\",\"Version\":\"1.2\"}");
+        File.WriteAllText(Path.Combine(join, "files", "sharp", "modules", "JoinSound", "JoinSound.dll"), "managed plugin");
+        var plugins = new LocalPluginStore();
+        var selected = plugins.Execute(workspace, new(PluginAction.List, mod.Id, presetId));
+        plugins.Execute(workspace, new(PluginAction.Save, mod.Id, presetId, mod.Definition.Revision, selected.Hash,
+            [new("modsharp", "git224"), new("joinsound", "1.2")]));
+        service.Deploy(workspace, Options(mod));
+        var dataModule = Path.Combine(presetPath, "framework-data", "modsharp", "modules", "JoinSound");
+        var runtimeModules = Path.Combine(Runtime(mod), "game", "sharp", "modules");
+        Check(File.Exists(Path.Combine(dataModule, "JoinSound.dll")), "ModSharp plugin was not written to framework-data.");
+        Check(new DirectoryInfo(Path.Combine(runtimeModules, "JoinSound")).LinkTarget == dataModule, "ModSharp plugin directory is not a persistent link.");
+        Check(Directory.Exists(Path.Combine(runtimeModules, "AdminManager")) && new DirectoryInfo(Path.Combine(runtimeModules, "AdminManager")).LinkTarget is null,
+            "ModSharp built-in module must remain a real directory.");
+        Directory.CreateDirectory(Path.Combine(presetPath, "framework-data", "modsharp", "modules", "UserMod"));
+        File.WriteAllText(Path.Combine(presetPath, "framework-data", "modsharp", "modules", "UserMod", "UserMod.dll"), "user module");
+        service.Deploy(workspace, Options(mod));
+        Check(File.Exists(Path.Combine(runtimeModules, "UserMod", "UserMod.dll")), "User-owned ModSharp module was not linked into the runtime.");
+        File.WriteAllText(Path.Combine(presetPath, "framework-data", "modsharp", "modules", "UserMod", "settings.json"), "user edited");
+        service.Deploy(workspace, Options(mod));
+        Check(File.ReadAllText(Path.Combine(runtimeModules, "UserMod", "settings.json")) == "user edited", "ModSharp user data was overwritten on redeploy.");
+        var off = plugins.Execute(workspace, new(PluginAction.List, mod.Id, presetId));
+        plugins.Execute(workspace, new(PluginAction.Save, mod.Id, presetId, mod.Definition.Revision, off.Hash, [new("modsharp", "git224")]));
+        service.Deploy(workspace, Options(mod));
+        Check(!Directory.Exists(Path.Combine(runtimeModules, "JoinSound")) && File.Exists(Path.Combine(runtimeModules, "UserMod", "UserMod.dll")),
+            "Disabling a managed module must remove its runtime link without removing user modules.");
+        Directory.CreateDirectory(Path.Combine(runtimeModules, "LegacyMod"));
+        File.WriteAllText(Path.Combine(runtimeModules, "LegacyMod", "LegacyMod.dll"), "legacy module");
+        service.Deploy(workspace, Options(mod));
+        var legacyData = Path.Combine(presetPath, "framework-data", "modsharp", "modules", "LegacyMod");
+        Check(File.Exists(Path.Combine(legacyData, "LegacyMod.dll")), "Legacy real module was not migrated into framework-data.");
+        Check(new DirectoryInfo(Path.Combine(runtimeModules, "LegacyMod")).LinkTarget == legacyData, "Migrated module is not a persistent link.");
+    });
+    Test("Swiftly materializes addons and parks direct user files across framework switches", () =>
+    {
+        var swift = store.Execute(workspace, new(InstanceAction.Create, Name: "Swiftly", GamePort: 27805)).Instances.Single(e => e.Definition!.Name == "Swiftly");
+        var swiftPresetId = swift.Definition!.SelectedPresetId;
+        var swiftPreset = Path.Combine(workspace.DataRoot, "instances", swift.Id.ToString(), "presets", swiftPresetId.ToString());
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "swiftlys2", "1.5.1");
+        Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "swiftlys2", "bin", "linuxsteamrt64"));
+        Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "swiftlys2", "configs"));
+        File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"swiftlys2\",\"Name\":\"SwiftlyS2\",\"Version\":\"1.5.1\"}");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "swiftlys2", "bin", "linuxsteamrt64", "swiftlys2.so"), "loader");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "swiftlys2", "configs", "core.example.jsonc"), "package config");
+        var plugins = new LocalPluginStore();
+        var selected = plugins.Execute(workspace, new(PluginAction.List, swift.Id, swiftPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, swift.Id, swiftPresetId, swift.Definition.Revision, selected.Hash, [new("swiftlys2", "1.5.1")]));
+        var swiftPlan = service.Plan(workspace, Options(swift));
+        Check(swiftPlan.Framework == "swiftlys2", "Swiftly framework not planned");
+        Check(swiftPlan.PersistentMappings.Single(m => m.RuntimePath == "game/csgo/addons").Kind == DeploymentMappingKind.Materialized, "Swiftly addons are not materialized");
+        Check(swiftPlan.PersistentMappings.Any(m => m.RuntimePath == "game/csgo/addons/swiftlys2/plugins"), "Swiftly plugins path not persistent");
+        service.Deploy(workspace, Options(swift));
+        var addons = Path.Combine(Runtime(swift), "game/csgo/addons");
+        Check(Directory.Exists(addons) && new DirectoryInfo(addons).LinkTarget is null, "Swiftly addons must be a real directory");
+        Check(File.Exists(Path.Combine(addons, "swiftlys2/bin/linuxsteamrt64/swiftlys2.so")), "Swiftly package payload missing");
+        Check(new DirectoryInfo(Path.Combine(addons, "swiftlys2/plugins")).LinkTarget is not null, "Swiftly plugins must be persistent");
+        var hanPackage = Path.Combine(workspace.LibraryRoot, "plugin-packages", "hanairdrops2", "1.0.0");
+        Directory.CreateDirectory(Path.Combine(hanPackage, "files", "csgo", "addons", "swiftlys2", "plugins", "HanAirDropS2"));
+        File.WriteAllText(Path.Combine(hanPackage, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"hanairdrops2\",\"Name\":\"HanAirDropS2\",\"Version\":\"1.0.0\"}");
+        File.WriteAllText(Path.Combine(hanPackage, "files", "csgo", "addons", "swiftlys2", "plugins", "HanAirDropS2", "HanAirDropS2.dll"), "managed plugin");
+        var withPlugin = plugins.Execute(workspace, new(PluginAction.List, swift.Id, swiftPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, swift.Id, swiftPresetId, swift.Definition.Revision, withPlugin.Hash, [new("swiftlys2", "1.5.1"), new("hanairdrops2", "1.0.0")]));
+        service.Deploy(workspace, Options(swift));
+        Check(File.Exists(Path.Combine(swiftPreset, "framework-data", "swiftlys2", "plugins", "HanAirDropS2", "HanAirDropS2.dll")), "Managed Swiftly plugin not written to framework-data");
+        Directory.CreateDirectory(Path.Combine(swiftPreset, "addons", "swiftlys2", "plugins"));
+        Directory.CreateDirectory(Path.Combine(swiftPreset, "addons", "swiftlys2", "configs"));
+        File.WriteAllText(Path.Combine(swiftPreset, "addons", "swiftlys2", "plugins", "direct.smx"), "direct plugin");
+        File.WriteAllText(Path.Combine(swiftPreset, "addons", "swiftlys2", "configs", "direct.json"), "direct config");
+        var off = plugins.Execute(workspace, new(PluginAction.List, swift.Id, swiftPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, swift.Id, swiftPresetId, swift.Definition.Revision, off.Hash, []));
+        service.Deploy(workspace, Options(swift));
+        Check(!File.Exists(Path.Combine(swiftPreset, "addons", "swiftlys2", "plugins", "direct.smx")), "Direct plugin stayed active");
+        Check(File.Exists(Path.Combine(swiftPreset, "framework-data", "swiftlys2", "plugins", "direct.smx")), "Direct plugin was not parked");
+        Check(File.Exists(Path.Combine(swiftPreset, "framework-data", "swiftlys2", "configs", "direct.json")), "Direct config was not parked");
+        Check(!File.Exists(Path.Combine(swiftPreset, "framework-data", "swiftlys2", "plugins", "HanAirDropS2", "HanAirDropS2.dll")), "Disabled managed plugin stayed active");
+        var back = plugins.Execute(workspace, new(PluginAction.List, swift.Id, swiftPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, swift.Id, swiftPresetId, swift.Definition.Revision, back.Hash, [new("swiftlys2", "1.5.1"), new("hanairdrops2", "1.0.0")]));
+        service.Deploy(workspace, Options(swift));
+        Check(File.Exists(Path.Combine(Runtime(swift), "game/csgo/addons/swiftlys2/plugins/direct.smx")), "Parked plugin was not restored when switching back");
+        Check(File.Exists(Path.Combine(Runtime(swift), "game/csgo/addons/swiftlys2/plugins/HanAirDropS2/HanAirDropS2.dll")), "Managed plugin was not restored");
     });
     Test("workspace lease excludes deploy and source remains byte-identical", () =>
     {

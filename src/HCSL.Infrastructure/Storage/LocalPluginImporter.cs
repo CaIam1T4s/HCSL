@@ -33,6 +33,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var warnings = new List<string>();
         var skipped = new List<string>();
         var cleanup = (string?)null;
+        string? framework = null;
         var cfgFiles = new List<SourceFile>();
         try
         {
@@ -42,9 +43,10 @@ public sealed class LocalPluginImporter : IPluginImporter
             else
             {
                 var (root, _, hint) = ResolveSource(command.SourceDirectory, command.ArchivePath, out cleanup);
-                analysis = Analyze(root, hint, name, command.Id, command.Version, skipped, warnings);
+                analysis = Analyze(root, hint, name, command.Id, command.Version, skipped, warnings, command.Framework);
             }
             cfgFiles = analysis.CfgFiles;
+            framework = analysis.Framework;
             var files = analysis.Files;
             allFiles.AddRange(files);
 
@@ -179,7 +181,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var supported = CurrentPlatform(allFiles);
         if (!supported) warnings.Insert(0, "The package has no binary for this platform (" + (OperatingSystem.IsWindows() ? "Windows" : "Linux") + ").");
         return new(Path.Combine(workspace.LibraryRoot, "plugin-packages", command.Id, command.Version),
-            command.Id, command.Version, allFiles.Count, allFiles.Sum(f => f.Bytes), supported, [.. warnings], enabled, importedCfg, keptCfg);
+            command.Id, command.Version, allFiles.Count, allFiles.Sum(f => f.Bytes), supported, [.. warnings], enabled, importedCfg, keptCfg, framework);
     }
 
     public PluginImportPreview Probe(WorkspaceRequest workspace, PluginImportProbeCommand command)
@@ -196,16 +198,17 @@ public sealed class LocalPluginImporter : IPluginImporter
                     smx.MetaPlugin, smx.Files.Count, smx.Files.Sum(f => f.Bytes), [.. warnings]);
             }
             var (root, archive, hint) = ResolveSource(command.SourcePath, IsArchive(command.SourcePath) ? command.SourcePath : null, out cleanup);
-            var analysis = Analyze(root, hint, null, null, null, skipped, warnings);
+            var analysis = Analyze(root, hint, null, null, null, skipped, warnings, allowUnknown: true);
             return new(command.SourcePath, archive ? "archive" : "directory", analysis.Id, analysis.Name, analysis.Version,
-                analysis.MetaPlugin, analysis.Files.Count, analysis.Files.Sum(f => f.Bytes), [.. warnings]);
+                analysis.MetaPlugin, analysis.Files.Count, analysis.Files.Sum(f => f.Bytes), [.. warnings],
+                analysis.Framework, analysis.TargetRoot, analysis.ManagedFramework);
         }
         finally { Cleanup(cleanup); }
     }
 
     private sealed record SourceFile(string Source, string RelativePath, long Bytes);
     private sealed record PackageManifest(int FormatVersion, string? Id, string? Name, string? Version, string? FilesRoot);
-    private sealed record Analysis(List<SourceFile> Files, string Id, string Name, string Version, string? MetaPlugin, List<SourceFile> CfgFiles);
+    private sealed record Analysis(List<SourceFile> Files, string Id, string Name, string Version, string? MetaPlugin, List<SourceFile> CfgFiles, string? Framework = null, string? TargetRoot = null, ManagedPluginFramework ManagedFramework = ManagedPluginFramework.Unknown);
 
     private static bool IsSmxFile(string? path) =>
         !string.IsNullOrWhiteSpace(path) && path.EndsWith(".smx", StringComparison.OrdinalIgnoreCase) && File.Exists(path);
@@ -226,8 +229,152 @@ public sealed class LocalPluginImporter : IPluginImporter
     }
 
 
-    private static Analysis Analyze(string root, string hint, string? fallbackName, string? forcedId, string? forcedVersion, List<string> skipped, List<string> warnings)
+    /// <summary>A managed plugin zip/directory has one DLL and one deps.json at the root.</summary>
+    private static string? ManagedPluginRoot(string root)
     {
+        var current = root;
+        for (var depth = 0; depth < 3; depth++)
+        {
+            if (!Directory.Exists(current)) return null;
+            var entries = Directory.EnumerateFileSystemEntries(current).ToArray();
+            var hasDll = entries.Any(path => File.Exists(path) && path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+            var hasDeps = entries.Any(path => File.Exists(path) && path.EndsWith(".deps.json", StringComparison.OrdinalIgnoreCase));
+            if (hasDll && hasDeps) return current;
+            var directories = entries.Where(Directory.Exists).ToArray();
+            if (entries.Length != 1 || directories.Length != 1) return null;
+            current = directories[0];
+        }
+        return null;
+    }
+
+    private static ManagedPluginFramework ClassifyManagedPlugin(string root)
+    {
+        var deps = Directory.EnumerateFiles(root, "*.deps.json", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(path => new FileInfo(path).Length).FirstOrDefault();
+        if (deps is null || new FileInfo(deps).Length > 1024 * 1024) return ManagedPluginFramework.Unknown;
+        try
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(deps));
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void AddName(string value)
+            {
+                var slash = value.IndexOf('/');
+                names.Add(slash < 0 ? value : value[..slash]);
+            }
+            if (json.RootElement.TryGetProperty("targets", out var targets) && targets.ValueKind == JsonValueKind.Object)
+                foreach (var target in targets.EnumerateObject())
+                {
+                    AddName(target.Name);
+                    if (target.Value.ValueKind != JsonValueKind.Object) continue;
+                    foreach (var package in target.Value.EnumerateObject())
+                    {
+                        if (package.Value.ValueKind != JsonValueKind.Object) continue;
+                        if (package.Value.TryGetProperty("dependencies", out var dependencies) && dependencies.ValueKind == JsonValueKind.Object)
+                            foreach (var dependency in dependencies.EnumerateObject()) AddName(dependency.Name);
+                    }
+                }
+            if (json.RootElement.TryGetProperty("libraries", out var libraries) && libraries.ValueKind == JsonValueKind.Object)
+                foreach (var library in libraries.EnumerateObject()) AddName(library.Name);
+            return FrameworkRules.ClassifyManagedDependencies(names);
+        }
+        catch (JsonException) { return ManagedPluginFramework.Unknown; }
+    }
+
+    private static string? ManagedPluginVersion(string root, string folder)
+    {
+        var deps = Directory.EnumerateFiles(root, "*.deps.json", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(path => new FileInfo(path).Length).FirstOrDefault();
+        if (deps is null || new FileInfo(deps).Length > 1024 * 1024) return null;
+        try
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(deps));
+            if (!json.RootElement.TryGetProperty("targets", out var targets) || targets.ValueKind != JsonValueKind.Object) return null;
+            foreach (var target in targets.EnumerateObject())
+            {
+                if (target.Value.ValueKind != JsonValueKind.Object) continue;
+                foreach (var package in target.Value.EnumerateObject())
+                {
+                    var parts = package.Name.Split('/');
+                    if (parts.Length < 2 || !parts[0].Equals(folder, StringComparison.OrdinalIgnoreCase)) continue;
+                    try { return PluginRules.Version(parts[1]); } catch (InstanceException) { return null; }
+                }
+            }
+        }
+        catch (JsonException) { }
+        return null;
+    }
+
+    private static Analysis AnalyzeManagedPlugin(string root, string hint, string? fallbackName, string? forcedId, string? forcedVersion,
+        string? requestedFramework, bool allowUnknown, List<string> warnings)
+    {
+        var detected = ClassifyManagedPlugin(root);
+        var requested = requestedFramework?.Trim().ToLowerInvariant();
+        ManagedPluginFramework selected;
+        if (requested is "swiftlys2")
+        {
+            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.SwiftlyS2))
+                throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-MISMATCH", "deps.json identifies this as " + detected + ", not SwiftlyS2.");
+            selected = ManagedPluginFramework.SwiftlyS2;
+        }
+        else if (requested is "modsharp")
+        {
+            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.ModSharp))
+                throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-MISMATCH", "deps.json identifies this as " + detected + ", not ModSharp.");
+            selected = ManagedPluginFramework.ModSharp;
+        }
+        else
+        {
+            if (detected == ManagedPluginFramework.Ambiguous)
+                throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-AMBIGUOUS", "deps.json contains both SwiftlyS2 and ModSharp dependencies.");
+            if (detected == ManagedPluginFramework.Unknown && !allowUnknown)
+                throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-UNKNOWN", "Cannot determine SwiftlyS2 or ModSharp from deps.json; choose a framework explicitly.");
+            selected = detected;
+        }
+        var framework = selected.FrameworkId();
+        var targetRoot = FrameworkRules.PluginRootFor(framework);
+        if (framework is null || targetRoot is null)
+        {
+            warnings.Add("This managed plugin has no recognized framework dependency; choose SwiftlyS2 or ModSharp before importing.");
+            targetRoot = "unknown";
+        }
+        var mainDll = Directory.EnumerateFiles(root, "*.dll", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(path => new FileInfo(path).Length).First();
+        var folder = Path.GetFileNameWithoutExtension(mainDll);
+        var id = forcedId ?? Sanitize(folder);
+        var name = fallbackName ?? folder;
+        var version = forcedVersion ?? DetectVersion(hint) ?? ManagedPluginVersion(root, folder) ?? "1.0.0";
+        var files = new List<SourceFile>();
+        void Walk(string directory)
+        {
+            LocalPaths.RejectLink(directory);
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                LocalPaths.RejectLink(entry);
+                if (Directory.Exists(entry)) { Walk(entry); continue; }
+                var relative = Path.GetRelativePath(root, entry).Replace(Path.DirectorySeparatorChar, '/');
+                var target = targetRoot + "/" + folder + "/" + relative;
+                var info = new FileInfo(entry);
+                if (info.Length > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Managed plugin file is too large.");
+                files.Add(new(entry, target, info.Length));
+            }
+        }
+        Walk(root);
+        if (files.Count == 0) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "No files were found in the managed plugin.");
+        if (files.Count > PluginRules.MaxPackageFiles) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Managed plugin exceeds the 4096-file limit.");
+        if (files.Sum(f => f.Bytes) > PluginRules.MaxPackageBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Managed plugin exceeds the 512 MiB limit.");
+        if (framework is not null)
+        {
+            warnings.Add("This is a " + (framework == "swiftlys2" ? "SwiftlyS2" : "ModSharp") + " sub-plugin; the preset must enable " + framework + ".");
+            warnings.Add("The plugin will be deployed to " + FrameworkRules.PluginDataRootFor(framework) + "/" + folder + ".");
+        }
+        return new(files, id, name, version, null, [], framework, targetRoot, selected);
+    }
+
+    private static Analysis Analyze(string root, string hint, string? fallbackName, string? forcedId, string? forcedVersion,
+        List<string> skipped, List<string> warnings, string? framework = null, bool allowUnknown = false)
+    {
+        if (ManagedPluginRoot(root) is { } managedRoot)
+            return AnalyzeManagedPlugin(managedRoot, hint, fallbackName, forcedId, forcedVersion, framework, allowUnknown, warnings);
         var (filesRoot, prefix) = Layout(root);
         var cfgFiles = new List<SourceFile>();
         var files = Enumerate(filesRoot, prefix, skipped, cfgFiles);
@@ -530,6 +677,10 @@ public sealed class LocalPluginImporter : IPluginImporter
 
     private static bool CurrentPlatform(List<SourceFile> files)
     {
+        static bool ManagedPlugin(SourceFile f) => f.RelativePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            && (f.RelativePath.StartsWith("csgo/addons/swiftlys2/plugins/", StringComparison.OrdinalIgnoreCase)
+                || f.RelativePath.StartsWith("sharp/modules/", StringComparison.OrdinalIgnoreCase));
+        if (files.Any(ManagedPlugin)) return true;
         static bool Linux(SourceFile f) => f.RelativePath.EndsWith(".smx", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.EndsWith("/bin/sourcemod_mm", StringComparison.OrdinalIgnoreCase)
             || f.RelativePath.Contains("/linuxsteamrt64/", StringComparison.OrdinalIgnoreCase)

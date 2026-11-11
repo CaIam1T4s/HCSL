@@ -110,6 +110,26 @@ try
         Reject("HCSL-INSTANCE-PATH", () => Run(new(InstanceAction.CopyPreset, e.Id, e.Presets[0].Id, e.Definition!.Revision, "unsafe")));
         Check(File.ReadAllText(external) == "outside", "external file modified"); File.Delete(Path.Combine(dir, "linked.cfg"));
     });
+    Test("layout v1 migration moves home and userdata to the instance", () =>
+    {
+        var e = Entry(); var d = e.Definition!; var p = e.Presets.Single(x => x.Id == d.SelectedPresetId);
+        var instance = Path.Combine(workspace.DataRoot, "instances", e.Id.ToString());
+        var sourceHome = Path.Combine(instance, "presets", p.Id.ToString(), "home");
+        var sourceUserdata = Path.Combine(instance, "presets", p.Id.ToString(), "userdata");
+        Directory.CreateDirectory(sourceHome); Directory.CreateDirectory(sourceUserdata);
+        File.WriteAllText(Path.Combine(sourceHome, "steamclient.so"), "fixture sdk");
+        File.WriteAllText(Path.Combine(sourceUserdata, "settings.vcfg"), "fixture userdata");
+        Directory.Delete(Path.Combine(instance, "home"), true); Directory.Delete(Path.Combine(instance, "userdata"), true);
+        var metadata = Path.Combine(instance, "instance.json");
+        File.WriteAllText(metadata, File.ReadAllText(metadata).Replace("\"LayoutVersion\": 2", "\"LayoutVersion\": 1"));
+        Run(new(InstanceAction.MigrateLayout, e.Id, Revision: d.Revision));
+        e = Entry();
+        Check(e.Definition!.LayoutVersion == InstanceRules.CurrentLayoutVersion, "layout version not migrated");
+        Check(File.ReadAllText(Path.Combine(instance, "home", "steamclient.so")) == "fixture sdk", "home not migrated");
+        Check(File.ReadAllText(Path.Combine(instance, "userdata", "settings.vcfg")) == "fixture userdata", "userdata not migrated");
+        Check(Directory.GetDirectories(Path.Combine(instance, "backups"), "layout-v1-*").Length == 1, "old data not archived");
+        Run(new(InstanceAction.MigrateLayout, e.Id, Revision: e.Definition.Revision));
+    });
     Test("deleting instance preserves all data in recycle area", () =>
     {
         var e = Entry(); Run(new(InstanceAction.Delete, e.Id, Revision: e.Definition!.Revision));

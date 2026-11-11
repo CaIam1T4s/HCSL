@@ -21,21 +21,23 @@ public sealed record PluginManifest(int FormatVersion, long Revision, PluginSele
 /// <summary>Import a plugin release (directory or archive) into the local library. The source is read, never executed.</summary>
 public sealed record PluginImportCommand(Guid InstanceId, Guid PresetId, string SourceDirectory, string Id, string Name, string Version,
     string? MetaPlugin = null, bool Enable = false, bool Force = false, long InstanceRevision = 0, string? ArchivePath = null,
-    bool CfgIntoPreset = false);
+    bool CfgIntoPreset = false, string? Framework = null);
 
 /// <summary>Read-only probe of a folder/archive: detected identity and layout for the import form.</summary>
 public sealed record PluginImportProbeCommand(string SourcePath);
 
 public sealed record PluginImportPreview(string SourcePath, string Kind, string Id, string Name, string Version,
-    string? MetaPlugin, int Files, long Bytes, string[] Warnings);
+    string? MetaPlugin, int Files, long Bytes, string[] Warnings, string? Framework = null,
+    string? TargetRoot = null, ManagedPluginFramework ManagedFramework = ManagedPluginFramework.Unknown);
 
 /// <summary>Result of an import. Warnings are advisory; the package is already written when this is returned.</summary>
 public sealed record PluginImportResult(string PackagePath, string Id, string Version, int Files, long Bytes,
-    bool CurrentPlatformSupported, string[] Warnings, bool Enabled, int ImportedCfg = 0, int KeptCfg = 0);
+    bool CurrentPlatformSupported, string[] Warnings, bool Enabled, int ImportedCfg = 0, int KeptCfg = 0,
+    string? Framework = null);
 
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
 public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes,
-    string? Framework = null, bool FrameworkPayload = false);
+    string? Framework = null, bool FrameworkPayload = false, PluginCategory Category = PluginCategory.Other);
 
 /// <summary>Selected entry joined with package availability. Never contains file contents.</summary>
 public sealed record PluginSelectionInfo(string Id, string? Name, string Version, bool Enabled, bool Available, string? Error = null);

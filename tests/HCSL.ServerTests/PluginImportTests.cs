@@ -30,6 +30,11 @@ public static class PluginImportTests
         {
             var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
             var importer = new LocalPluginImporter();
+            Check(FrameworkRules.CategoryFor("metamod", frameworkPayload: false) == PluginCategory.Metamod, "Metamod native plugin category wrong.");
+            Check(FrameworkRules.CategoryFor("metamod", frameworkPayload: true) == PluginCategory.Framework, "Metamod framework must not enter the plugin category.");
+            Check(FrameworkRules.ClassifyManagedDependencies(["ModSharp.Sharp.Shared"]) == ManagedPluginFramework.ModSharp, "ModSharp deps classification wrong.");
+            Check(FrameworkRules.ClassifyManagedDependencies(["SwiftlyS2.CS2"]) == ManagedPluginFramework.SwiftlyS2, "Swiftly deps classification wrong.");
+            Check(FrameworkRules.ClassifyManagedDependencies(["ModSharp.Sharp.Shared", "SwiftlyS2.CS2"]) == ManagedPluginFramework.Ambiguous, "Ambiguous deps classification wrong.");
             // Create the workspace markers first; a nonempty unmarked library is refused by design.
             using (new LocalWorkspaceManager().Acquire(workspace)) { }
             // Base installation so a Metamod import can generate the gameinfo overlay.
@@ -102,6 +107,37 @@ public static class PluginImportTests
             WriteFile(cssFramework, "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so", "binary");
             WriteFile(cssFramework, "addons/counterstrikesharp/api/CounterStrikeSharp.API.dll", "binary");
             Check(importer.Probe(workspace, new(cssFramework)).Id == "counterstrikesharp", "Real CSSharp framework was not detected.");
+
+            // 5e) Raw SwiftlyS2 plugin directory: one DLL + deps + resources, no addons wrapper.
+            var swiftlyPlugin = Path.Combine(root, "HanAirDropS2");
+            WriteFile(swiftlyPlugin, "HanAirDropS2.dll", "managed");
+            WriteFile(swiftlyPlugin, "HanAirDropS2.deps.json", "{\"targets\":{\".NETCoreApp,Version=v10.0\":{\"HanAirDropS2/1.0.0\":{\"dependencies\":{\"SwiftlyS2.CS2\":\"1.2.2\"}}}}}");
+            WriteFile(swiftlyPlugin, "resources/translations/en.jsonc", "{}");
+            var swiftlyPluginProbe = importer.Probe(workspace, new(swiftlyPlugin));
+            Check(swiftlyPluginProbe.Id == "hanairdrops2" && swiftlyPluginProbe.Version == "1.0.0"
+                && swiftlyPluginProbe.Framework == "swiftlys2" && swiftlyPluginProbe.TargetRoot == "csgo/addons/swiftlys2/plugins",
+                "Swiftly plugin probe wrong: " + swiftlyPluginProbe.Id + "/" + swiftlyPluginProbe.Version + "/" + swiftlyPluginProbe.Framework);
+            var swiftlyPluginImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, swiftlyPlugin, "hanairdrops2", "HanAirDropS2", "1.0.0"));
+            Check(swiftlyPluginImport.CurrentPlatformSupported, "Swiftly managed plugin was treated as unsupported.");
+            Check(File.Exists(Path.Combine(swiftlyPluginImport.PackagePath, "files", "csgo", "addons", "swiftlys2", "plugins", "HanAirDropS2", "HanAirDropS2.dll")),
+                "Swiftly plugin was not wrapped under plugins/<Id>/.");
+
+            // 5f) Managed ModSharp plugin: same DLL+deps shape, classified from deps.json.
+            var joinSound = Path.Combine(root, "JoinSound");
+            WriteFile(joinSound, "JoinSound.dll", "managed");
+            WriteFile(joinSound, "JoinSound.deps.json", "{\"targets\":{\".NETCoreApp,Version=v9.0\":{\"JoinSound/1.2\":{\"dependencies\":{\"ModSharp.Sharp.Shared\":\"2.0.4\"}}}}}");
+            var joinProbe = importer.Probe(workspace, new(joinSound));
+            Check(joinProbe.Id == "joinsound" && joinProbe.Framework == "modsharp" && joinProbe.TargetRoot == "sharp/modules",
+                "ModSharp plugin probe wrong: " + joinProbe.Id + "/" + joinProbe.Framework + "/" + joinProbe.TargetRoot);
+            var joinImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, joinSound, "joinsound", "JoinSound", "1.2"));
+            Check(joinImport.Framework == "modsharp" && File.Exists(Path.Combine(joinImport.PackagePath, "files", "sharp", "modules", "JoinSound", "JoinSound.dll")),
+                "ModSharp plugin was not wrapped under sharp/modules/<Id>/.");
+            var unknownManaged = Path.Combine(root, "unknown-managed");
+            WriteFile(unknownManaged, "Unknown.dll", "managed");
+            WriteFile(unknownManaged, "Unknown.deps.json", "{}");
+            var unknownProbe = importer.Probe(workspace, new(unknownManaged));
+            Check(unknownProbe.ManagedFramework == ManagedPluginFramework.Unknown && unknownProbe.Framework is null, "Unknown managed plugin was classified without framework evidence.");
+            Reject("HCSL-PLUGIN-MANAGED-FRAMEWORK-UNKNOWN", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, unknownManaged, "unknown", "Unknown", "1.0.0")));
 
             // 5d) Wrapper directory (SwiftlyS2) and game-root sharp/ (ModSharp) layouts.
             var swiftly = Path.Combine(root, "swiftly");

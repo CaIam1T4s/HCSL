@@ -12,6 +12,14 @@ public sealed class ServerMapTracker
     /// <summary>The map named by the last CHANGE LEVEL line, before CS2 queues the request.</summary>
     public string? PendingChangeLevel { get; private set; }
     private bool active, players;
+    private readonly IServerReadinessObserver observer;
+
+    public ServerMapTracker(FrameworkReadinessProfile profile = FrameworkReadinessProfile.Standard)
+        => observer = ServerReadinessObservers.For(profile);
+
+    internal void SetMap(string map) => Map = map;
+    internal void SetActive() => active = true;
+    internal void SetPlayers() => players = true;
 
     /// <summary>
     /// Recognizes the end-of-match state where CS2 prints the intended map but queues
@@ -40,6 +48,7 @@ public sealed class ServerMapTracker
             || line.Contains("ss_active -> ss_dead", StringComparison.Ordinal);
         if (loading) { Map = null; active = players = false; Progress = new(ServerMapPhase.Loading); }
         if (line.Contains("ss_loading -> ss_active", StringComparison.Ordinal)) active = true;
+        observer.Observe(line, this);
         if (ServerLastRunStore.MapFrom(line) is { } map) Map = map;
         if (System.Text.RegularExpressions.Regex.IsMatch(line, @"SV:\s+\d+ player server started")) players = true;
         if (Complete && Progress.Phase is ServerMapPhase.None or ServerMapPhase.Loading) Progress = new(ServerMapPhase.Ready);

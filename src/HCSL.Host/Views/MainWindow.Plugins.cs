@@ -89,6 +89,7 @@ public partial class MainWindow
         async Task Load()
         {
             var result = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id));
+            if (windowClosed) return;
             draft.Load(result);
             Refresh(); status.Text = "已读取插件清单；未部署。" + RejectionText(result);
         }
@@ -252,11 +253,20 @@ public partial class MainWindow
         };
         try
         {
-            try { await Load(); } catch (Exception e) { status.Text = e.Message; }
+            status.Text = "正在读取插件清单…";
+            var loading = true;
+            async Task LoadInitial()
+            {
+                try { await Load(); }
+                catch (Exception e) { if (!windowClosed) status.Text = e.Message; }
+                finally { loading = false; }
+            }
+            _ = LoadInitial();
             while (!windowClosed)
             {
                 var choice = await ShowOverlayAsync(content, ["关闭", "添加插件", "导入插件包", "移除", "启用/禁用", "上移", "下移", "保存清单", "重新读取"]);
                 if (choice <= 0) { if (windowClosed || await Discard()) break; else continue; }
+                if (loading) { status.Text = "正在读取插件清单…请稍候"; continue; }
                 try
                 {
                     if (choice == 8) { if (await Discard()) await Load(); continue; }

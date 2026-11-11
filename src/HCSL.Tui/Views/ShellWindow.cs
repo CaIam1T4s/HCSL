@@ -96,10 +96,10 @@ public sealed partial class ShellWindow : Toplevel
             _selectedInstanceId = SelectedRow?.Id;
             UpdateInstanceSummary();
         };
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 6; i++)
         {
             var index = i;
-            var button = new InstanceActionButton() { X = 1 + i * 14, Y = Pos.AnchorEnd(2), Width = 13, AutoSize = false, Visible = false };
+            var button = new InstanceActionButton() { X = 1 + i * 13, Y = Pos.AnchorEnd(2), Width = 12, AutoSize = false, Visible = false };
             button.Clicked += () => ShowInstanceAction(index);
             button.PeerRequested += direction => MoveInstanceAction(index, direction);
             _instanceActions.Add(button);
@@ -192,11 +192,12 @@ public sealed partial class ShellWindow : Toplevel
 
     private void UpdateInstanceActions()
     {
-        if (_instanceActions.Count < 5) return;
+        if (_instanceActions.Count < 6) return;
         _emptyInstances.Visible = (_instances.Source?.Count ?? 0) == 0;
         var selected = _instances.SelectedItem >= 0 && _instances.SelectedItem < (_instances.Source?.Count ?? 0);
         _instanceActions[0].Enabled = _instanceActions[3].Enabled = _instanceActions[4].Enabled = selected && SelectedRow?.Definition != null;
         _instanceActions[2].Enabled = selected && SelectedRow?.Definition != null;
+        _instanceActions[5].Enabled = selected && SelectedRow?.Definition is { } layout && layout.LayoutVersion < InstanceRules.CurrentLayoutVersion;
         foreach (var button in _presetActions) button.Enabled = CurrentInstance != null && !_instanceBusy;
     }
 
@@ -313,7 +314,7 @@ public sealed partial class ShellWindow : Toplevel
             : ["首页", "实例管理", "实例列表", "下载", "设置"];
         _instancesFrame.Title = T("实例", "Instances");
         _emptyInstances.Text = T("暂无实例；请创建，或重新进入本页刷新。", "No instances. Create one, or reopen this page to refresh.");
-        var actions = _options.English ? new[] { "Select", "Create", "Password", "Edit", "Delete" } : ["选择", "创建", "入服密码", "编辑", "删除"];
+        var actions = _options.English ? new[] { "Select", "Create", "Password", "Edit", "Delete", "Migrate" } : ["选择", "创建", "入服密码", "编辑", "删除", "迁移"];
         for (var i = 0; i < actions.Length; i++) _instanceActions[i].Text = actions[i];
         var presetActions = _options.English
             ? new[] { "New", "Copy", "Edit", "Delete", "Switch", "CFG" }

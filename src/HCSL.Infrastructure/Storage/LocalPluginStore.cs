@@ -205,7 +205,7 @@ public sealed class LocalPluginStore : IPluginStore
                 try
                 {
                     var package = LoadPackage(packagesRoot, id, version);
-                    result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes, package.Framework, package.FrameworkPayload));
+                    result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes, package.Framework, package.FrameworkPayload, FrameworkRules.CategoryFor(package.Framework, package.FrameworkPayload)));
                 }
                 catch (InstanceException e) { rejected.Add(new(id, version, e.Code)); }
                 catch (WorkspaceException e) { rejected.Add(new(id, version, e.Code)); }

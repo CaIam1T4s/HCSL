@@ -8,11 +8,11 @@ public enum NetworkAccessMode { Loopback, Lan }
 /// deployment (like the port), not of the game rules held by a preset.</summary>
 public sealed record ServerNetwork(NetworkAccessMode Mode = NetworkAccessMode.Loopback, string BindAddress = "127.0.0.1");
 
-public sealed record InstanceDefinition(int FormatVersion, Guid Id, long Revision, string Name, int GamePort, Guid SelectedPresetId, ServerNetwork? Network = null);
+public sealed record InstanceDefinition(int FormatVersion, Guid Id, long Revision, string Name, int GamePort, Guid SelectedPresetId, ServerNetwork? Network = null, int LayoutVersion = 1);
 public sealed record PresetDefinition(int FormatVersion, Guid Id, long Revision, string Name, string Map = "de_dust2", int GameType = 0, int GameMode = 1, bool VacPreferred = true, ServerMapKind MapKind = ServerMapKind.Standard);
 public sealed record InstanceEntry(Guid Id, InstanceDefinition? Definition, PresetDefinition[] Presets, string? Error = null, bool HasPassword = false);
 public sealed record InstanceCatalog(InstanceEntry[] Instances, string[]? ConnectionAddresses = null);
-public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword }
+public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword, MigrateLayout }
 public sealed record InstanceCommand(InstanceAction Action, Guid InstanceId = default, Guid PresetId = default, long Revision = 0,
     string? Name = null, int GamePort = 27015, PresetDefinition? Preset = null, ServerNetwork? Network = null, string? Password = null)
 {
@@ -21,6 +21,8 @@ public sealed record InstanceCommand(InstanceAction Action, Guid InstanceId = de
 public sealed class InstanceException(string code, string message) : Exception(message) { public string Code { get; } = code; }
 public static class InstanceRules
 {
+    public const int CurrentLayoutVersion = 2;
+
     public static void Password(string? password)
     {
         if (password is null) throw new InstanceException("HCSL-INSTANCE-PASSWORD", "A password value is required; empty clears it.");

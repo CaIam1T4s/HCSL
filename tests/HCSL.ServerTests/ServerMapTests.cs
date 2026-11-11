@@ -80,6 +80,11 @@ public static class ServerMapTests
         tracker.Observe("CNetworkGameServerBase::SetServerState (ss_active -> ss_loading)");
         Check(!tracker.Complete && tracker.Map is null, "Old map remained ready while loading.");
         tracker.Unconfirmed(); Check(tracker.Progress.Phase == ServerMapPhase.Unconfirmed, "Timeout advisory missing.");
+        var modsharp = new ServerMapTracker(FrameworkReadinessProfile.ModSharp);
+        modsharp.Observe("L<Engine> [11/11 06:35:08] | Information | Virtual_GameActivate | de_dust2");
+        Check(!modsharp.Complete && modsharp.Map == "de_dust2", "ModSharp activation claimed readiness before server activation.");
+        modsharp.Observe("L<Engine> [11/11 06:35:11] | Warning | Detour_ActiveServer | de_dust2");
+        Check(modsharp.Complete && modsharp.Map == "de_dust2", "ModSharp active map was not recognized.");
         var transition = new ServerMapTracker();
         Check(transition.ObserveEmptyChangeLevel("CHANGE LEVEL: de_dust2") is null && transition.PendingChangeLevel == "de_dust2", "Intended change map was not retained.");
         Check(transition.ObserveEmptyChangeLevel("CHostStateMgr::QueueNewRequest( Changelevel (), 5 )") == "de_dust2", "Empty changelevel was not detected.");

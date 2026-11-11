@@ -81,6 +81,14 @@ static int Instances(DevInvocation invocation, JsonSerializerOptions json)
 {
     var workspace = Workspace(invocation);
     var catalog = new LocalInstanceStore().Execute(workspace, new(InstanceAction.List));
+    if (invocation.Positionals is ["migrate"])
+    {
+        var entry = DevTargets.Resolve(catalog.Instances, invocation.Get("--instance"));
+        if (entry.Definition is null) throw new DevUsageException("Instance metadata is unreadable: " + entry.Error);
+        var migrated = new LocalInstanceStore().Execute(workspace, new(InstanceAction.MigrateLayout, entry.Id, Revision: entry.Definition.Revision)).Instances.Single(x => x.Id == entry.Id);
+        Console.WriteLine("migrated   " + migrated.Definition!.Name + " · layout " + migrated.Definition.LayoutVersion);
+        return 0;
+    }
     if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(catalog, json)); return 0; }
     if (catalog.Instances.Length == 0) { Console.WriteLine("no instances; create one in the GUI/TUI"); return 0; }
     foreach (var entry in catalog.Instances)
@@ -397,6 +405,8 @@ static int Import(DevInvocation invocation, JsonSerializerOptions json)
             Console.WriteLine("id         " + preview.Id);
             Console.WriteLine("name       " + preview.Name);
             Console.WriteLine("version    " + preview.Version);
+            if (!string.IsNullOrWhiteSpace(preview.Framework)) Console.WriteLine("framework  " + preview.Framework);
+            if (!string.IsNullOrWhiteSpace(preview.TargetRoot)) Console.WriteLine("target     " + preview.TargetRoot);
             Console.WriteLine("files      " + preview.Files + " · " + DevFormat.Bytes(preview.Bytes));
             if (preview.MetaPlugin is not null) Console.WriteLine("meta       " + preview.MetaPlugin);
             foreach (var warning in preview.Warnings) Console.WriteLine("warn       " + warning);
@@ -416,13 +426,15 @@ static int Import(DevInvocation invocation, JsonSerializerOptions json)
     var result = importer.Execute(workspace, new(instanceId, presetId, archive is null ? path : "",
         invocation.Get("--id") ?? preview.Id, invocation.Get("--name") ?? preview.Name,
         invocation.Get("--version") ?? preview.Version, invocation.Get("--meta") ?? preview.MetaPlugin,
-        invocation.Has("--enable"), invocation.Has("--force"), revision, archive, invocation.Has("--import-cfg")));
+        invocation.Has("--enable"), invocation.Has("--force"), revision, archive, invocation.Has("--import-cfg"),
+        invocation.Get("--framework")));
     if (invocation.Has("--json")) Console.WriteLine(JsonSerializer.Serialize(result, json));
     else
     {
         Console.WriteLine("imported   " + result.Id + " " + result.Version + " → " + result.PackagePath);
         Console.WriteLine("size       " + result.Files + " files · " + DevFormat.Bytes(result.Bytes));
         Console.WriteLine("enabled    " + (result.Enabled ? "yes" : "no"));
+        if (!string.IsNullOrWhiteSpace(result.Framework)) Console.WriteLine("framework  " + result.Framework);
         if (result.ImportedCfg > 0 || result.KeptCfg > 0) Console.WriteLine("cfg        imported " + result.ImportedCfg + " · kept " + result.KeptCfg);
         if (!result.CurrentPlatformSupported) Console.WriteLine("warn       no binary for this platform");
         foreach (var warning in result.Warnings) Console.WriteLine("warn       " + warning);

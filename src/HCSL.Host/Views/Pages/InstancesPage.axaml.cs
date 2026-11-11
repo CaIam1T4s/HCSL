@@ -32,6 +32,20 @@ public partial class InstancesPage : UserControl
     {
         if (!operating && DataContext is ShellViewModel vm) await vm.Servers.RefreshInstancesAsync();
     }
+    private async void MigrateLayout(object? sender, RoutedEventArgs e)
+    {
+        if (operating || DataContext is not ShellViewModel vm || !vm.Servers.CanMigrateLayout
+            || vm.Servers.Selected?.Entry.Definition is not { } original
+            || TopLevel.GetTopLevel(this) is not MainWindow owner) return;
+        operating = true;
+        try
+        {
+            if (await owner.ChooseAsync("迁移实例布局", $"将“{original.Name}”的旧 home/userdata 迁移到实例根目录。\n旧预设目录会归档，不删除；不同 userdata 可能拒绝自动合并。\n服务器必须已停止。", "取消", "迁移") != 1) return;
+            if (!await vm.Servers.MigrateLayoutAsync())
+                await owner.ChooseAsync("迁移失败", vm.Servers.Error, "返回");
+        }
+        finally { operating = false; }
+    }
     private async void DeleteInstance(object? sender, RoutedEventArgs e)
     {
         if (operating || DataContext is not ShellViewModel vm || !vm.Servers.CanMutate
