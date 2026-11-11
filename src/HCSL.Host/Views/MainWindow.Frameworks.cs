@@ -28,9 +28,7 @@ public partial class MainWindow
         var generation = 0;
 
         string? LocalVersion(PluginResult result, string id) =>
-            result.Available.Where(p => p.Id == id && p.FrameworkPayload)
-                .OrderByDescending(p => p.Version, Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(id, a, b)))
-                .Select(p => p.Version).FirstOrDefault();
+            FrameworkRules.OrderVersions(id, result.Available.Where(p => p.Id == id && p.FrameworkPayload).Select(p => p.Version)).FirstOrDefault();
 
         async Task Refresh()
         {
@@ -120,6 +118,8 @@ public partial class MainWindow
                     var latest = info?.LatestVersion;
                     var update = latest is not null && installed is not null && FrameworkRules.CompareVersions(framework.Id, latest, installed) > 0;
                     var installedPayload = plugins?.Available.Any(p => p.Id == framework.Id && p.FrameworkPayload) == true;
+                    var selectedVersion = plugins?.Selected.FirstOrDefault(s => s.Id == framework.Id && s.Enabled)?.Version;
+                    var currentVersion = string.Equals(selectedVersion, installed, StringComparison.Ordinal);
                     stateText.Text = !framework.Installable ? "手动导入（不在内置安装目录）"
                         : info?.Error is { } code ? code
                         : installed is null ? "未安装"
@@ -134,8 +134,8 @@ public partial class MainWindow
                     choose.Content = incompatible ? "与 " + FrameworkRules.Find(current)?.DisplayName + " 不兼容"
                         : framework.Kind == FrameworkKind.Base ? "基础框架（必需）"
                         : !installedPayload ? "未安装，先下载"
-                        : current == framework.Id ? "当前预设框架" : "设为当前预设框架";
-                    choose.IsEnabled = installedPayload && framework.Kind == FrameworkKind.ScriptFramework && !incompatible && current != framework.Id;
+                        : currentVersion ? "当前预设框架" : "设为当前预设框架";
+                    choose.IsEnabled = installedPayload && framework.Kind == FrameworkKind.ScriptFramework && !incompatible && !currentVersion;
                     note.Text = incompatible ? "" : OldVersionsText(framework, installed);
                 }
 
@@ -152,8 +152,7 @@ public partial class MainWindow
             {
                 if (plugins is null) return "";
                 var selected = plugins.Selected.Where(s => s.Id == framework.Id).Select(s => s.Version).ToHashSet(StringComparer.Ordinal);
-                var highest = plugins.Available.Where(p => p.Id == framework.Id).OrderByDescending(p => p.Version,
-                    Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(framework.Id, a, b))).Select(p => p.Version).FirstOrDefault();
+                var highest = FrameworkRules.OrderVersions(framework.Id, plugins.Available.Where(p => p.Id == framework.Id).Select(p => p.Version)).FirstOrDefault();
                 var old = plugins.Available.Where(p => p.Id == framework.Id && !selected.Contains(p.Version) && p.Version != highest)
                     .Select(p => p.Version).Distinct().Order(StringComparer.Ordinal).ToArray();
                 return old.Length == 0 ? "" : "旧版本：" + string.Join(", ", old) + "（可在「清理旧版本」中删除）";
@@ -182,8 +181,7 @@ public partial class MainWindow
             var targets = new List<(string Id, string Version, long Bytes)>();
             foreach (var framework in FrameworkRules.Known)
             {
-                var highest = plugins.Available.Where(p => p.Id == framework.Id).OrderByDescending(p => p.Version,
-                    Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(framework.Id, a, b))).Select(p => p.Version).FirstOrDefault();
+                var highest = FrameworkRules.OrderVersions(framework.Id, plugins.Available.Where(p => p.Id == framework.Id).Select(p => p.Version)).FirstOrDefault();
                 foreach (var package in plugins.Available.Where(p => p.Id == framework.Id))
                     if (!selected.Contains(package.Id + "\0" + package.Version) && package.Version != highest)
                         targets.Add((package.Id, package.Version, package.Bytes));

@@ -52,6 +52,8 @@ public static class FrameworkTests
         Check(FrameworkRules.SelectAsset("source2mod", ["source2mod_v1.0.46-linux.tar.gz", "source2mod_v1.0.46-windows.tar.gz"], true, false) == "source2mod_v1.0.46-windows.tar.gz", "Source2Mod Windows asset.");
         Check(FrameworkRules.SelectAsset("source2mod", ["spcomp-linux"], false, false) is null, "Source2Mod compiler asset accepted.");
         Check(FrameworkRules.CompareVersions("metamod", "2.0.0-dev+1490", "2.0.0-dev+999") > 0, "Build numbers compared as text.");
+        Check(FrameworkRules.OrderVersions("swiftlys2", ["1.5.2-beta.13", "1.5.1"]).First() == "1.5.1", "Stable SwiftlyS2 is not preferred.");
+        Check(FrameworkRules.OrderVersions("metamod", ["2.0.0-dev+999", "2.0.0-dev+1490"]).First() == "2.0.0-dev+1490", "Newest Metamod build is not first.");
         Check(FrameworkRules.CompareVersions("counterstrikesharp", "1.0.379", "1.0.9") > 0, "Version numbers compared as text.");
         Check(FrameworkRules.Conflicts("counterstrikesharp", "source2mod"), "Scripting frameworks not exclusive.");
         Check(!FrameworkRules.Conflicts("metamod", "counterstrikesharp"), "Metamod marked exclusive.");
@@ -120,6 +122,12 @@ public static class FrameworkTests
         Check(switched.Selections[0].Id == "metamod" && switched.Selections[1].Id == "source2mod", "Metamod/target order is wrong.");
         var none = FrameworkSelection.Apply([new("metamod", "1.0.0"), new("counterstrikesharp", "1.0.0"), new("matchzy", "1.0.0")], null, available);
         Check(!none.Selections.Single(s => s.Id == "counterstrikesharp").Enabled && !none.Selections.Single(s => s.Id == "matchzy").Enabled, "Switching to none did not disable scripts.");
+        var swiftAvailable = new PluginResult(
+            [new("swiftlys2", "SwiftlyS2", "1.5.1", "h", 1, 1, "swiftlys2", true),
+             new("swiftlys2", "SwiftlyS2", "1.5.2-beta.13", "h", 1, 1, "swiftlys2", true)],
+            [new("swiftlys2", "SwiftlyS2", "1.5.2-beta.13", true, true)], 1, "swift-hash");
+        var stable = FrameworkSelection.Apply([new("swiftlys2", "1.5.2-beta.13")], "swiftlys2", swiftAvailable);
+        Check(stable.Selections.Single(s => s.Id == "swiftlys2").Version == "1.5.1", "Switch did not prefer the stable SwiftlyS2 version.");
         var missing = FrameworkSelection.Apply([new("metamod", "1.0.0")], "swiftlys2", available);
         Check(missing.MissingFramework == "swiftlys2", "Missing framework was not reported.");
 

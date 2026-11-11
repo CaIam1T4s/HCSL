@@ -69,10 +69,12 @@ public static class FrameworkSelection
         return new([.. ordered], null, [.. warnings]);
     }
 
-    private static PluginPackageInfo? LatestFramework(PluginResult result, string id) =>
-        result.Available.Where(p => p.Id == id && p.FrameworkPayload)
-            .OrderByDescending(p => p.Version, Comparer<string>.Create((a, b) => FrameworkRules.CompareVersions(id, a, b)))
-            .FirstOrDefault();
+    private static PluginPackageInfo? LatestFramework(PluginResult result, string id)
+    {
+        var packages = result.Available.Where(p => p.Id == id && p.FrameworkPayload).ToArray();
+        var version = FrameworkRules.OrderVersions(id, packages.Select(p => p.Version)).FirstOrDefault();
+        return version is null ? null : packages.First(p => p.Version == version);
+    }
 
     private static PluginPackageInfo? Package(PluginResult result, string id, string version) =>
         result.Available.FirstOrDefault(p => p.Id == id && p.Version == version);

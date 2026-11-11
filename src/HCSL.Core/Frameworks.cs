@@ -186,6 +186,15 @@ public static class FrameworkRules
         return null;
     }
 
+    /// <summary>Prefer non-prerelease versions; fall back to prereleases only when no stable version exists.</summary>
+    public static IEnumerable<string> OrderVersions(string id, IEnumerable<string> versions)
+    {
+        var all = versions.Distinct(StringComparer.Ordinal).ToArray();
+        var comparer = Comparer<string>.Create((a, b) => CompareVersions(id, a, b));
+        return all.Where(v => !v.Contains('-')).OrderByDescending(v => v, comparer)
+            .Concat(all.Where(v => v.Contains('-')).OrderByDescending(v => v, comparer));
+    }
+
     /// <summary>Compare two package versions without treating build numbers as text (1490 must beat 999).</summary>
     public static int CompareVersions(string id, string left, string right)
     {

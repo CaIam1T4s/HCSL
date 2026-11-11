@@ -253,19 +253,18 @@ public sealed class FrameworkManager : IFrameworkManager
     private static string? InstalledVersion(string packagesRoot, string id)
     {
         if (!Directory.Exists(packagesRoot)) return null;
-        string? best = null;
         try
         {
-            foreach (var versionDir in Directory.EnumerateDirectories(Path.Combine(packagesRoot, id)))
+            var versions = Directory.EnumerateDirectories(Path.Combine(packagesRoot, id))
+                .Select(Path.GetFileName).Where(v => !string.IsNullOrWhiteSpace(v)).Cast<string>().ToArray();
+            foreach (var version in FrameworkRules.OrderVersions(id, versions))
             {
-                var version = Path.GetFileName(versionDir);
-                try { LocalPluginStore.LoadPackage(packagesRoot, id, version); }
-                catch (Exception e) when (e is InstanceException or IOException or UnauthorizedAccessException) { continue; }
-                if (best is null || FrameworkRules.CompareVersions(id, version, best) > 0) best = version;
+                try { LocalPluginStore.LoadPackage(packagesRoot, id, version); return version; }
+                catch (Exception e) when (e is InstanceException or IOException or UnauthorizedAccessException) { }
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
-        return best;
+        return null;
     }
 
     private static IEnumerable<ReleaseInfo> Preferred(ReleaseInfo[] releases) =>
