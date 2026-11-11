@@ -38,8 +38,8 @@ public static class FrameworkRules
         new("metamod", "Metamod:Source", "alliedmodders/metamod-source", FrameworkKind.Base, Installable: true),
         new("counterstrikesharp", "CounterStrikeSharp", "roflmuffin/CounterStrikeSharp", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
         new("source2mod", "Source2Mod", "Source2Mod/source2mod", FrameworkKind.ScriptFramework, Installable: true, Requires: "metamod"),
-        new("swiftlys2", "SwiftlyS2", "SwiftlyS2/SwiftlyS2", FrameworkKind.ScriptFramework, Installable: false, Requires: "metamod"),
-        new("modsharp", "ModSharp", "Kxnrl/modsharp-public", FrameworkKind.ScriptFramework, Installable: false, Requires: "metamod")
+        new("swiftlys2", "SwiftlyS2", "swiftly-solution/swiftlys2", FrameworkKind.ScriptFramework, Installable: true),
+        new("modsharp", "ModSharp", "Kxnrl/modsharp-public", FrameworkKind.ScriptFramework, Installable: true)
     ];
 
     private static readonly Regex MetamodTag = new(@"\A2\.0\.0\.(?<build>\d+)\z", RegexOptions.CultureInvariant);
@@ -48,6 +48,10 @@ public static class FrameworkRules
     private static readonly Regex CssAsset = new(@"(?i)\Acounterstrikesharp-(?<runtime>with-runtime-)?(?<os>linux|windows)-(?<version>\d+\.\d+\.\d+)\.zip\z", RegexOptions.CultureInvariant);
     private static readonly Regex S2mTag = new(@"\Av?(?<version>\d+\.\d+\.\d+)\z", RegexOptions.CultureInvariant);
     private static readonly Regex S2mAsset = new(@"(?i)\Asource2mod_v(?<version>\d+\.\d+\.\d+)-(?<os>linux|windows)\.tar\.gz\z", RegexOptions.CultureInvariant);
+    private static readonly Regex SwiftlyTag = new(@"\Av(?<version>\d+\.\d+\.\d+(?:-[A-Za-z]+\.\d+)?)\z", RegexOptions.CultureInvariant);
+    private static readonly Regex SwiftlyAsset = new(@"(?i)\Aswiftlys2-(?<os>linux|windows)-v(?<version>\d+\.\d+\.\d+(?:-[A-Za-z]+\.\d+)?)(?<runtime>-with-runtimes)?\.zip\z", RegexOptions.CultureInvariant);
+    private static readonly Regex ModSharpTag = new(@"\Agit-(?<build>\d+)\z", RegexOptions.CultureInvariant);
+    private static readonly Regex ModSharpAsset = new(@"(?i)\AModSharp-git(?<build>\d+)-(?<os>linux|windows)(?<extensions>-extensions)?\.zip\z", RegexOptions.CultureInvariant);
 
     public static FrameworkDefinition? Find(string? id) =>
         Known.FirstOrDefault(f => string.Equals(f.Id, id, StringComparison.Ordinal));
@@ -79,6 +83,16 @@ public static class FrameworkRules
         {
             var match = S2mTag.Match(tag);
             return match.Success ? match.Groups["version"].Value : null;
+        }
+        if (string.Equals(id, "swiftlys2", StringComparison.Ordinal))
+        {
+            var match = SwiftlyTag.Match(tag);
+            return match.Success ? match.Groups["version"].Value : null;
+        }
+        if (string.Equals(id, "modsharp", StringComparison.Ordinal))
+        {
+            var match = ModSharpTag.Match(tag);
+            return match.Success ? "git" + match.Groups["build"].Value : null;
         }
         return null;
     }
@@ -117,6 +131,27 @@ public static class FrameworkRules
             }
             return null;
         }
+        if (string.Equals(id, "swiftlys2", StringComparison.Ordinal))
+        {
+            foreach (var name in assets)
+            {
+                var match = SwiftlyAsset.Match(name);
+                if (!match.Success || !match.Groups["os"].Value.Equals(os, StringComparison.OrdinalIgnoreCase)) continue;
+                if (withRuntime != match.Groups["runtime"].Success) continue;
+                return name;
+            }
+            return null;
+        }
+        if (string.Equals(id, "modsharp", StringComparison.Ordinal))
+        {
+            foreach (var name in assets)
+            {
+                var match = ModSharpAsset.Match(name);
+                if (match.Success && !match.Groups["extensions"].Success
+                    && match.Groups["os"].Value.Equals(os, StringComparison.OrdinalIgnoreCase)) return name;
+            }
+            return null;
+        }
         return null;
     }
 
@@ -137,6 +172,16 @@ public static class FrameworkRules
         {
             var match = S2mAsset.Match(asset);
             return match.Success ? match.Groups["version"].Value : null;
+        }
+        if (string.Equals(id, "swiftlys2", StringComparison.Ordinal))
+        {
+            var match = SwiftlyAsset.Match(asset);
+            return match.Success ? match.Groups["version"].Value : null;
+        }
+        if (string.Equals(id, "modsharp", StringComparison.Ordinal))
+        {
+            var match = ModSharpAsset.Match(asset);
+            return match.Success ? "git" + match.Groups["build"].Value : null;
         }
         return null;
     }
@@ -175,6 +220,7 @@ public static class FrameworkRules
             if (definition.Kind == FrameworkKind.Base) continue;
             var marker = "csgo/addons/" + definition.Id + "/";
             if (paths.Any(p => p.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return definition.Id;
+            if (definition.Id == "modsharp" && paths.Any(p => p.StartsWith("sharp/", StringComparison.OrdinalIgnoreCase))) return "modsharp";
         }
         if (paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))) return "metamod";
         return null;
@@ -192,7 +238,10 @@ public static class FrameworkRules
                     || p.EndsWith("/counterstrikesharp.dll", StringComparison.OrdinalIgnoreCase)),
             "source2mod" => paths.Any(p => p.EndsWith("/bin/linuxsteamrt64/source2mod.so", StringComparison.OrdinalIgnoreCase))
                 || paths.Any(p => p.Equals("csgo/addons/metamod/source2mod.vdf", StringComparison.OrdinalIgnoreCase)),
-            "swiftlys2" or "modsharp" => paths.Any(p => p.StartsWith("csgo/addons/" + framework + "/bin/", StringComparison.OrdinalIgnoreCase)),
+            "swiftlys2" => paths.Any(p => p.EndsWith("/bin/linuxsteamrt64/swiftlys2.so", StringComparison.OrdinalIgnoreCase)
+                || p.EndsWith("/bin/win64/swiftlys2.dll", StringComparison.OrdinalIgnoreCase)),
+            "modsharp" => paths.Any(p => p.EndsWith("/bin/libmodsharp.so", StringComparison.OrdinalIgnoreCase)
+                || p.EndsWith("/bin/libmodsharp.dll", StringComparison.OrdinalIgnoreCase)),
             _ => false
         };
     }
@@ -217,7 +266,9 @@ public static class FrameworkRules
             if (!selected.Any(x => string.Equals(x.Id, script, StringComparison.Ordinal) && x.IsFrameworkPackage))
                 throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
                     "The preset selects a " + script + " plugin but not a valid " + script + " framework package.");
-            if (!selected.Any(x => string.Equals(x.Framework, "metamod", StringComparison.Ordinal)))
+            var definition = Find(script);
+            if (definition?.Requires == "metamod"
+                && !selected.Any(x => string.Equals(x.Framework, "metamod", StringComparison.Ordinal)))
                 throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-MISSING",
                     script + " requires the metamod package to be enabled in the same preset.");
         }

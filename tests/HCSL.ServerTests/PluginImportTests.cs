@@ -103,6 +103,24 @@ public static class PluginImportTests
             WriteFile(cssFramework, "addons/counterstrikesharp/api/CounterStrikeSharp.API.dll", "binary");
             Check(importer.Probe(workspace, new(cssFramework)).Id == "counterstrikesharp", "Real CSSharp framework was not detected.");
 
+            // 5d) Wrapper directory (SwiftlyS2) and game-root sharp/ (ModSharp) layouts.
+            var swiftly = Path.Combine(root, "swiftly");
+            WriteFile(swiftly, "swiftly-wrapper/addons/swiftlys2/bin/linuxsteamrt64/swiftlys2.so", "binary");
+            var swiftlyProbe = importer.Probe(workspace, new(Path.Combine(swiftly, "swiftly-wrapper")));
+            Check(swiftlyProbe.Id == "swiftlys2", "SwiftlyS2 wrapper directory was not recognized: " + swiftlyProbe.Id);
+            var swiftlyImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, swiftly, "swiftlys2", "SwiftlyS2", "1.5.2-beta.13"));
+            Check(File.Exists(Path.Combine(swiftlyImport.PackagePath, "files", "csgo", "addons", "swiftlys2", "bin", "linuxsteamrt64", "swiftlys2.so")),
+                "SwiftlyS2 wrapper was not flattened.");
+            Check(File.ReadAllText(Path.Combine(swiftlyImport.PackagePath, "files", "csgo", "gameinfo.gi")).Contains("Game\tcsgo/addons/swiftlys2", StringComparison.Ordinal),
+                "SwiftlyS2 gameinfo overlay missing.");
+            var modsharp = Path.Combine(root, "modsharp");
+            WriteFile(modsharp, "sharp/bin/libmodsharp.so", "binary");
+            WriteFile(modsharp, "sharp/configs/core.json", "{}");
+            var modsharpImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, modsharp, "modsharp", "ModSharp", "git224"));
+            Check(File.Exists(Path.Combine(modsharpImport.PackagePath, "files", "sharp", "bin", "libmodsharp.so")), "ModSharp sharp/ root was not kept.");
+            Check(File.ReadAllText(Path.Combine(modsharpImport.PackagePath, "files", "csgo", "gameinfo.gi")).Contains("Game\tsharp", StringComparison.Ordinal),
+                "ModSharp gameinfo overlay missing.");
+
             // 5c) A bare .smx becomes an independent Source2Mod sub-plugin package.
             var smx = Path.Combine(root, "sp_sample.smx");
             File.WriteAllText(smx, "SourcePawn binary");

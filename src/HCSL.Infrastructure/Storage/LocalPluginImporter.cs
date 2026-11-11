@@ -89,18 +89,19 @@ public sealed class LocalPluginImporter : IPluginImporter
                         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                         File.Copy(cfg.Source, target, false);
                     }
-                    if (NeedsGameInfo(files))
+                    var gameInfoLines = GameInfoLines(files);
+                    if (gameInfoLines.Length > 0)
                     {
                         var baseGameInfo = Path.Combine(lease.Layout.LibraryRoot, "server", "game", "csgo", "gameinfo.gi");
                         if (File.Exists(baseGameInfo))
                         {
                             var overlay = Path.Combine(filesDir, "csgo", "gameinfo.gi");
                             Directory.CreateDirectory(Path.GetDirectoryName(overlay)!);
-                            WriteGameInfoOverlay(baseGameInfo, overlay);
+                            WriteGameInfoOverlay(baseGameInfo, overlay, gameInfoLines);
                             generated.Add(new(overlay, "csgo/gameinfo.gi", new FileInfo(overlay).Length));
-                            warnings.Add("Generated gameinfo.gi overlay from the base installation (required for Metamod).");
+                            warnings.Add("Generated gameinfo.gi overlay from the base installation (required by this package).");
                         }
-                        else warnings.Add("No gameinfo.gi overlay was generated: install CS2 first, or the package cannot load Metamod.");
+                        else warnings.Add("No gameinfo.gi overlay was generated: install CS2 first, or the package cannot load.");
                     }
                     if (generateMetaPlugins)
                     {
@@ -255,8 +256,12 @@ public sealed class LocalPluginImporter : IPluginImporter
         if (Directory.Exists(Path.Combine(source, "csgo"))) return (source, "");
         if (Directory.Exists(Path.Combine(source, "addons"))) return (source, "csgo/");
         if (Directory.Exists(Path.Combine(source, "core")) || Directory.Exists(Path.Combine(source, "csgo_lv"))) return (source, "");
+        if (Directory.Exists(Path.Combine(source, "sharp"))) return (source, "");
+        // Some releases wrap the real root in one directory (SwiftlyS2).
+        var entries = Directory.EnumerateFileSystemEntries(source).ToArray();
+        if (entries.Length == 1 && Directory.Exists(entries[0])) return Layout(entries[0]);
         throw new InstanceException("HCSL-PLUGIN-PACKAGE",
-            "Source must contain addons/, csgo/, core/ or files/csgo/ (the release root, not a single addon folder).");
+            "Source must contain addons/, csgo/, core/, sharp/ or files/csgo/ (the release root, not a single addon folder).");
     }
 
     private static List<SourceFile> Enumerate(string root, string prefix, List<string> skipped, List<SourceFile> cfgFiles)
@@ -307,6 +312,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         })
             if (files.Any(f => f.RelativePath.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return id;
         var paths = files.Select(f => f.RelativePath).ToArray();
+        if (paths.Any(p => p.StartsWith("sharp/", StringComparison.OrdinalIgnoreCase))) return "modsharp";
         if (paths.Any(p => p.StartsWith("csgo/addons/counterstrikesharp/", StringComparison.OrdinalIgnoreCase)))
         {
             if (FrameworkRules.IsFrameworkPayload("counterstrikesharp", paths)) return "counterstrikesharp";
@@ -456,18 +462,28 @@ public sealed class LocalPluginImporter : IPluginImporter
     }
 
     /// <summary>Only the Metamod loader itself needs the gameinfo overlay; a plugin that merely ships a .vdf does not.</summary>
-    private static bool NeedsGameInfo(List<SourceFile> files) =>
-        files.Any(f => f.RelativePath.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))
-        && !files.Any(f => f.RelativePath.Equals("csgo/gameinfo.gi", StringComparison.OrdinalIgnoreCase));
+    private static string[] GameInfoLines(List<SourceFile> files)
+    {
+        if (files.Any(f => f.RelativePath.Equals("csgo/gameinfo.gi", StringComparison.OrdinalIgnoreCase))) return [];
+        var lines = new List<string>();
+        if (files.Any(f => f.RelativePath.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase)))
+            lines.Add("csgo/addons/metamod");
+        if (files.Any(f => f.RelativePath.StartsWith("csgo/addons/swiftlys2/bin/", StringComparison.OrdinalIgnoreCase)))
+            lines.Add("csgo/addons/swiftlys2");
+        if (files.Any(f => f.RelativePath.StartsWith("sharp/bin/", StringComparison.OrdinalIgnoreCase)))
+            lines.Add("sharp");
+        return [.. lines];
+    }
 
-    private static void WriteGameInfoOverlay(string baseGameInfo, string overlay)
+    private static void WriteGameInfoOverlay(string baseGameInfo, string overlay, string[] additions)
     {
         var lines = File.ReadAllLines(baseGameInfo).ToList();
-        if (!lines.Any(line => line.Contains("csgo/addons/metamod", StringComparison.OrdinalIgnoreCase)))
+        foreach (var addition in additions)
         {
+            if (lines.Any(line => line.Contains(addition, StringComparison.OrdinalIgnoreCase))) continue;
             var at = lines.FindIndex(line => line.TrimStart().StartsWith("Game", StringComparison.Ordinal)
                 && line.TrimEnd().EndsWith("csgo", StringComparison.Ordinal));
-            if (at >= 0) lines.Insert(at, lines[at][..(lines[at].Length - lines[at].TrimStart().Length)] + "Game\tcsgo/addons/metamod");
+            if (at >= 0) lines.Insert(at, lines[at][..(lines[at].Length - lines[at].TrimStart().Length)] + "Game\t" + addition);
         }
         File.WriteAllLines(overlay, lines);
     }

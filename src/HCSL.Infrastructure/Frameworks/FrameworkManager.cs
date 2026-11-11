@@ -114,8 +114,8 @@ public sealed class FrameworkManager : IFrameworkManager
             var expected = file.Digest["sha256:".Length..].Trim();
             if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
                 throw new InstanceException("HCSL-FRAMEWORK-HASH", "Downloaded file hash does not match the release digest.");
-            if (!FrameworkRules.IsBase(framework.Id) && InstalledVersion(Path.Combine(paths.LibraryRoot, "plugin-packages"), framework.Requires!) is null
-                && framework.Requires is not null)
+            if (!FrameworkRules.IsBase(framework.Id) && framework.Requires is { } required
+                && InstalledVersion(Path.Combine(paths.LibraryRoot, "plugin-packages"), required) is null)
                 warnings.Add(framework.DisplayName + " requires " + framework.Requires + "; install it as well or the server will not load this framework.");
             var result = new LocalPluginImporter().Execute(workspace, new(Guid.Empty, Guid.Empty, temp, framework.Id, framework.DisplayName,
                 version, null, Enable: false, Force: true, ArchivePath: temp));

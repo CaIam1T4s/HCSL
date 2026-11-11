@@ -89,7 +89,7 @@ public static class PluginRules
         var parts = path.Split('/');
         if (parts.Any(p => p is "" or "." or "..") || parts.Length == 0)
             throw new InstanceException("HCSL-PLUGIN-PATH", "Package paths may not traverse directories.");
-        if (parts[0] != "csgo" && parts[0] != "core" && parts[0] != "csgo_lv")
+        if (parts[0] != "csgo" && parts[0] != "core" && parts[0] != "csgo_lv" && parts[0] != "sharp")
             throw new InstanceException("HCSL-PLUGIN-PATH", "Package files must stay under the game content roots.");
         return string.Join('/', parts);
     }

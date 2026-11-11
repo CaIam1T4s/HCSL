@@ -27,7 +27,19 @@ public static class FrameworkTests
         Check(FrameworkRules.VersionFromTag("metamod", "2.0.0.1490") == "2.0.0-dev+1490", "Metamod tag mapping.");
         Check(FrameworkRules.VersionFromTag("metamod", "1.12.0.1229") is null, "Legacy Metamod tag accepted.");
         Check(FrameworkRules.VersionFromTag("counterstrikesharp", "v1.0.379") == "1.0.379", "CSSharp tag mapping.");
-        Check(FrameworkRules.VersionFromTag("swiftlys2", "v1.0.46") is null, "Unsupported adapter guessed a version.");
+        Check(FrameworkRules.VersionFromTag("unknown", "v1.0.46") is null, "Unsupported adapter guessed a version.");
+        Check(FrameworkRules.VersionFromTag("swiftlys2", "v1.5.2-beta.13") == "1.5.2-beta.13", "SwiftlyS2 tag mapping.");
+        Check(FrameworkRules.VersionFromTag("modsharp", "git-224") == "git224", "ModSharp tag mapping.");
+        string[] swiftly = ["swiftlys2-linux-v1.5.2-beta.13.zip", "swiftlys2-linux-v1.5.2-beta.13-with-runtimes.zip",
+            "swiftlys2-windows-v1.5.2-beta.13-with-runtimes.zip", "swiftlys2-windows-v1.5.2-beta.13-pdb.zip"];
+        Check(FrameworkRules.SelectAsset("swiftlys2", swiftly, false, true) == swiftly[1], "SwiftlyS2 runtime asset.");
+        Check(FrameworkRules.SelectAsset("swiftlys2", swiftly, true, true) == swiftly[2], "SwiftlyS2 Windows asset.");
+        string[] modsharp = ["ModSharp-git224-linux.zip", "ModSharp-git224-linux-extensions.zip", "ModSharp-git224-windows.zip"];
+        Check(FrameworkRules.SelectAsset("modsharp", modsharp, false, true) == modsharp[0], "ModSharp main asset.");
+        Check(FrameworkRules.SelectAsset("modsharp", modsharp, true, true) == modsharp[2], "ModSharp Windows asset.");
+        Check(FrameworkRules.Resolve(["sharp/bin/libmodsharp.so", "sharp/configs/core.json"]) == "modsharp", "ModSharp root not resolved.");
+        Check(FrameworkRules.IsFrameworkPayload("modsharp", ["sharp/bin/libmodsharp.so"]), "ModSharp payload not detected.");
+        Check(FrameworkRules.IsFrameworkPayload("swiftlys2", ["csgo/addons/swiftlys2/bin/linuxsteamrt64/swiftlys2.so"]), "SwiftlyS2 payload not detected.");
         string[] mm = ["mmsource-2.0.0-git1489-linux.tar.gz", "mmsource-2.0.0-git1489-windows.zip"];
         Check(FrameworkRules.SelectAsset("metamod", mm, windows: false, withRuntime: false) == mm[0], "Metamod Linux asset.");
         Check(FrameworkRules.SelectAsset("metamod", mm, windows: true, withRuntime: false) == mm[1], "Metamod Windows asset.");
@@ -72,6 +84,8 @@ public static class FrameworkTests
         }
         catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-MISSING") { }
         FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("cs2fixes", null)]);
+        FrameworkRules.ValidateSelections([new("swiftlys2", "swiftlys2", true)]);
+        FrameworkRules.ValidateSelections([new("modsharp", "modsharp", true)]);
         try
         {
             FrameworkRules.ValidateSelections([new("metamod", "metamod"), new("counterstrikesharp", "counterstrikesharp", IsFrameworkPackage: false), new("matchzy", "counterstrikesharp")]);
@@ -140,8 +154,8 @@ public static class FrameworkTests
 
             var bad = new FrameworkManager(new FakeHandler(json, archive, mutateDigest: true));
             await Reject(bad.InstallAsync(workspace, new("counterstrikesharp")), "HCSL-FRAMEWORK-HASH");
-            await Reject(manager.InstallAsync(workspace, new("swiftlys2")), "HCSL-FRAMEWORK-ID");
             await Reject(manager.InstallAsync(workspace, new("unknown")), "HCSL-FRAMEWORK-ID");
+            Check(FrameworkRules.Find("swiftlys2")?.Installable == true && FrameworkRules.Find("modsharp")?.Installable == true, "New frameworks are not installable.");
             var s2mTar = BuildSource2ModTarGz();
             var s2mDigest = "sha256:" + Convert.ToHexString(SHA256.HashData(s2mTar)).ToLowerInvariant();
             var s2mJson = Encoding.UTF8.GetBytes($$"""

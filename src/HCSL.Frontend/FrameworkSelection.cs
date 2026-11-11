@@ -27,6 +27,7 @@ public static class FrameworkSelection
         if (target is not null && (FrameworkRules.Find(target)?.Kind != FrameworkKind.ScriptFramework))
             throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-ID", "Not a scripting framework.");
         var warnings = new List<string>();
+        var needsBase = target is not null && FrameworkRules.Find(target)?.Requires == "metamod";
         PluginSelection? metamod = current.FirstOrDefault(s => s.Id == "metamod");
         var targetPackage = target is null ? null : LatestFramework(available, target);
         if (target is not null && targetPackage is null)
@@ -35,7 +36,11 @@ public static class FrameworkSelection
         PluginSelection? targetSelection = null;
         foreach (var selection in current)
         {
-            if (selection.Id is "metamod") { metamod = selection with { Enabled = true }; continue; }
+            if (selection.Id is "metamod")
+            {
+                metamod = needsBase ? selection with { Enabled = true } : selection;
+                continue;
+            }
             if (target is not null && selection.Id == target)
             {
                 targetSelection = selection with { Enabled = true, Version = targetPackage!.Version };
@@ -47,7 +52,7 @@ public static class FrameworkSelection
                 next.Add(selection with { Enabled = false });
             else next.Add(selection);
         }
-        if (metamod is null)
+        if (metamod is null && needsBase)
         {
             var basePackage = LatestFramework(available, "metamod");
             if (basePackage is null) warnings.Add("Metamod package is not installed.");
