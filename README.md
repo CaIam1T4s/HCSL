@@ -1,8 +1,16 @@
-# Hello Counter-Strike! Launcher
-
-## 项目简介
+<h1 align="center">Hello Counter-Strike! Launcher</h1>
 
 Hello Counter-Strike! Launcher（简称 **HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建。
+
+## 文档目录
+
+- [项目简介](#项目简介)
+- [快速开始](#快速开始)
+- [项目功能](#项目功能)
+- [当前功能的缺陷](#当前功能的缺陷)
+- [鸣谢和说明](#鸣谢和说明)
+
+## 项目简介
 
 项目包含三个前端和一个本机宿主：
 
@@ -15,16 +23,6 @@ Hello Counter-Strike! Launcher（简称 **HCSL**）是面向 CS2 服主与玩家
 
 > 本项目与 Valve 无关联，未获 Valve 背书。Counter-Strike 及相关商标归 Valve 所有。
 
-## 文档目录
-
-面向使用者的说明文档仍在编写中，当前仓库内可用的文档如下：
-
-| 文档 | 内容 | 状态 |
-|---|---|---|
-| [README.md](README.md) | 项目简介、快速开始、功能与已知缺陷 | 已提供 |
-| [LICENSE](LICENSE) | MIT 许可证 | 已提供 |
-| `docs/` | 安装与部署、实例与配置预设、插件与框架、服务器控制、玩家客户端等 | 计划中 |
-
 ## 快速开始
 
 ### 环境要求
@@ -36,7 +34,7 @@ Hello Counter-Strike! Launcher（简称 **HCSL**）是面向 CS2 服主与玩家
 ### 构建与运行
 
 ```sh
-git clone https://github.com/<用户名>/Hello_Counter_Strike_Launcher.git
+git clone https://github.com/CaIam1T4s/Hello_Counter_Strike_Launcher.git
 cd Hello_Counter_Strike_Launcher
 
 dotnet restore Hello_Counter_Strike_Launcher.slnx
