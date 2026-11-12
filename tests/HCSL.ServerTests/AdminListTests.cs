@@ -85,11 +85,43 @@ public static class AdminListTests
             var matched = store.Execute(workspace, Cmd(AdminAction.List));
             Check(matched.Snapshot.Entries.Length == 1, "Alternate identity created a duplicate entry.");
 
-            // 7) A preset without CounterStrikeSharp has no admin source at all.
+            // 7) Large servers are paged, not capped: 300 entries still list with a cursor.
+            var many = new System.Text.StringBuilder("{\n");
+            for (var i = 0; i < 300; i++)
+            {
+                var id = (PlayerRosterRules.SteamId64Base + 1 + i).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                many.Append("  \"Player").Append(i.ToString("D3", System.Globalization.CultureInfo.InvariantCulture))
+                    .Append("\": { \"identity\": \"").Append(id).Append("\", \"groups\": [\"#hcsl/admin\"] }")
+                    .Append(i < 299 ? "," : "").Append('\n');
+            }
+            many.Append("}\n");
+            File.WriteAllText(adminsFile, many.ToString());
+            var page = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(page.Snapshot.Total == 300 && page.Snapshot.Entries.Length == AdminRules.DefaultPageSize && page.Snapshot.HasMore,
+                $"Paging: total={page.Snapshot.Total} shown={page.Snapshot.Entries.Length} more={page.Snapshot.HasMore}");
+            Check(page.Snapshot.Entries[0].DisplayName == "Player000", "Paging order is not stable.");
+            Check(page.Snapshot.Capabilities is { Key: AdminKeyKind.DisplayName, Reload: AdminReloadKind.Command, ReloadCommand: "css_admins_reload" },
+                "Capabilities missing from the snapshot.");
+            var tail = store.Execute(workspace, new(AdminAction.List, instanceId, presetId, Offset: 200));
+            Check(tail.Snapshot.Entries.Length == 100 && !tail.Snapshot.HasMore && tail.Snapshot.Entries[0].DisplayName == "Player200",
+                "Second page wrong.");
+            var found = store.Execute(workspace, new(AdminAction.List, instanceId, presetId, Query: "Player299"));
+            Check(found.Snapshot.Total == 1 && found.Snapshot.Entries[0].DisplayName == "Player299", "Query by name.");
+            var byId = store.Execute(workspace, new(AdminAction.List, instanceId, presetId, Query: "76561197960265729"));
+            Check(byId.Snapshot.Total == 1, "Query by SteamID64.");
+            var byGroup = store.Execute(workspace, new(AdminAction.List, instanceId, presetId, Query: "#hcsl/admin"));
+            Check(byGroup.Snapshot.Total == 300, "Query by group.");
+            Check(AdminRules.Page(0, 0).Limit == AdminRules.DefaultPageSize && AdminRules.Page(0, 500).Limit == AdminRules.MaxPageSize,
+                "Page window bounds.");
+            try { AdminRules.Page(-1, 10); throw new Exception("Negative offset accepted."); }
+            catch (InstanceException e) when (e.Code == "HCSL-ADMIN-LIMIT") { }
+            Check(AdminRules.Capabilities("unknown") is null, "Unknown source reported capabilities.");
+
+            // 8) A preset without CounterStrikeSharp has no admin source at all.
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":2,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":false}]}""");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-SOURCE");
 
-            // 8) Unparseable file is reported, never "repaired".
+            // 9) Unparseable file is reported, never "repaired".
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":3,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
             File.WriteAllText(adminsFile, "{ \"Broken\": ");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-PARSE");

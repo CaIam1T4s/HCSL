@@ -17,7 +17,7 @@ public static class DevCommandLine
         "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "players", "kick", "admins", "baseline"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags", "--query", "--offset", "--limit"];
     private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--no-runtime", "--import-cfg", "--probe", "--init-groups", "--root"];
 
     public const string Usage = """
@@ -40,8 +40,9 @@ public static class DevCommandLine
           players                Print the online roster from the running server (RCON, see docs/player-roster.md).
           kick <userid|steamid64> [--reason <text>] [--yes]
                                  Disconnect one client; --yes is required because it affects a player.
-          admins [list|grant|revoke|set-groups|init-groups|reload]
+          admins [list|find|grant|revoke|set-groups|init-groups|reload]
                                  Read or edit the preset's framework admin list (CounterStrikeSharp).
+                                 list [--query <text>] [--offset <n>] [--limit <n>] · find <text>
                                  grant <steamid> --groups <name[,name]> [--name <display>] --yes
                                  init-groups creates a conservative group; --root is required for @css/root.
           plugins versions       List every installed package version and size.
@@ -142,7 +143,7 @@ public static class DevCommandLine
         if (command == "kick" && positionals.Count != 1)
             throw new DevUsageException("kick needs exactly one target (userid or SteamID64). Example: hcsl kick 2 --reason \"afk\" --yes");
         if (command == "admins" && positionals.Count > 2)
-            throw new DevUsageException("admins accepts [list|grant|revoke|set-groups|init-groups|reload] and at most one SteamID argument.");
+            throw new DevUsageException("admins accepts [list|find|grant|revoke|set-groups|init-groups|reload] and at most one SteamID argument.");
         return new(command, [.. positionals], options);
     }
 

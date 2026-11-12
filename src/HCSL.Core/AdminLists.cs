@@ -6,6 +6,21 @@ namespace HCSL.Core;
 public enum AdminAction { List, Apply, Reload }
 public enum AdminMutationKind { Upsert, Remove, SetGroups }
 
+/// <summary>How a framework keys its admin entries; the editor must never assume one shape.</summary>
+public enum AdminKeyKind { DisplayName, SteamId64 }
+
+/// <summary>How a written list takes effect. Only <see cref="Command"/> can be triggered by HCSL.</summary>
+public enum AdminReloadKind { Command, HotReload, Restart }
+
+public enum AdminGroupsLayout { SeparateFile, SameFile, None }
+
+[Flags]
+public enum AdminFields { None = 0, Groups = 1, Flags = 2, Immunity = 4, CommandOverrides = 8 }
+
+/// <summary>What one admin source can hold and how it becomes effective; frontends render from this.</summary>
+public sealed record AdminSourceCapabilities(string SourceId, string SourceName, AdminKeyKind Key,
+    AdminFields Fields, AdminGroupsLayout Groups, AdminReloadKind Reload, string? ReloadCommand);
+
 /// <summary>One intended change. Applied as a minimal text edit, never a whole-file rewrite.</summary>
 public sealed record AdminMutation(AdminMutationKind Kind, string SteamId64, string? DisplayName = null,
     string[]? Groups = null, string[]? Flags = null, int? Immunity = null);
@@ -16,16 +31,21 @@ public sealed record AdminEntry(string SteamId64, string? DisplayName, string[] 
 
 public sealed record AdminGroupInfo(string Name, string[] Flags, int? Immunity);
 
-/// <summary>Read-only projection of one admin source. Files are listed but never sent to a frontend.</summary>
+/// <summary>Read-only projection of one admin source. Files are listed but never sent to a frontend.
+/// Entries are one page of <see cref="Total"/>; the file hash always describes the whole file.</summary>
 public sealed record AdminListSnapshot(string SourceId, string SourceName, bool Writable, string[] Files,
-    AdminGroupInfo[] Groups, AdminEntry[] Entries, string Hash, string[] Warnings)
+    AdminGroupInfo[] Groups, AdminEntry[] Entries, string Hash, string[] Warnings,
+    AdminSourceCapabilities? Capabilities = null, int Total = 0, int Offset = 0, int Limit = 0)
 {
+    public bool HasMore => Offset + Entries.Length < Total;
+
     public static AdminListSnapshot Unavailable(string sourceId, string sourceName, string[] warnings) =>
         new(sourceId, sourceName, false, [], [], [], "", warnings);
 }
 
 public sealed record AdminCommand(AdminAction Action, Guid InstanceId, Guid PresetId, string? ExpectedHash = null,
-    AdminMutation[]? Mutations = null, bool InitGroups = false, bool Root = false)
+    AdminMutation[]? Mutations = null, bool InitGroups = false, bool Root = false,
+    int Offset = 0, int Limit = 0, string? Query = null)
 {
     public override string ToString() => $"AdminCommand {Action} {InstanceId}/{PresetId}";
 }
@@ -38,11 +58,31 @@ public sealed record AdminResult(AdminListSnapshot Snapshot, string Code, string
 /// </summary>
 public static class AdminRules
 {
-    public const int MaxEntries = 256;
-    public const int MaxGroups = 64;
+    /// <summary>Writes are bounded per request; reads are paged instead of capped, so large servers work.</summary>
+    public const int MaxMutationsPerRequest = 256;
+    public const int MaxGroups = 256;
     public const int MaxFlagsPerEntry = 64;
+    public const int DefaultPageSize = 100;
+    public const int MaxPageSize = 200;
     public const int MaxNameLength = 64;
     public const string CounterStrikeSharp = "cssharp";
+
+    /// <summary>CounterStrikeSharp: display-name keys, separate groups file, reload by console command.</summary>
+    public static readonly AdminSourceCapabilities CounterStrikeSharpCapabilities =
+        new(CounterStrikeSharp, "CounterStrikeSharp", AdminKeyKind.DisplayName,
+            AdminFields.Groups | AdminFields.Flags | AdminFields.Immunity | AdminFields.CommandOverrides,
+            AdminGroupsLayout.SeparateFile, AdminReloadKind.Command, "css_admins_reload");
+
+    public static AdminSourceCapabilities? Capabilities(string? sourceId) =>
+        string.Equals(sourceId, CounterStrikeSharp, StringComparison.Ordinal) ? CounterStrikeSharpCapabilities : null;
+
+    /// <summary>Page window for a list request; an unset limit uses the default page size.</summary>
+    public static (int Offset, int Limit) Page(int offset, int limit)
+    {
+        if (offset < 0) throw new InstanceException("HCSL-ADMIN-LIMIT", "Offset must be zero or greater.");
+        var size = limit <= 0 ? DefaultPageSize : Math.Min(limit, MaxPageSize);
+        return (offset, size);
+    }
 
     /// <summary>Conservative group written by <c>init-groups</c>: no rcon, cheats or root.</summary>
     public static readonly string[] DefaultGroupFlags =
@@ -114,7 +154,7 @@ public static class AdminRules
     {
         mutations ??= [];
         if (mutations.Length == 0) throw new InstanceException("HCSL-ADMIN-REQUEST", "At least one change is required.");
-        if (mutations.Length > MaxEntries) throw new InstanceException("HCSL-ADMIN-LIMIT", "At most " + MaxEntries + " changes per request.");
+        if (mutations.Length > MaxMutationsPerRequest) throw new InstanceException("HCSL-ADMIN-LIMIT", "At most " + MaxMutationsPerRequest + " changes per request.");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var mutation in mutations)
         {
@@ -130,16 +170,12 @@ public static class AdminRules
 
     public static void Verify(AdminListSnapshot snapshot)
     {
-        if (snapshot.Entries.Length > MaxEntries) throw new InstanceException("HCSL-ADMIN-LIMIT", "The admin source has more entries than supported.");
         if (snapshot.Groups.Length > MaxGroups) throw new InstanceException("HCSL-ADMIN-LIMIT", "The admin source has more groups than supported.");
     }
 
     /// <summary>Console command that makes a written admin list take effect, or null when the source needs none.</summary>
-    public static string? ReloadCommandFor(string? sourceId) => sourceId switch
-    {
-        CounterStrikeSharp => "css_admins_reload",
-        _ => null
-    };
+    public static string? ReloadCommandFor(string? sourceId) =>
+        Capabilities(sourceId) is { Reload: AdminReloadKind.Command } source ? source.ReloadCommand : null;
 
     /// <summary>Group file used when the framework ships none; content is explicit and reviewable.</summary>
     public static string DefaultGroupsJson() =>

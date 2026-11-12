@@ -43,7 +43,7 @@ public sealed class LocalAdminStore : IAdminStore
         if (!enabled.Contains("counterstrikesharp"))
             throw new InstanceException("HCSL-ADMIN-SOURCE", "This preset does not enable CounterStrikeSharp; the panel has no admin source.");
 
-        if (command.Action == AdminAction.List) return new(ReadSnapshot(adminsPath, groupsPath), "HCSL-ADMIN-OK", []);
+        if (command.Action == AdminAction.List) return new(ReadSnapshot(adminsPath, groupsPath, command), "HCSL-ADMIN-OK", []);
 
         var before = File.Exists(adminsPath) ? File.ReadAllText(adminsPath) : "{\n}\n";
         var hash = Hash(adminsPath);
@@ -65,7 +65,7 @@ public sealed class LocalAdminStore : IAdminStore
             Backup(preset, adminsPath);
             WriteAtomic(adminsPath, text);
         }
-        var snapshot = ReadSnapshot(adminsPath, groupsPath);
+        var snapshot = ReadSnapshot(adminsPath, groupsPath, command);
         foreach (var warning in warnings) snapshot = snapshot with { Warnings = [.. snapshot.Warnings, warning] };
         return new(snapshot, "HCSL-ADMIN-WRITTEN", Applied(command), null);
     }
@@ -131,7 +131,7 @@ public sealed class LocalAdminStore : IAdminStore
     private static string[] Applied(AdminCommand command) =>
         [.. command.Mutations!.Select(m => m.Kind + " " + AdminRules.SteamId(m.SteamId64) + (m.Groups is { Length: > 0 } g ? " [" + string.Join(", ", g) + "]" : ""))];
 
-    private static AdminListSnapshot ReadSnapshot(string adminsPath, string groupsPath)
+    private static AdminListSnapshot ReadSnapshot(string adminsPath, string groupsPath, AdminCommand command)
     {
         var warnings = new List<string>();
         var files = new List<string> { AdminsFile, GroupsFile };
@@ -140,15 +140,33 @@ public sealed class LocalAdminStore : IAdminStore
         var groupsText = File.Exists(groupsPath) ? File.ReadAllText(groupsPath) : "";
         if (groupsText.Length == 0) warnings.Add("admin_groups.json is missing; grants need explicit groups (use --init-groups).");
         var groups = ReadGroups(groupsText, warnings);
-        var entries = adminsText.Length == 0
+        var all = adminsText.Length == 0
             ? []
             : BuildEntries(adminsText, ParseOrThrow(adminsText), warnings).Select(e => e.Entry).ToArray();
-        foreach (var duplicate in entries.Where(e => e.SteamId64.Length > 0).GroupBy(e => e.SteamId64).Where(g => g.Count() > 1))
+        foreach (var duplicate in all.Where(e => e.SteamId64.Length > 0).GroupBy(e => e.SteamId64).Where(g => g.Count() > 1))
             warnings.Add("Identity " + duplicate.Key + " appears in " + duplicate.Count() + " entries.");
-        var snapshot = new AdminListSnapshot(FrameworkId, "CounterStrikeSharp", true, [.. files], groups, entries,
-            Hash(adminsPath), [.. warnings]);
+        // Large servers are paged, never truncated: the total stays visible and the caller keeps a cursor.
+        var filtered = Filter(all, command.Query);
+        var (offset, limit) = AdminRules.Page(command.Offset, command.Limit);
+        var page = filtered.Skip(offset).Take(limit).ToArray();
+        if (offset > 0 && offset >= filtered.Length && filtered.Length > 0) warnings.Add("Offset is past the end of the filtered list.");
+        var snapshot = new AdminListSnapshot(FrameworkId, "CounterStrikeSharp", true, [.. files], groups, page,
+            Hash(adminsPath), [.. warnings], AdminRules.Capabilities(FrameworkId), filtered.Length, offset, limit);
         AdminRules.Verify(snapshot);
         return snapshot;
+    }
+
+    /// <summary>Stable order + case-insensitive substring search over SteamID64, display name and groups.</summary>
+    private static AdminEntry[] Filter(AdminEntry[] entries, string? query)
+    {
+        var ordered = entries.OrderBy(e => e.DisplayName ?? e.SteamId64, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.SteamId64, StringComparer.Ordinal).ToArray();
+        var text = (query ?? "").Trim();
+        if (text.Length == 0) return ordered;
+        return [.. ordered.Where(e =>
+            e.SteamId64.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || (e.DisplayName?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false)
+            || e.Groups.Any(g => g.Contains(text, StringComparison.OrdinalIgnoreCase)))];
     }
 
     private static JsonSpanEditor.Node ParseOrThrow(string text)

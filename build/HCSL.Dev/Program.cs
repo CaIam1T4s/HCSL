@@ -196,10 +196,15 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
     var action = invocation.Positionals.Length == 0 ? "list" : invocation.Positionals[0];
     var argument = invocation.Positionals.Length > 1 ? invocation.Positionals[1] : null;
 
-    if (action == "list")
+    if (action is "list" or "find")
     {
-        var listed = await client.ListAsync(entry.Id, preset.Id, ct);
+        var query = action == "find" ? argument : invocation.Get("--query");
+        if (action == "find" && string.IsNullOrWhiteSpace(query))
+            throw new DevUsageException("admins find needs a SteamID64, name fragment or group. Example: hcsl admins find 76561198000000000");
+        var page = ParsePageOptions(invocation);
+        var listed = await client.ListAsync(entry.Id, preset.Id, page.Offset, page.Limit, query, ct);
         if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(listed, json)); return 0; }
+        if (query is { Length: > 0 }) Console.WriteLine("query      " + query);
         PrintAdmins(listed.Snapshot);
         if (listed.Snapshot.Warnings.Length > 0) Console.WriteLine("warning    " + string.Join("; ", listed.Snapshot.Warnings));
         return 0;
@@ -211,14 +216,14 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
         return 0;
     }
     if (action is not ("grant" or "revoke" or "set-groups" or "init-groups"))
-        throw new DevUsageException("admins accepts: list, grant <steamid>, revoke <steamid>, set-groups <steamid>, init-groups, reload.");
+        throw new DevUsageException("admins accepts: list [--query/--offset/--limit], find <text>, grant <steamid>, revoke <steamid>, set-groups <steamid>, init-groups, reload.");
     if (action != "init-groups" && argument is null)
         throw new DevUsageException("admins " + action + " needs a SteamID64 (or STEAM_X:Y:Z / [U:1:N]). Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
     var safe = action is "grant" or "revoke" or "set-groups" or "init-groups";
     if (!safe) throw new DevUsageException("Unknown admins action.");
     if (!invocation.Has("--yes")) throw new DevUsageException("Changing admin rights needs --yes. Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
 
-    var current = await client.ListAsync(entry.Id, preset.Id, ct);
+    var current = await client.ListAsync(entry.Id, preset.Id, ct: ct);
     var mutations = new List<AdminMutation>();
     var groups = (invocation.Get("--groups") ?? invocation.Get("--group") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     var flags = (invocation.Get("--flags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -255,13 +260,30 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
     return 0;
 }
 
+static (int Offset, int Limit) ParsePageOptions(DevInvocation invocation)
+{
+    var offset = 0;
+    var limit = 0;
+    if (invocation.Get("--offset") is { } offsetText && !int.TryParse(offsetText, out offset))
+        throw new DevUsageException("--offset needs a non-negative integer.");
+    if (invocation.Get("--limit") is { } limitText && !int.TryParse(limitText, out limit))
+        throw new DevUsageException("--limit needs a positive integer (at most 200).");
+    if (offset < 0) throw new DevUsageException("--offset needs a non-negative integer.");
+    return (offset, limit);
+}
+
 static void PrintAdmins(AdminListSnapshot snapshot)
 {
     Console.WriteLine($"source     {snapshot.SourceName} ({snapshot.SourceId}) · hash {Short(snapshot.Hash)}");
+    if (snapshot.Capabilities is { } caps)
+        Console.WriteLine($"capability key={caps.Key} fields={caps.Fields} groups={caps.Groups} reload={caps.Reload}"
+            + (caps.ReloadCommand is { } command ? " (" + command + ")" : ""));
     Console.WriteLine($"groups     {snapshot.Groups.Length}");
     foreach (var group in snapshot.Groups)
         Console.WriteLine($"  {group.Name,-20} {group.Flags.Length} flag(s){(group.Immunity is { } immunity ? " · immunity " + immunity : "")}");
-    Console.WriteLine($"admins     {snapshot.Entries.Length}");
+    var shown = snapshot.Entries.Length;
+    Console.WriteLine($"admins     {shown} of {snapshot.Total}"
+        + (snapshot.Total > shown ? $" · offset {snapshot.Offset}{(snapshot.HasMore ? ", more available" : "")}" : ""));
     foreach (var admin in snapshot.Entries)
         Console.WriteLine($"  {admin.DisplayName ?? admin.SteamId64,-24} {admin.SteamId64,-20} groups: {string.Join(", ", admin.Groups)}"
             + (admin.Problems.Length > 0 ? " · " + string.Join(", ", admin.Problems) : ""));
