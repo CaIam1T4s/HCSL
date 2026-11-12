@@ -24,10 +24,10 @@ public sealed record OperationResult(string Code, int? ExitCode);
 public sealed record OperationSnapshot(Guid? Id, long Revision, bool Running, ProbeStage Stage,
     string Message, Challenge? Challenge, OperationResult? Result, OperationEvent[] Events, double? Percent = null);
 public sealed record LocalRequest(int Version, Guid Id, RequestKind Kind, ProbeOptions? Options = null,
-    Guid? OperationId = null, Guid? ChallengeId = null, string? Secret = null, string? InstanceCommandJson = null, string? ServerCommandJson = null, string? ServerConsoleJson = null, string? PresetCfgJson = null, string? MapPoolJson = null, string? PluginJson = null, string? PluginImportJson = null, string? PluginImportProbeJson = null, string? FrameworkInstallJson = null, string? PluginCfgJson = null, string? FrameworkCheckJson = null, string? BaselineJson = null);
+    Guid? OperationId = null, Guid? ChallengeId = null, string? Secret = null, string? InstanceCommandJson = null, string? ServerCommandJson = null, string? ServerConsoleJson = null, string? PresetCfgJson = null, string? MapPoolJson = null, string? PluginJson = null, string? PluginImportJson = null, string? PluginImportProbeJson = null, string? FrameworkInstallJson = null, string? PluginCfgJson = null, string? FrameworkCheckJson = null, string? BaselineJson = null, string? ServerKickJson = null);
 public sealed record LocalResponse(int Version, Guid Id, bool Success, string? Code = null,
     string? Message = null, WorkspacePaths? Defaults = null, OperationSnapshot? Snapshot = null, Guid InstanceId = default, int ProcessId = 0, string? InstanceCatalogJson = null, string? ServerSnapshotJson = null,
-    string? DaemonBuild = null, string? ConsoleReceiptJson = null, string? PresetCfgResultJson = null, string? MapPoolResultJson = null, string? PluginResultJson = null, string? DeploymentPlanJson = null, string? PluginImportResultJson = null, string? PluginImportPreviewJson = null,
+    string? DaemonBuild = null, string? ConsoleReceiptJson = null, string? PresetCfgResultJson = null, string? MapPoolResultJson = null, string? PluginResultJson = null, string? DeploymentPlanJson = null, string? PluginImportResultJson = null, string? PluginImportPreviewJson = null, string? ServerKickResultJson = null,
     string? FrameworkCheckJson = null, string? FrameworkInstallResultJson = null, string? PluginCfgResultJson = null, string? BaselineResultJson = null);
 
 public static class LocalProtocol

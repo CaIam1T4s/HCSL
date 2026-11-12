@@ -15,6 +15,10 @@ public interface IServerRuntimeService
     Task<string> RecoverDeploymentAsync(WorkspaceRequest workspace, Guid instanceId, IProgress<ServerRuntimeEvent>? events = null, CancellationToken ct = default)
         => Task.FromException<string>(new ServerException("HCSL-SERVER-DEPLOY-UNAVAILABLE", "Deployment recovery is unavailable in this runtime."));
 
+    /// <summary>Point-in-time online roster. Queried out of band (RCON); never derived from the log ring.</summary>
+    Task<PlayerRoster> QueryPlayersAsync(Guid runId, CancellationToken ct = default)
+        => Task.FromException<PlayerRoster>(new ServerException("HCSL-PLAYERS-UNAVAILABLE", "Online roster is unavailable in this runtime."));
+
     Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
         => Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-UNAVAILABLE"));
     void Recover(WorkspaceRequest workspace, Guid instanceId, Guid? expectedRunId = null);

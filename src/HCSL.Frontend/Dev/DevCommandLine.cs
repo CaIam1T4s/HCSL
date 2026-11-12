@@ -14,10 +14,10 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "baseline"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "players", "kick", "baseline"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason"];
     private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--probe", "--no-runtime", "--import-cfg"];
 
     public const string Usage = """
@@ -37,6 +37,9 @@ public static class DevCommandLine
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
+          players                Print the online roster from the running server (RCON, see docs/player-roster.md).
+          kick <userid|steamid64> [--reason <text>] [--yes]
+                                 Disconnect one client; --yes is required because it affects a player.
           plugins versions       List every installed package version and size.
           plugins remove <id> <version>
                                  Delete an unused package version (needs --yes; refuses presets).
@@ -83,6 +86,7 @@ public static class DevCommandLine
           hcsl plugins --json
           hcsl gc --yes
           hcsl test mms ~/Downloads/mmsource-2.0.0-dev-linux.tar.gz --enable
+          hcsl players
           hcsl frameworks
           hcsl frameworks --install counterstrikesharp
         """;
@@ -129,8 +133,10 @@ public static class DevCommandLine
             throw new DevUsageException("baseline accepts 'status' or 'refresh'. Run: hcsl help");
         if (command == "instances" && positionals.Count > 0 && !(positionals.Count == 1 && positionals[0] == "migrate"))
             throw new DevUsageException("instances accepts no arguments or 'migrate'. Run: hcsl help");
-        if (command is "status" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" && positionals.Count > 0)
+        if (command is "status" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" or "players" && positionals.Count > 0)
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
+        if (command == "kick" && positionals.Count != 1)
+            throw new DevUsageException("kick needs exactly one target (userid or SteamID64). Example: hcsl kick 2 --reason \"afk\" --yes");
         return new(command, [.. positionals], options);
     }
 
@@ -139,6 +145,7 @@ public static class DevCommandLine
         "exec" => "exec \"meta version\"",
         "logs" => "logs --after 0",
         "gc" => "gc --yes",
+        "kick" => "kick 2 --reason \"afk\" --yes",
         "frameworks" => "frameworks --install counterstrikesharp",
         _ => $"{command} --instance 565653a2-28fe-4fce-8bb6-6e231d55ac61"
     };

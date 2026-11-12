@@ -110,6 +110,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 try { response = request.Kind == RequestKind.Baseline ? await BaselineAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Kick ? await KickAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Players ? await PlayersAsync(request, deadline.Token)
                     : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
                     : Dispatch(request); }
@@ -203,6 +205,27 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
         return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
     }
+    private async Task<LocalResponse> KickAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
+        var command = JsonSerializer.Deserialize<ServerKickCommand>(request.ServerKickJson ?? "null")
+            ?? throw new ServerException("HCSL-KICK-TARGET", "Kick command is required.");
+        var result = await servers.KickAsync(command, ct);
+        return new(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result));
+    }
+
+    private async Task<LocalResponse> PlayersAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
+        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+            ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
+        var roster = await servers.PlayersAsync(command.InstanceId, ct);
+        var snapshot = servers.Snapshot(hint: command.InstanceId == Guid.Empty ? null : command.InstanceId) with { PlayerRoster = roster };
+        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+    }
+
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");

@@ -196,6 +196,49 @@ public sealed class ServerOperations : IAsyncDisposable
         }
     }
 
+    /// <summary>Online roster for the current run. Never queues behind a stop; never invents an empty list.</summary>
+    public Task<PlayerRoster> PlayersAsync(Guid target, CancellationToken ct = default)
+    {
+        Guid? current; ServerState current_state;
+        lock (sync)
+        {
+            current = runId;
+            current_state = state;
+            if (closing || !active || current is null || (instanceId is { } running && target != Guid.Empty && running != target))
+                return Task.FromException<PlayerRoster>(new ServerException("HCSL-PLAYERS-STATE", "The server is not running for this instance."));
+            if (current_state is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running))
+                return Task.FromException<PlayerRoster>(new ServerException("HCSL-PLAYERS-STATE", "The server is " + current_state + "; the roster is only available while it runs."));
+        }
+        return service.QueryPlayersAsync(current.Value, ct);
+    }
+
+    /// <summary>
+    /// Kick one connected client. The roster is re-read first so a recycled userid can never remove the
+    /// wrong person; the receipt only means "written to the console", never "the client is gone".
+    /// </summary>
+    public async Task<ServerKickResult> KickAsync(ServerKickCommand command, CancellationToken ct = default)
+    {
+        Guid? current;
+        lock (sync)
+        {
+            current = runId;
+            if (closing || !active || current is null || current != command.RunId)
+                throw new ServerException("HCSL-KICK-STATE", "That run is no longer active; refresh the roster.");
+            if (state is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running))
+                throw new ServerException("HCSL-KICK-STATE", "The server is " + state + "; there is nobody to kick.");
+        }
+        var console = ServerKickRules.Command(command);
+        var roster = await service.QueryPlayersAsync(current.Value, ct);
+        var target = ServerKickRules.Target(roster, command);
+        var receipt = await service.SendConsoleAsync(new(current.Value, Guid.NewGuid(), console, ConfirmMutation: true), ct);
+        if (receipt.Delivery != ConsoleDelivery.Written)
+            return new(false, receipt.Code, command.UserId, target.SteamId64, console, target);
+        PlayerRoster? after = null;
+        try { after = await service.QueryPlayersAsync(current.Value, ct); }
+        catch (Exception e) when (e is ServerException or IOException or OperationCanceledException) { }
+        return new(true, "HCSL-KICK-WRITTEN", command.UserId, target.SteamId64, console, target, after);
+    }
+
     public Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
     {
         ServerConsoleRules.ValidateConfirmed(command);

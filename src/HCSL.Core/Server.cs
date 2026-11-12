@@ -1,12 +1,12 @@
 namespace HCSL.Core;
 public enum ServerState { Idle, Preparing, Starting, LoadingMap, Running, Stopping, Stopped, Failed, RecoveryRequired }
-public enum ServerAction { Start, Status, Logs, Stop, Recover, Deploy, RecoverDeployment, PlanDeployment }
+public enum ServerAction { Start, Status, Logs, Stop, Recover, Deploy, RecoverDeployment, PlanDeployment, Players, Kick }
 public sealed record ServerCommand(ServerAction Action, Guid InstanceId = default, Guid? RunId = null, long AfterSequence = 0, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
 public sealed record ServerStartOptions(Guid InstanceId, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
 public sealed record ServerLogLine(long Sequence, string Text);
 public sealed record ServerSnapshot(Guid? RunId, Guid? InstanceId, ServerState State, bool Active, string Code,
     bool MapLoaded, bool CleanupConfirmed, int? ExitCode, long NextSequence, bool HistoryTruncated, ServerLogLine[] Lines, string? Detail = null, string Mode = "LoopbackLanValidation", bool EffectiveVac = false, string? Map = null, bool MapHistorical = false,
-    string BindAddress = "127.0.0.1", NetworkAccessMode Access = NetworkAccessMode.Loopback, ServerNetworkReadiness? NetworkReadiness = null, string[]? ConnectionAddresses = null, ServerPresetIdentity? Preset = null, ServerMapProgress? MapProgress = null);
+    string BindAddress = "127.0.0.1", NetworkAccessMode Access = NetworkAccessMode.Loopback, ServerNetworkReadiness? NetworkReadiness = null, string[]? ConnectionAddresses = null, ServerPresetIdentity? Preset = null, ServerMapProgress? MapProgress = null, PlayerRoster? PlayerRoster = null);
 public sealed record ServerRuntimeEvent(ServerState State, string Code, string? Log = null, string? Map = null, ServerNetworkReadiness? NetworkReadiness = null, ServerPresetIdentity? Preset = null, ServerMapProgress? MapProgress = null);
 /// <summary>Immutable preset used to prepare this run; not the current UI selection or current map.</summary>
 public sealed record ServerPresetIdentity(Guid Id, long Revision, string Name, string Map, ServerMapKind MapKind = ServerMapKind.Standard);

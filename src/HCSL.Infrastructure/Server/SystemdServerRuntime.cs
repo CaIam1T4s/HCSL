@@ -134,6 +134,9 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                 if (raw.StartsWith("HCSL_CONSOLE_ACK:", StringComparison.Ordinal)
                     && Guid.TryParse(raw[17..], out var ack) && console?.Acks.TryGetValue(ack, out var confirmation) == true)
                 { confirmation.TrySetResult(true); return; }
+                // SteamID only exists in the log stream; status never prints it. Both lines are cheap prefix checks.
+                if (PlayerRosterRules.TrySteamNet(raw, out var netId, out var netAddress)) console?.Identities.BindAddress(netAddress, netId);
+                else if (PlayerRosterRules.TryValidated(raw, out var validatedId, out var validatedUser)) console?.Identities.BindUser(validatedUser, validatedId);
                 var text = Regex.Replace(raw, @"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))", "");
                 text = new string(text.Where(c => !char.IsControl(c)).ToArray());
                 if (text == "HCSL_SERVER_GATE_READY") { ready.TrySetResult(); return; }
@@ -221,7 +224,13 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                 "/usr/bin/env", "-i", "HOME=" + Path.Combine(launch.Runtime, "home"), "USRLOCALcsgo=" + Path.Combine(launch.Runtime, "userdata"), "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "/usr/bin/dotnet", assembly, "--server-gate");
             events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING", Preset: launch.Preset));
             process = Process.Start(start)!;
-            console = new ConsoleSession(process, stop, launch.Redact); consoleSessions[runId] = console;
+            console = new ConsoleSession(process, stop, launch.Redact)
+            {
+                GamePort = launch.GamePort,
+                // Per-run random password: kept in memory only, never logged, never sent to a frontend.
+                RconPassword = "hcsl-" + Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant()
+            };
+            consoleSessions[runId] = console;
             stdout = Pump(process.StandardOutput); stderr = Pump(process.StandardError);
             var exited = process.WaitForExitAsync(); var clock = Stopwatch.StartNew(); bool released = false;
             while (!exited.IsCompleted)
@@ -233,6 +242,8 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                     launch.ReleasePorts();
                     var command = new ServerGateCommand(session.OwnerPid, session.OwnerStartTicks, session.PidNamespace, launch.Executable, launch.Arguments, Path.Combine(launch.Runtime, "game"), memoryMiB * 1024L * 1024, runId);
                     await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command)); await process.StandardInput.FlushAsync(); released = true;
+                    // The RCON password is applied lazily on the first roster query, so startup never consumes
+                    // the console rate-limit window that an operator command may need right after map load.
                 }
                 string? readyMap = null;
                 lock (parserLock)

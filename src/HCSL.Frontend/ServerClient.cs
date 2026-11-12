@@ -30,6 +30,26 @@ public sealed class ServerClient(IDaemonClient client)
             ?? throw new IOException("Missing deployment plan.");
     }
 
+    /// <summary>Point-in-time roster for a running instance. Throws with the daemon's stable code on failure.</summary>
+    public async Task<PlayerRoster> PlayersAsync(Guid instanceId, WorkspacePaths? workspace = null, CancellationToken ct = default)
+    {
+        if (instanceId == Guid.Empty) throw new IOException("HCSL-PLAYERS-STATE: Instance ID is required.");
+        var snapshot = await SendAsync(new(ServerAction.Players, instanceId), workspace, ct);
+        return snapshot.PlayerRoster ?? throw new IOException("HCSL-PLAYERS-STATE: The daemon returned no roster.");
+    }
+
+    /// <summary>Remove one client; the daemon re-reads the roster first so a recycled userid cannot hit another player.</summary>
+    public async Task<ServerKickResult> KickAsync(ServerKickCommand command, WorkspacePaths? workspace = null, CancellationToken ct = default)
+    {
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,
+            Options: workspace == null ? null : new(workspace),
+            ServerCommandJson: JsonSerializer.Serialize(new ServerCommand(ServerAction.Kick, command.InstanceId)),
+            ServerKickJson: JsonSerializer.Serialize(command)), ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<ServerKickResult>(response.ServerKickResultJson ?? "null")
+            ?? throw new IOException("HCSL-KICK-STATE: The daemon returned no kick result.");
+    }
+
     public async Task<ServerSnapshot> SendAsync(ServerCommand command, WorkspacePaths? workspace = null, CancellationToken ct = default)
     {
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,

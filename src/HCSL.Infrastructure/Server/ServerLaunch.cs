@@ -12,6 +12,8 @@ internal sealed class ServerLaunch(IWorkspaceLease workspace, string runtime, st
     internal IWorkspaceLease Workspace { get; } = workspace;
     internal string Runtime { get; } = runtime;
     internal string Map { get; } = map;
+    /// <summary>Game port, shared by the SDR socket and the RCON TCP listener.</summary>
+    internal int GamePort { get; init; }
     internal ServerPresetIdentity? Preset { get; init; }
     internal FrameworkReadinessProfile ReadinessProfile { get; init; } = FrameworkReadinessProfile.Standard;
     internal string Executable { get; } = executable;
@@ -77,7 +79,7 @@ internal static class ServerPreparation
             password = InstancePasswordConfig.Bind(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), plan.PresetId.ToString("D"));
             var launch = new ServerLaunch(lease, plan.RuntimePath, startupMap, "/bin/bash",
                 [Path.Combine(plan.RuntimePath, "game/cs2.sh"), "-dedicated", "-console", "-insecure", "-port", entry.Definition.GamePort.ToString(),
-                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, .. mapArgs], ports, access, password) { Preset = new(preset.Id, preset.Revision, preset.Name, startupMap, startupKind), ReadinessProfile = plan.FrameworkReadiness };
+                 "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, .. mapArgs], ports, access, password) { Preset = new(preset.Id, preset.Revision, preset.Name, startupMap, startupKind), ReadinessProfile = plan.FrameworkReadiness, GamePort = entry.Definition.GamePort };
             password = null;
             access = null;
             return launch;

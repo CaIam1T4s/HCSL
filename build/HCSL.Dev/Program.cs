@@ -49,6 +49,8 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "plugins" => Plugins(invocation, json),
     "import" => Import(invocation, json),
     "frameworks" => await FrameworksAsync(invocation, json, ct),
+    "players" => await PlayersAsync(invocation, json, ct),
+    "kick" => await KickAsync(invocation, json, ct),
     "gc" => Gc(invocation),
     "baseline" => Baseline(invocation, json),
     "test" => await TestAsync(invocation, json, ct),
@@ -183,6 +185,47 @@ static async Task<(DaemonClient Daemon, ServerClient Client)> ConnectAsync(DevIn
 }
 
 static WorkspacePaths Paths(WorkspaceRequest workspace) => new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+
+static async Task<int> KickAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, _) = Target(workspace, invocation);
+    if (invocation.Positionals.Length == 0) throw new DevUsageException("kick needs a userid or SteamID64. Example: hcsl kick 2 --reason \"afk\" --yes");
+    if (!invocation.Has("--yes")) throw new DevUsageException("Kicking a player disconnects them; add --yes to confirm. Example: hcsl kick 2 --reason \"afk\" --yes");
+    var target = invocation.Positionals[0].Trim();
+    var isSteamId = target.Length == 17 && target.All(char.IsAsciiDigit);
+    var userId = -1;
+    if (!isSteamId && !int.TryParse(target, out userId)) throw new DevUsageException("The target must be a userid (from `hcsl players`) or a 17-digit SteamID64.");
+    var (_, client) = await ConnectAsync(invocation, ct);
+    var status = await client.SendAsync(new(ServerAction.Status), Paths(workspace), ct);
+    if (status.RunId is not { } runId) throw new DevUsageException("The server is not running; start it first (`hcsl start --wait`).");
+    var result = await client.KickAsync(new(entry.Id, runId, userId, isSteamId ? target : null, invocation.Get("--reason") ?? ""), Paths(workspace), ct);
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(result, json)); return result.Written ? 0 : 2; }
+    if (!result.Written) { Console.Error.WriteLine(result.Code + ": kick was not delivered " + DevHints.With("", result.Code)); return 2; }
+    Console.WriteLine($"kicked     {result.UserId} {result.Target?.Name ?? "?"} ({result.SteamId64 ?? "no steamid"})");
+    Console.WriteLine($"command    {result.Command}");
+    if (result.Roster is { } roster)
+    {
+        var gone = roster.Players.All(p => p.UserId != result.UserId);
+        Console.WriteLine(gone ? "roster     target is no longer connected" : "roster     target still listed; CS2 may take a moment");
+    }
+    return 0;
+}
+
+static async Task<int> PlayersAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, _) = Target(workspace, invocation);
+    var (_, client) = await ConnectAsync(invocation, ct);
+    var roster = await client.PlayersAsync(entry.Id, Paths(workspace), ct);
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(roster, json)); return 0; }
+    Console.WriteLine($"players    {roster.Humans} human(s), {roster.Bots} bot(s)");
+    if (roster.Players.Length == 0) return 0;
+    Console.WriteLine("  id  bot  name                     steamid64            address");
+    foreach (var player in roster.Players)
+        Console.WriteLine($"  {player.UserId,2}  {(player.IsBot ? "yes" : "   ")}  {player.Name,-24} {player.SteamId64 ?? "-",-20} {player.Address}");
+    return 0;
+}
 
 static async Task<int> FrameworksAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
 {
