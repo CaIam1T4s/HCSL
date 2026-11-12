@@ -33,6 +33,9 @@ public partial class MainWindow
         string? error = null;
         var offset = 0;
         string? activeQuery = null;
+        // Keep the last action's message across iterations: clearing it here made failures look like
+        // "nothing happened" (the loop redraws before the operator can read the line).
+        var message = "";
         while (true)
         {
             if (snapshot is null && error is null)
@@ -50,7 +53,7 @@ public partial class MainWindow
                 : "组：" + string.Join(" · ", snapshot.Groups.Select(g => $"{g.Name}（{g.Flags.Length} 项{(g.Immunity is { } i ? "，免疫 " + i : "")}）"));
             list.ItemsSource = (snapshot?.Entries ?? []).Select(Label).ToArray();
             if (list.SelectedIndex < 0 && list.ItemCount > 0) list.SelectedIndex = 0;
-            status.Text = "";
+            status.Text = message;
             var choice = await ShowOverlayAsync(content, ["关闭", "刷新", "搜索", "上一页", "下一页", "授予 / 修改", "移除所选", "初始化组", "重载"]);
             if (choice <= 0) return;
             switch (choice)
@@ -63,36 +66,37 @@ public partial class MainWindow
                     try
                     {
                         var reloaded = await model.ReloadAdminsAsync();
-                        status.Text = reloaded.Reload ?? "该来源没有重载命令。";
+                        message = reloaded.Reload ?? "该来源没有重载命令。";
                         snapshot = reloaded.Snapshot;
                     }
-                    catch (Exception e) { status.Text = Describe(e); }
+                    catch (Exception e) { message = Describe(e); }
                     continue;
                 case 7:
                     try
                     {
                         var result = await model.ApplyAdminAsync(new(AdminAction.Apply, instance.Id, preset.Id,
                             snapshot?.Hash, [], InitGroups: true));
-                        status.Text = "已写入初始化内容。" + (result.Reload is { } r ? " " + r : "");
+                        message = "已写入初始化内容。" + (result.Reload is { } r ? " " + r : "");
                         snapshot = result.Snapshot;
                     }
-                    catch (Exception e) { status.Text = Describe(e); }
+                    catch (Exception e) { message = Describe(e); }
                     continue;
             }
-            if (snapshot is null) { status.Text = "先刷新名单。"; continue; }
+            if (snapshot is null) { message = "先刷新名单。"; continue; }
             if (choice == 6)
             {
                 var entry = list.SelectedIndex >= 0 && list.SelectedIndex < snapshot.Entries.Length ? snapshot.Entries[list.SelectedIndex] : null;
-                if (entry is null) { status.Text = "先在列表中选择一名管理员。"; continue; }
+                if (entry is null) { message = "先在列表中选择一名管理员。"; continue; }
                 if (await ChooseAsync("取消管理员", $"移除 {entry.DisplayName ?? entry.SteamId64}（{entry.SteamId64}）的整条记录？\n组定义与其他人不受影响。", "取消", "移除") != 1) continue;
                 try
                 {
+                    // Pass the raw key too: an entry whose identity cannot be parsed is still removable.
                     var result = await model.ApplyAdminAsync(new(AdminAction.Apply, instance.Id, preset.Id, snapshot.Hash,
-                        [new(AdminMutationKind.Remove, entry.SteamId64)]));
-                    status.Text = "已移除。" + (result.Reload is { } r ? " " + r : "");
+                        [new(AdminMutationKind.Remove, entry.SteamId64, Key: entry.DisplayName)]));
+                    message = "已移除。" + (result.Reload is { } r ? " " + r : "");
                     snapshot = result.Snapshot;
                 }
-                catch (Exception e) { status.Text = Describe(e); }
+                catch (Exception e) { message = Describe(e); }
                 continue;
             }
             // Grant: the framework key matters. CSSharp keys by display name (SteamID goes into "identity"),
@@ -134,10 +138,10 @@ public partial class MainWindow
             });
             if (await ShowOverlayAsync(form, ["取消", "写入"]) != 1) continue;
             var steamId = (steam.Text ?? "").Trim();
-            if (steamId.Length == 0) { status.Text = "需要 SteamID。"; continue; }
+            if (steamId.Length == 0) { message = "需要 SteamID。"; continue; }
             var groupList = Split(groupInput.Text);
             var flagList = Split(flagInput.Text);
-            if (groupList.Length == 0 && flagList.Length == 0) { status.Text = "至少给一个组或权限。"; continue; }
+            if (groupList.Length == 0 && flagList.Length == 0) { message = "至少给一个组或权限。"; continue; }
             if (flagList.Any(f => f is "@css/root" or "@css/rcon" or "*")
                 && await ChooseAsync("确认授予最高权限", "该权限等同完整控制台访问。确认继续？", "取消", "确认") != 1) continue;
             var displayName = byName ? (nameInput.Text ?? "").Trim() : null;
@@ -145,13 +149,13 @@ public partial class MainWindow
             {
                 var result = await model.ApplyAdminAsync(new(AdminAction.Apply, instance.Id, preset.Id, snapshot.Hash,
                     [new(AdminMutationKind.Upsert, steamId, string.IsNullOrEmpty(displayName) ? null : displayName, groupList, flagList)]));
-                status.Text = "已写入：" + string.Join(", ", result.Applied) + (result.Reload is { } r ? " · " + r : "")
+                message = "已写入：" + string.Join(", ", result.Applied) + (result.Reload is { } r ? " · " + r : "")
                     + (byName && string.IsNullOrEmpty(displayName) ? "\n未填显示名，key 用了 SteamID；下次写入填上名称即可重命名。" : "");
                 snapshot = result.Snapshot;
                 grantSteamId = null;
                 grantName = null;
             }
-            catch (Exception e) { status.Text = Describe(e); }
+            catch (Exception e) { message = Describe(e); }
         }
 
         static string[] Split(string? text) =>

@@ -75,19 +75,25 @@ internal static class SwiftlyS2AdminFile
         if (command.InitGroups && command.Mutations is not { Length: > 0 }) { applied = []; return text; }
         foreach (var mutation in command.Mutations!)
         {
-            var steamId = AdminRules.SteamId(mutation.SteamId64);
+            // A key-only removal (unparsable identity) has no SteamID to resolve.
+            var keyOnly = mutation.Kind == AdminMutationKind.Remove && string.IsNullOrWhiteSpace(mutation.SteamId64);
+            var steamId = keyOnly ? "" : AdminRules.SteamId(mutation.SteamId64);
             if (mutation.Flags is { Length: > 0 } || mutation.Immunity is not null)
                 warnings.Add("SwiftlyS2 keeps only group membership per player; permissions and immunity were ignored.");
             switch (mutation.Kind)
             {
                 case AdminMutationKind.Remove:
-                    if (FindKey(text, steamId) is { } existingKey)
+                {
+                    // An entry whose key is not a valid SteamID (example placeholder) can only be removed by key.
+                    var removalKey = FindKey(text, steamId) ?? mutation.Key;
+                    if (removalKey is { Length: > 0 } && HasKey(text, removalKey))
                     {
-                        text = JsonSpanEditor.RemoveMember(text, ParseOrThrow(text), PlayerPath, existingKey);
-                        appliedList.Add("Remove " + steamId);
+                        text = JsonSpanEditor.RemoveMember(text, ParseOrThrow(text), PlayerPath, removalKey);
+                        appliedList.Add("Remove " + removalKey);
                     }
                     else warnings.Add("Identity " + steamId + " is not in the list.");
                     break;
+                }
                 case AdminMutationKind.Upsert:
                 case AdminMutationKind.SetGroups:
                 {
@@ -115,6 +121,12 @@ internal static class SwiftlyS2AdminFile
         root = ParseOrThrow(text);
         if (JsonSpanEditor.Find(root, "Permissions", "Players") is null) text = JsonSpanEditor.SetMember(text, root, ["Permissions"], "Players", "{}");
         return text;
+    }
+
+    private static bool HasKey(string text, string key)
+    {
+        var players = JsonSpanEditor.Find(ParseOrThrow(text), PlayerPath);
+        return players?.Value.Members?.Any(m => m.Key == key) == true;
     }
 
     /// <summary>Existing key for the identity, so a manually written STEAM_X:Y:Z key is edited instead of duplicated.</summary>

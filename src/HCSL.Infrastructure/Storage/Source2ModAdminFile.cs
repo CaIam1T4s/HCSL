@@ -88,7 +88,9 @@ internal static class Source2ModAdminFile
         var appliedList = new List<string>();
         foreach (var mutation in command.Mutations!)
         {
-            var steamId = AdminRules.SteamId(mutation.SteamId64);
+            // A key-only removal (unparsable identity) has no SteamID to resolve.
+            var keyOnly = mutation.Kind == AdminMutationKind.Remove && string.IsNullOrWhiteSpace(mutation.SteamId64);
+            var steamId = keyOnly ? "" : AdminRules.SteamId(mutation.SteamId64);
             var root = ParseOrThrow(text);
             var admins = EnsureObject(ref text, "Admins");
             root = ParseOrThrow(text);
@@ -96,9 +98,17 @@ internal static class Source2ModAdminFile
             switch (mutation.Kind)
             {
                 case AdminMutationKind.Remove:
-                    if (existing is { } found) { text = JsonSpanEditor.RemoveMember(text, ParseOrThrow(text), ["Admins"], found.Key); appliedList.Add("Remove " + steamId); }
+                {
+                    // Fall back to the raw key so an entry without a usable SteamID can still be removed.
+                    var removalKey = existing?.Key ?? mutation.Key;
+                    if (removalKey is { Length: > 0 } && HasKey(text, removalKey))
+                    {
+                        text = JsonSpanEditor.RemoveMember(text, ParseOrThrow(text), ["Admins"], removalKey);
+                        appliedList.Add("Remove " + removalKey);
+                    }
                     else warnings.Add("Identity " + steamId + " is not in the list.");
                     break;
+                }
                 case AdminMutationKind.Upsert:
                 case AdminMutationKind.SetGroups:
                 {
@@ -117,6 +127,13 @@ internal static class Source2ModAdminFile
         ParseOrThrow(text);
         applied = [.. appliedList];
         return text;
+    }
+
+    /// <summary>True when the Admins object already contains this exact key.</summary>
+    private static bool HasKey(string text, string key)
+    {
+        var admins = JsonSpanEditor.Find(ParseOrThrow(text), "Admins");
+        return admins?.Value.Members?.Any(m => m.Key == key) == true;
     }
 
     /// <summary>Admin entry whose key normalises to the requested SteamID (the key text itself is preserved).</summary>

@@ -144,7 +144,18 @@ public static class AdminListTests
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":2,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":false}]}""");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-SOURCE");
 
-            // 9) Unparseable file is reported, never "repaired".
+            // 9) An entry without a usable identity (no "identity" field) is removable by its raw key.
+            File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":4,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+            File.WriteAllText(adminsFile, "{\n  \"Placeholder\": { \"groups\": [ \"#hcsl/admin\" ] }\n}\n");
+            var placeholder = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(placeholder.Snapshot.Entries.Single().SteamId64 == "" && placeholder.Snapshot.Entries[0].Problems.Contains("HCSL-ADMIN-ID"),
+                "Entry without identity should be listed with HCSL-ADMIN-ID.");
+            var byKey = store.Execute(workspace, Cmd(AdminAction.Apply, placeholder.Snapshot.Hash,
+                [new(AdminMutationKind.Remove, "", Key: "Placeholder")]));
+            Check(byKey.Snapshot.Entries.Length == 0 && !File.ReadAllText(adminsFile).Contains("Placeholder", StringComparison.Ordinal),
+                "Key-based removal did not delete the entry.");
+
+            // 10) Unparseable file is reported, never "repaired".
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":3,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
             File.WriteAllText(adminsFile, "{ \"Broken\": ");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-PARSE");

@@ -79,6 +79,16 @@ public static class SwiftlyS2AdminTests
             Check(revoked.Snapshot.Entries.Length == 0, "Revoke failed.");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.Apply, revokeBase.Snapshot.Hash, [new(AdminMutationKind.Remove, steamId)])), "HCSL-ADMIN-CONFLICT");
 
+            // 6b) An entry whose key is not a valid SteamID (example placeholder) is removable by its raw key.
+            File.WriteAllText(file, "{\n  \"Permissions\": {\n    \"Players\": {\n      \"7656\": [ \"vip2\" ]\n    },\n    \"PermissionGroups\": {}\n  }\n}\n");
+            var placeholder = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(placeholder.Snapshot.Entries.Single().SteamId64 == "" && placeholder.Snapshot.Entries[0].Problems.Contains("HCSL-ADMIN-ID"),
+                "Unparsable key should be listed with a problem code.");
+            var byKey = store.Execute(workspace, Cmd(AdminAction.Apply, placeholder.Snapshot.Hash,
+                [new(AdminMutationKind.Remove, "", Key: "7656")]));
+            Check(byKey.Snapshot.Entries.Length == 0 && !File.ReadAllText(file).Contains("\"7656\"", StringComparison.Ordinal),
+                "Key-based removal did not delete the entry.");
+
             // 7) No supported framework enabled → no source.
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":2,"Plugins":[{"Id":"swiftlys2","Version":"1.5.2","Enabled":false}]}""");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-SOURCE");

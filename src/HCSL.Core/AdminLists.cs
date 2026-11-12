@@ -21,9 +21,11 @@ public enum AdminFields { None = 0, Groups = 1, Flags = 2, Immunity = 4, Command
 public sealed record AdminSourceCapabilities(string SourceId, string SourceName, AdminKeyKind Key,
     AdminFields Fields, AdminGroupsLayout Groups, AdminReloadKind Reload, string? ReloadCommand);
 
-/// <summary>One intended change. Applied as a minimal text edit, never a whole-file rewrite.</summary>
+/// <summary>One intended change. Applied as a minimal text edit, never a whole-file rewrite.
+/// <paramref name="Key"/> addresses an entry by its raw file key, so an entry whose identity cannot be
+/// parsed (e.g. an example placeholder) can still be removed instead of being stuck in the list.</summary>
 public sealed record AdminMutation(AdminMutationKind Kind, string SteamId64, string? DisplayName = null,
-    string[]? Groups = null, string[]? Flags = null, int? Immunity = null);
+    string[]? Groups = null, string[]? Flags = null, int? Immunity = null, string? Key = null);
 
 /// <summary>One admin entry as read from the framework's own file.</summary>
 public sealed record AdminEntry(string SteamId64, string? DisplayName, string[] Groups, string[] Flags,
@@ -146,6 +148,15 @@ public static class AdminRules
         return text;
     }
 
+    /// <summary>A raw entry key as it appears in the file (display name, SteamID or an unparsable placeholder).</summary>
+    public static string EntryKey(string? value)
+    {
+        var text = (value ?? "").Trim();
+        if (text.Length is 0 or > 128 || text.Any(char.IsControl))
+            throw new InstanceException("HCSL-ADMIN-NAME", "An entry key is 1-128 characters without control characters.");
+        return text;
+    }
+
     public static string DisplayName(string? value)
     {
         var text = (value ?? "").Trim();
@@ -177,7 +188,9 @@ public static class AdminRules
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var mutation in mutations)
         {
-            var id = SteamId(mutation.SteamId64);
+            // Removal may target a raw key when the entry's identity is unusable; everything else needs an identity.
+            var byKey = mutation.Kind == AdminMutationKind.Remove && string.IsNullOrWhiteSpace(mutation.SteamId64);
+            var id = byKey ? "key:" + EntryKey(mutation.Key) : SteamId(mutation.SteamId64);
             if (!seen.Add(id)) throw new InstanceException("HCSL-ADMIN-DUPLICATE", "The same identity appears more than once in one request.");
             if (!Enum.IsDefined(mutation.Kind)) throw new InstanceException("HCSL-ADMIN-REQUEST", "Unknown change kind.");
             Groups(mutation.Groups);

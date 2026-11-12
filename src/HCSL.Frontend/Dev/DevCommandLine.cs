@@ -17,7 +17,7 @@ public static class DevCommandLine
         "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "players", "kick", "admins", "baseline"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags", "--query", "--offset", "--limit"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags", "--key", "--query", "--offset", "--limit"];
     private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--no-runtime", "--import-cfg", "--probe", "--init-groups", "--root"];
 
     public const string Usage = """
@@ -45,6 +45,7 @@ public static class DevCommandLine
                                  list [--query <text>] [--offset <n>] [--limit <n>] · find <text>
                                  grant <steamid> --groups <name[,name]> [--name <display>] --yes
                                  init-groups creates a conservative group; --root is required for @css/root.
+                                 revoke --key <raw key> removes an entry whose identity is unparsable.
           plugins versions       List every installed package version and size.
           plugins remove <id> <version>
                                  Delete an unused package version (needs --yes; refuses presets).

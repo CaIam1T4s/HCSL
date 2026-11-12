@@ -96,6 +96,14 @@ public static class Source2ModAdminTests
             // 8) Stale hash is refused.
             Reject(() => store.Execute(workspace, Cmd(AdminAction.Apply, revokeHash, [new(AdminMutationKind.Remove, steamId)])), "HCSL-ADMIN-CONFLICT");
 
+            // 8b) An entry with a non-SteamID key is removable by that raw key.
+            File.WriteAllText(file, "{\n  \"Groups\": {},\n  \"Admins\": {\n    \"7656\": { \"Groups\": [ \"admin\" ] }\n  }\n}\n");
+            var placeholder = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(placeholder.Snapshot.Entries.Single().Problems.Contains("HCSL-ADMIN-ID"), "Unparsable key not reported.");
+            var byKey = store.Execute(workspace, Cmd(AdminAction.Apply, placeholder.Snapshot.Hash,
+                [new(AdminMutationKind.Remove, "", Key: "7656")]));
+            Check(byKey.Snapshot.Entries.Length == 0, "Key-based removal did not delete the entry.");
+
             // 9) A preset with neither scripting framework has no source.
             File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":2,"Plugins":[{"Id":"source2mod","Version":"1.0.51","Enabled":false}]}""");
             Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-SOURCE");

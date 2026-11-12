@@ -133,16 +133,24 @@ public sealed class LocalAdminStore : IAdminStore
         var current = BuildEntries(text, root, []);
         foreach (var mutation in command.Mutations!)
         {
-            var steamId = AdminRules.SteamId(mutation.SteamId64);
+            // A key-only removal (unparsable identity) has no SteamID to resolve.
+            var keyOnly = mutation.Kind == AdminMutationKind.Remove && string.IsNullOrWhiteSpace(mutation.SteamId64);
+            var steamId = keyOnly ? "" : AdminRules.SteamId(mutation.SteamId64);
             var existing = current.Where(e => e.Entry.SteamId64.Length == 17 && e.Entry.SteamId64 == steamId)
                 .Select(e => e.Entry).FirstOrDefault();
             switch (mutation.Kind)
             {
                 case AdminMutationKind.Remove:
-                    if (existing is null) break;
-                    if (existing.DisplayName is not { } name) { warnings.Add("Entry for " + steamId + " has no usable key; remove it manually."); break; }
-                    text = JsonSpanEditor.RemoveMember(text, JsonSpanEditor.ParseObject(text), [], name);
+                {
+                    // CSSharp entries without a usable identity (no "identity" field) are removable by their raw key.
+                    var removalKey = existing?.DisplayName is { Length: > 0 } byIdentity ? byIdentity : mutation.Key;
+                    if (removalKey is { Length: > 0 } && HasKey(text, removalKey))
+                    {
+                        text = JsonSpanEditor.RemoveMember(text, JsonSpanEditor.ParseObject(text), [], removalKey);
+                    }
+                    else warnings.Add("Entry for " + steamId + " was not found in the list.");
                     break;
+                }
                 case AdminMutationKind.Upsert:
                 case AdminMutationKind.SetGroups:
                 {
@@ -195,7 +203,13 @@ public sealed class LocalAdminStore : IAdminStore
     private static string Escape(string value) => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private static string[] Applied(AdminCommand command) =>
-        [.. command.Mutations!.Select(m => m.Kind + " " + AdminRules.SteamId(m.SteamId64) + (m.Groups is { Length: > 0 } g ? " [" + string.Join(", ", g) + "]" : ""))];
+        [.. command.Mutations!.Select(m =>
+        {
+            // Key-based removals have no identity to print.
+            var target = string.IsNullOrWhiteSpace(m.SteamId64) && m.Key is { Length: > 0 } key
+                ? key : AdminRules.SteamId(m.SteamId64);
+            return m.Kind + " " + target + (m.Groups is { Length: > 0 } g ? " [" + string.Join(", ", g) + "]" : "");
+        })];
 
     private static AdminListSnapshot ReadSnapshot(string adminsPath, string groupsPath, AdminCommand command)
     {
@@ -356,6 +370,13 @@ public sealed class LocalAdminStore : IAdminStore
         }
         catch (JsonException) { }
         return enabled;
+    }
+
+    /// <summary>True when the top-level object already contains this exact key.</summary>
+    private static bool HasKey(string text, string key)
+    {
+        try { return JsonSpanEditor.ParseObject(text).Members?.Any(m => m.Key == key) == true; }
+        catch (FormatException) { return false; }
     }
 
     private static string Hash(string path)

@@ -217,8 +217,8 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
     }
     if (action is not ("grant" or "revoke" or "set-groups" or "init-groups"))
         throw new DevUsageException("admins accepts: list [--query/--offset/--limit], find <text>, grant <steamid>, revoke <steamid>, set-groups <steamid>, init-groups, reload.");
-    if (action != "init-groups" && argument is null)
-        throw new DevUsageException("admins " + action + " needs a SteamID64 (or STEAM_X:Y:Z / [U:1:N]). Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
+    if (action != "init-groups" && argument is null && invocation.Get("--key") is not { Length: > 0 })
+        throw new DevUsageException("admins " + action + " needs a SteamID64 (or STEAM_X:Y:Z / [U:1:N]), or --key <raw entry key> for revoke. Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
     var safe = action is "grant" or "revoke" or "set-groups" or "init-groups";
     if (!safe) throw new DevUsageException("Unknown admins action.");
     if (!invocation.Has("--yes")) throw new DevUsageException("Changing admin rights needs --yes. Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
@@ -241,7 +241,11 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
         case "set-groups":
             break;
         case "revoke":
-            mutations.Add(new(AdminMutationKind.Remove, AdminRules.SteamId(argument)));
+            // An entry key that is not a valid SteamID (e.g. an example placeholder) is removed by its raw key.
+            if (invocation.Get("--key") is { Length: > 0 } rawKey)
+                mutations.Add(new(AdminMutationKind.Remove, "", Key: AdminRules.EntryKey(rawKey)));
+            else
+                mutations.Add(new(AdminMutationKind.Remove, AdminRules.SteamId(argument)));
             break;
     }
     if (action is "grant" or "set-groups")
