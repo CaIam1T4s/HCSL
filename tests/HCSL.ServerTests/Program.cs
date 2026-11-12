@@ -54,6 +54,7 @@ if (only is null or "players")
     HCSL.ServerTests.JsonSpanEditorTests.Run();
     HCSL.ServerTests.AdminListTests.Run();
     HCSL.ServerTests.Source2ModAdminTests.Run();
+    HCSL.ServerTests.SwiftlyS2AdminTests.Run();
     if (only is "players") { Console.WriteLine("PASS only players"); return 0; }
 }
 

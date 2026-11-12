@@ -67,6 +67,7 @@ public static class AdminRules
     public const int MaxNameLength = 64;
     public const string CounterStrikeSharp = "cssharp";
     public const string Source2Mod = "source2mod";
+    public const string SwiftlyS2 = "swiftlys2";
 
     /// <summary>CounterStrikeSharp: display-name keys, separate groups file, reload by console command.</summary>
     public static readonly AdminSourceCapabilities CounterStrikeSharpCapabilities =
@@ -78,8 +79,14 @@ public static class AdminRules
     {
         CounterStrikeSharp => CounterStrikeSharpCapabilities,
         Source2Mod => Source2ModCapabilities,
+        SwiftlyS2 => SwiftlyS2Capabilities,
         _ => null
     };
+
+    /// <summary>SwiftlyS2: SteamID keys, only group membership per player, native reader → restart to apply.</summary>
+    public static readonly AdminSourceCapabilities SwiftlyS2Capabilities =
+        new(SwiftlyS2, "SwiftlyS2", AdminKeyKind.SteamId64, AdminFields.Groups,
+            AdminGroupsLayout.SameFile, AdminReloadKind.Restart, null);
 
     /// <summary>Source2Mod: SteamID keys, groups and permissions in one JSONC file, reload by console command.</summary>
     public static readonly AdminSourceCapabilities Source2ModCapabilities =

@@ -39,7 +39,35 @@ public sealed class LocalAdminStore : IAdminStore
         // Script frameworks are exclusive, so at most one admin source applies to a preset.
         if (enabled.Contains("counterstrikesharp")) return CounterStrikeSharp(preset, command);
         if (enabled.Contains("source2mod")) return Source2Mod(preset, command);
-        throw new InstanceException("HCSL-ADMIN-SOURCE", "This preset enables neither CounterStrikeSharp nor Source2Mod; the panel has no admin source.");
+        if (enabled.Contains("swiftlys2")) return SwiftlyS2(preset, command);
+        throw new InstanceException("HCSL-ADMIN-SOURCE", "This preset enables no supported scripting framework; the panel has no admin source.");
+    }
+
+    private AdminResult SwiftlyS2(string preset, AdminCommand command)
+    {
+        // Deploy maps the framework's configs to a preset-owned directory, so edits survive redeployment.
+        var configs = Path.Combine(preset, "framework-data", "swiftlys2", "configs");
+        Safe(configs);
+        var path = Path.Combine(configs, SwiftlyS2AdminFile.FileName);
+        if (command.Action == AdminAction.List) return new(SwiftlyS2AdminFile.Read(path, command), "HCSL-ADMIN-OK", []);
+        var hash = File.Exists(path) ? Hash(path) : "";
+        if (!string.Equals(hash, command.ExpectedHash ?? "", StringComparison.OrdinalIgnoreCase))
+            throw new InstanceException("HCSL-ADMIN-CONFLICT", "The admin file changed outside HCSL. Reload the list before saving; your draft was not written.");
+        AdminRules.Validate(command.Mutations, command.InitGroups);
+        var warnings = new List<string>();
+        var before = File.Exists(path) ? File.ReadAllText(path) : "";
+        if (command.InitGroups && before.Trim().Length == 0)
+            warnings.Add("Created permissions.jsonc skeleton; define PermissionGroups, then grant with --groups.");
+        var text = SwiftlyS2AdminFile.Apply(before, command, out var applied, warnings);
+        if (text != before)
+        {
+            Directory.CreateDirectory(configs);
+            Backup(preset, path, SwiftlyS2AdminFile.Capabilities.SourceId, SwiftlyS2AdminFile.FileName);
+            WriteAtomic(path, text);
+        }
+        var snapshot = SwiftlyS2AdminFile.Read(path, command);
+        foreach (var warning in warnings) snapshot = snapshot with { Warnings = [.. snapshot.Warnings, warning] };
+        return new(snapshot, "HCSL-ADMIN-WRITTEN", applied, null);
     }
 
     private AdminResult Source2Mod(string preset, AdminCommand command)

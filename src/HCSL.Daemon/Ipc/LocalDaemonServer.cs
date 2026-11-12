@@ -217,20 +217,25 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (command.Action == AdminAction.Reload)
         {
             var snapshot = store.Execute(workspace, command with { Action = AdminAction.List });
-            var reload = await ReloadAdminsAsync(AdminRules.ReloadCommandFor(snapshot.Snapshot.SourceId), ct);
+            var reload = await ReloadAdminsAsync(snapshot.Snapshot.SourceId, ct);
             var reloaded = new AdminResult(snapshot.Snapshot, "HCSL-ADMIN-RELOADED", [], reload);
             return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded));
         }
         var result = store.Execute(workspace, command);
         if (command.Action == AdminAction.Apply)
-            result = result with { Reload = await ReloadAdminsAsync(AdminRules.ReloadCommandFor(result.Snapshot.SourceId), ct) };
+            result = result with { Reload = await ReloadAdminsAsync(result.Snapshot.SourceId, ct) };
         return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result));
     }
 
-    /// <summary>A written admin list takes effect through the framework's own reload command; a stopped server applies it at next start.</summary>
-    private async Task<string?> ReloadAdminsAsync(string? consoleCommand, CancellationToken ct)
+    /// <summary>Apply a written admin list: frameworks with a console command get it; native readers need a restart.</summary>
+    private async Task<string?> ReloadAdminsAsync(string? sourceId, CancellationToken ct)
     {
-        if (consoleCommand is null) return null;
+        if (AdminRules.Capabilities(sourceId) is not { } capabilities) return null;
+        if (capabilities.Reload == AdminReloadKind.Restart)
+            return capabilities.SourceName + " reads this file in native code; restart the server to apply";
+        if (capabilities.Reload == AdminReloadKind.HotReload)
+            return capabilities.SourceName + " is expected to hot reload the file; verify in game";
+        if (capabilities.ReloadCommand is not { } consoleCommand) return null;
         if (servers is null) return "daemon has no server runtime; applies at next start";
         var snapshot = servers.Snapshot();
         if (!snapshot.Active || snapshot.RunId is not { } runId
