@@ -49,9 +49,9 @@ public static class AdminListTests
 
             // 2) First grant with init-groups: creates the conservative group, not root.
             var granted = store.Execute(workspace, Cmd(AdminAction.Apply, empty.Snapshot.Hash,
-                [new(AdminMutationKind.Upsert, steamId, "CaIam1Tas", [AdminRules.DefaultGroupName])], initGroups: true));
+                [new(AdminMutationKind.Upsert, steamId, "Player", [AdminRules.DefaultGroupName])], initGroups: true));
             Check(granted.Snapshot.Entries.Length == 1 && granted.Snapshot.Entries[0].SteamId64 == steamId
-                && granted.Snapshot.Entries[0].DisplayName == "CaIam1Tas", "Grant did not persist.");
+                && granted.Snapshot.Entries[0].DisplayName == "Player", "Grant did not persist.");
             Check(granted.Snapshot.Groups.Any(g => g.Name == AdminRules.DefaultGroupName), "init-groups did not create the group.");
             Check(granted.Snapshot.Groups.All(g => !g.Flags.Contains("@css/root")), "Default group must not include root.");
             Check(granted.Snapshot.Groups.SelectMany(g => g.Flags).Contains("@custom/prac"), "Default group must allow MatchZy practice mode.");
@@ -65,7 +65,7 @@ public static class AdminListTests
                 [new(AdminMutationKind.Upsert, steamId, "Renamed Admin", [AdminRules.DefaultGroupName])]));
             var renamedText = File.ReadAllText(adminsFile);
             Check(renamed.Snapshot.Entries.Single().DisplayName == "Renamed Admin", "Display name was not applied as the key.");
-            Check(renamedText.Contains("\"Renamed Admin\"") && !renamedText.Contains("\"CaIam1Tas\""), "Old key was not replaced.");
+            Check(renamedText.Contains("\"Renamed Admin\"") && !renamedText.Contains("\"Player\""), "Old key was not replaced.");
             Check(renamedText.Contains("\"identity\": \"" + steamId + "\""), "SteamID must stay in identity.");
             var keptHash = store.Execute(workspace, Cmd(AdminAction.List)).Snapshot.Hash;
             store.Execute(workspace, Cmd(AdminAction.Apply, keptHash,
@@ -104,7 +104,7 @@ public static class AdminListTests
             {
                 var liveHash = store.Execute(workspace, Cmd(AdminAction.List)).Snapshot.Hash;
                 var live = store.Execute(workspace, Cmd(AdminAction.Apply, liveHash,
-                    [new(AdminMutationKind.Upsert, steamId, "CaIam1Tas", [AdminRules.DefaultGroupName])]));
+                    [new(AdminMutationKind.Upsert, steamId, "Player", [AdminRules.DefaultGroupName])]));
                 Check(live.Snapshot.Entries.Any(e => e.SteamId64 == steamId), "Admin write failed while a server lease is held.");
             }
 

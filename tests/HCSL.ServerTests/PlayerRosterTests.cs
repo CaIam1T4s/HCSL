@@ -18,11 +18,11 @@ public static class PlayerRosterTests
         Check(PlayerRosterRules.TrySteamNet(steamNet, out var netId, out var netAddress)
             && netId == "76561198000000000" && netAddress == "192.168.1.10:54456", "SteamNet line not parsed.");
         Check(!PlayerRosterRules.TrySteamNet("Accepting Steam Net connection #1 UDP steamid:notanid@1.2.3.4:5", out _, out _), "Bad SteamID accepted.");
-        const string validated = "SV:  \"CaIam1Tas<2><[U:1:39734272]><>\" STEAM USERID validated";
+        const string validated = "SV:  \"Player<2><[U:1:39734272]><>\" STEAM USERID validated";
         Check(PlayerRosterRules.TryValidated(validated, out var validatedId, out var validatedUser)
             && validatedId == "76561198000000000" && validatedUser == 2, "Validated line not parsed.");
         Check(PlayerRosterRules.SteamId64FromAccount(39734272) == "76561198000000000", "SteamID64 math.");
-        Check(!PlayerRosterRules.TryValidated("Client 2 'CaIam1Tas' signon state SIGNONSTATE_SPAWN -> SIGNONSTATE_FULL", out _, out _), "Signon line treated as identity.");
+        Check(!PlayerRosterRules.TryValidated("Client 2 'Player' signon state SIGNONSTATE_SPAWN -> SIGNONSTATE_FULL", out _, out _), "Signon line treated as identity.");
 
         // --- status players table, including the pseudo-client row that must never become a player ---
         string[] block =
@@ -32,14 +32,14 @@ public static class PlayerRosterTests
             "  id     time ping loss      state   rate adr name",
             "   0      BOT    0    0     active      0 'Bank'",
             "65535 [NoChan]    0    0 challenging      0unknown ''",
-            "   2    00:12    1    0   spawning 786432 192.168.1.10:54456 'CaIam1Tas'",
+            "   2    00:12    1    0   spawning 786432 192.168.1.10:54456 'Player'",
             "#end"
         ];
         var players = PlayerRosterRules.ParsePlayers(block);
         Check(players.Length == 2, $"Pseudo-client or bot row mis-parsed: got {players.Length} rows.");
         Check(players[0].IsBot && players[0].Name == "Bank" && players[0].UserId == 0, "Bot row.");
         var human = players.Single(p => !p.IsBot);
-        Check(human.UserId == 2 && human.Name == "CaIam1Tas" && human.Address == "192.168.1.10:54456"
+        Check(human.UserId == 2 && human.Name == "Player" && human.Address == "192.168.1.10:54456"
             && human.State == "spawning" && human.SteamId64 is null, "Human row.");
         Check(PlayerRosterRules.ParsePlayers(["---------players--------", "  id     time ping loss      state   rate adr name"]).Length == 0, "Empty table.");
         Check(PlayerRosterRules.ParsePlayers(["no table here"]).Length == 0, "Missing table invented rows.");

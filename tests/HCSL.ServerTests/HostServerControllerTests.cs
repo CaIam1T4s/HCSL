@@ -56,7 +56,7 @@ public static class HostServerControllerTests
         Check(live.LastAdmin is { Action: AdminAction.List, Offset: 200, Limit: 50, Query: "Player" }, "admin paging/search not passed through");
         Check(admins.Snapshot.Capabilities?.Key == AdminKeyKind.DisplayName, "admin capabilities missing");
         var applied = await players.ApplyAdminAsync(new(AdminAction.Apply, live.First, live.PresetId, admins.Snapshot.Hash,
-            [new(AdminMutationKind.Upsert, "76561198000000000", "CaIam1Tas", ["#hcsl/admin"])]));
+            [new(AdminMutationKind.Upsert, "76561198000000000", "Player", ["#hcsl/admin"])]));
         Check(live.LastAdmin is { Action: AdminAction.Apply, ExpectedHash: not null } && applied.Code == "HCSL-ADMIN-WRITTEN", "admin write not delegated");
         try
         {
@@ -162,7 +162,7 @@ public static class HostServerControllerTests
                 LastAdmin = admin;
                 var adminSnapshot = new AdminListSnapshot("cssharp", "CounterStrikeSharp", true, ["admins.json"],
                     [new("#hcsl/admin", ["@css/kick"], 50)],
-                    [new("76561198000000000", "CaIam1Tas", ["#hcsl/admin"], [], 100, [])],
+                    [new("76561198000000000", "Player", ["#hcsl/admin"], [], 100, [])],
                     admin.ExpectedHash ?? "", [], AdminRules.CounterStrikeSharpCapabilities, 1, admin.Offset, admin.Limit <= 0 ? AdminRules.DefaultPageSize : admin.Limit);
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
                     AdminResultJson: JsonSerializer.Serialize(new AdminResult(adminSnapshot, "HCSL-ADMIN-WRITTEN", ["Upsert"],
@@ -171,7 +171,7 @@ public static class HostServerControllerTests
             if (request.Kind == RequestKind.Server && JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!.Action == ServerAction.Players)
             {
                 var roster = new PlayerRoster(DateTimeOffset.UtcNow,
-                    [new(2, "CaIam1Tas", false, "192.168.1.10:61466", "active", "00:12", 1, "76561198000000000"),
+                    [new(2, "Player", false, "192.168.1.10:61466", "active", "00:12", 1, "76561198000000000"),
                      new(0, "Bank", true, "", "active", "BOT", 0)]);
                 var snap = new ServerSnapshot(Run, First, ServerState.Running, true, "HCSL-SERVER-MAP-READY", true, false, null, 1, false, [], PlayerRoster: roster);
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snap)));
@@ -181,7 +181,7 @@ public static class HostServerControllerTests
                 var kick = JsonSerializer.Deserialize<ServerKickCommand>(request.ServerKickJson!)!;
                 LastKick = kick;
                 var result = new ServerKickResult(true, "HCSL-KICK-WRITTEN", kick.UserId, kick.SteamId64,
-                    "kickid " + kick.UserId, new(kick.UserId, "CaIam1Tas", false, "192.168.1.10:61466", "active", "00:12", 1, kick.SteamId64));
+                    "kickid " + kick.UserId, new(kick.UserId, "Player", false, "192.168.1.10:61466", "active", "00:12", 1, kick.SteamId64));
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result)));
             }
             var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!;

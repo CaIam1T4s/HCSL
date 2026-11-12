@@ -17,7 +17,7 @@ public static class ServerKickTests
         var players = new[]
         {
             new RosterPlayer(0, "Bank", true, "", "active", "BOT", 0),
-            new RosterPlayer(2, "CaIam1Tas", false, "192.168.1.10:61466", "active", "00:12", 1, "76561198000000000"),
+            new RosterPlayer(2, "Player", false, "192.168.1.10:61466", "active", "00:12", 1, "76561198000000000"),
             new RosterPlayer(3, "Other", false, "192.168.1.10:50000", "active", "00:05", 2, "76561198000000001")
         };
         var roster = new PlayerRoster(DateTimeOffset.UtcNow, players);
@@ -37,7 +37,7 @@ public static class ServerKickTests
         Reject(() => ServerKickRules.Command(new(Guid.Empty, run, 2, null, "two\nlines")), "HCSL-KICK-REASON");
 
         // Target resolution never guesses: a recycled userid or a bot is refused.
-        Check(ServerKickRules.Target(roster, new(Guid.Empty, run, 2)).Name == "CaIam1Tas", "Target lookup.");
+        Check(ServerKickRules.Target(roster, new(Guid.Empty, run, 2)).Name == "Player", "Target lookup.");
         Check(ServerKickRules.Target(roster, new(Guid.Empty, run, 2, "76561198000000000")).SteamId64 == "76561198000000000", "Pinned target lookup.");
         Reject(() => ServerKickRules.Target(roster, new(Guid.Empty, run, 9)), "HCSL-KICK-TARGET");
         Reject(() => ServerKickRules.Target(roster, new(Guid.Empty, run, 0)), "HCSL-KICK-TARGET");
