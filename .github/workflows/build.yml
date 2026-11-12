@@ -1,0 +1,67 @@
+name: build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Avalonia Headless 在 Linux runner 上需要 fontconfig。
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfontconfig1
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Hello_Counter_Strike_Launcher.slnx
+
+      - name: Build
+        run: dotnet build Hello_Counter_Strike_Launcher.slnx --no-restore
+
+      # 测试工程是可执行的控制台程序，不是 dotnet test 项目。
+      - name: Run test projects
+        run: |
+          set -euo pipefail
+          for project in \
+            HCSL.ServerTests \
+            HCSL.HostTests \
+            HCSL.TuiTests \
+            HCSL.DeploymentTests \
+            HCSL.IpcTests \
+            HCSL.InstanceTests \
+            HCSL.IntegrationTests \
+            HCSL.PlayerTests \
+            HCSL.BootstrapTests \
+            HCSL.SteamCmdTests; do
+            echo "=== $project ==="
+            dotnet run --project "tests/$project/$project.csproj" --no-build
+          done
