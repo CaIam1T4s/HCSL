@@ -19,7 +19,7 @@ var configuration = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyC
 var fakeDirectory = Path.Combine(solution.FullName, "build", "HCSL.FakeSteamCmd", "bin", configuration, "net10.0");
 var fakeName = "HCSL.FakeSteamCmd" + (OperatingSystem.IsWindows() ? ".exe" : "");
 var cli = typeof(SteamCmdCheckEntry).Assembly.Location;
-var service = new SteamCmdService(cli);
+var service = new SteamCmdService(cli, baselineRefresh: (_, _, _) => { });
 var processes = new List<Process>();
 var groups = new List<int>();
 var count = 0;

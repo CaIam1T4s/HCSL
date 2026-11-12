@@ -49,6 +49,16 @@ try
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    Test("managed update writes a local baseline that deployment can resolve", () =>
+    {
+        using var lease = new LocalWorkspaceManager().Acquire(workspace);
+        RuntimeDeploymentService.RefreshLocalBaseline(lease.Layout, "123", Guid.NewGuid(), baseline);
+        var local = Path.Combine(workspace.LibraryRoot, ".hcsl", "linux-startup-baseline.json");
+        Check(File.Exists(local), "local baseline was not written");
+        var resolved = new RuntimeDeploymentService().ActiveBaseline(lease.Layout, "123");
+        Check(resolved.BuildId == "123" && resolved.Inventory.Length == 1 && resolved.Inventory[0].Sha256 == Hash(native),
+            "local baseline was not resolved for deployment");
+    });
     Test("plan verifies without runtime or persistent-data seeding", () =>
     {
         var plan = service.Plan(workspace, Options(first));
@@ -409,6 +419,28 @@ try
         var legacyData = Path.Combine(presetPath, "framework-data", "modsharp", "modules", "LegacyMod");
         Check(File.Exists(Path.Combine(legacyData, "LegacyMod.dll")), "Legacy real module was not migrated into framework-data.");
         Check(new DirectoryInfo(Path.Combine(runtimeModules, "LegacyMod")).LinkTarget == legacyData, "Migrated module is not a persistent link.");
+
+        Directory.CreateDirectory(Path.Combine(runtimeModules, "SwitchAwayMod"));
+        File.WriteAllText(Path.Combine(runtimeModules, "SwitchAwayMod", "SwitchAwayMod.dll"), "switch-away module");
+        var swiftPackage = Path.Combine(workspace.LibraryRoot, "plugin-packages", "swiftlys2", "1.5.1");
+        Directory.CreateDirectory(Path.Combine(swiftPackage, "files", "csgo", "addons", "swiftlys2", "bin", "linuxsteamrt64"));
+        File.WriteAllText(Path.Combine(swiftPackage, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"swiftlys2\",\"Name\":\"SwiftlyS2\",\"Version\":\"1.5.1\"}");
+        File.WriteAllText(Path.Combine(swiftPackage, "files", "csgo", "addons", "swiftlys2", "bin", "linuxsteamrt64", "swiftlys2.so"), "loader");
+        var switched = plugins.Execute(workspace, new(PluginAction.List, mod.Id, presetId));
+        plugins.Execute(workspace, new(PluginAction.Save, mod.Id, presetId, mod.Definition.Revision, switched.Hash,
+            [new("swiftlys2", "1.5.1"), new("modsharp", "git224", false), new("joinsound", "1.2", false)]));
+        service.Deploy(workspace, Options(mod));
+        Check(File.Exists(Path.Combine(presetPath, "framework-data", "modsharp", "modules", "SwitchAwayMod", "SwitchAwayMod.dll")),
+            "A real user module was lost when switching away from ModSharp.");
+        Check(!Directory.Exists(Path.Combine(presetPath, "framework-data", "modsharp", "modules", "AdminManager")),
+            "A built-in ModSharp module was parked as user data.");
+
+        var back = plugins.Execute(workspace, new(PluginAction.List, mod.Id, presetId));
+        plugins.Execute(workspace, new(PluginAction.Save, mod.Id, presetId, mod.Definition.Revision, back.Hash,
+            [new("modsharp", "git224"), new("swiftlys2", "1.5.1", false), new("joinsound", "1.2", false)]));
+        service.Deploy(workspace, Options(mod));
+        Check(new DirectoryInfo(Path.Combine(runtimeModules, "SwitchAwayMod")).LinkTarget == Path.Combine(presetPath, "framework-data", "modsharp", "modules", "SwitchAwayMod"),
+            "A parked ModSharp module was not linked after switching back.");
     });
     Test("Swiftly materializes addons and parks direct user files across framework switches", () =>
     {

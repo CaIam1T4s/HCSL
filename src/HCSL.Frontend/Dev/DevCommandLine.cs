@@ -14,7 +14,7 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "baseline"
     ];
 
     private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework"];
@@ -45,6 +45,8 @@ public static class DevCommandLine
                                  the latest official release, verifies its SHA-256 and imports it.
           doctor                 Check workspace, permissions, packages, leftovers and report fixes.
           gc                     Delete stale .previous-*/.staging-* deployments (needs --yes).
+          baseline status        Show which startup baseline the installed CS2 build would use.
+          baseline refresh       Verify installed files and write the local baseline (needs --yes).
           test mms <dir|tar.gz>  Import a Metamod:Source release as a plugin package (--enable to select it).
           test plugins           Run the plugin/deployment test suites in this repository.
 
@@ -123,6 +125,8 @@ public static class DevCommandLine
             && !(positionals.Count == 1 && positionals[0] == "versions")
             && !(positionals.Count == 3 && positionals[0] == "remove"))
             throw new DevUsageException("plugins accepts: no arguments, 'versions', or 'remove <id> <version> --yes'.");
+        if (command == "baseline" && !(positionals.Count == 1 && positionals[0] is "status" or "refresh"))
+            throw new DevUsageException("baseline accepts 'status' or 'refresh'. Run: hcsl help");
         if (command == "instances" && positionals.Count > 0 && !(positionals.Count == 1 && positionals[0] == "migrate"))
             throw new DevUsageException("instances accepts no arguments or 'migrate'. Run: hcsl help");
         if (command is "status" or "start" or "stop" or "plan" or "deploy" or "recover" or "logs" or "doctor" or "gc" or "frameworks" && positionals.Count > 0)

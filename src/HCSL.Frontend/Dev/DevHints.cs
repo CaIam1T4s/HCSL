@@ -11,7 +11,7 @@ public static class DevHints
         "HCSL-DEPLOY-PLUGINS" => "Check plugin package paths and that the preset addons directory is writable: `hcsl doctor`.",
         "HCSL-DEPLOY-STALE" => "Redeploy: `hcsl deploy`.",
         "HCSL-DEPLOY-CONFLICT" => "The instance/preset changed while preparing: rerun the command.",
-        "HCSL-DEPLOY-BASELINE" => "The shared CS2 installation does not match the verified build: update/reinstall it.",
+        "HCSL-DEPLOY-BASELINE" => "The shared CS2 installation changed after an update: run `hcsl baseline refresh --yes` to re-verify and record the local baseline, then deploy again.",
         "HCSL-DEPLOY-MAP" => "The selected map (or the Workshop seed map) is missing from the shared installation.",
         "HCSL-DEPLOY-ROTATION" => "The map pool and the base gamemodes_server.txt disagree: fix the pool or merge the file.",
         "HCSL-DEPLOY-SPACE" => "Free disk space on the library/data roots (reflink still needs metadata space).",

@@ -52,7 +52,7 @@ internal static class ServerPreparation
                 throw new ServerException("HCSL-DEPLOY-LAYOUT", "This runtime uses the old persistent layout; redeploy before starting it.");
             if (IsStale(receipt, plan) || !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath))
                 throw new ServerException("HCSL-SERVER-STALE", "Deployment is stale. Redeploy after changing instance or preset settings.");
-            deployment.VerifyBaseline(plan.RuntimePath, ct);
+            deployment.VerifyBaseline(plan.RuntimePath, deployment.ActiveBaseline(lease.Layout, plan.BuildId), ct);
             var entry = LocalInstanceStore.Load(Path.Combine(lease.Layout.InstancesRoot, options.InstanceId.ToString("D")), options.InstanceId);
             var network = InstanceRules.Resolve(entry.Definition!.Network);
             access = AccessProviders.For(network);

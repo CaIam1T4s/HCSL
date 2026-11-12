@@ -1,12 +1,14 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using HCSL.Application.Abstractions;
+using HCSL.Core;
+using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 namespace HCSL.Infrastructure.Steam;
 
 /// <summary>Installation state is separate from Steam's resumable content. Never delete partial downloads.</summary>
-internal sealed class Cs2Installation(WorkspaceLayout layout)
+internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLayout, string, Guid>? refreshBaseline = null)
 {
     private sealed record State(int FormatVersion, int AppId, string Status, string? BuildId = null);
     private string Metadata => Path.Combine(layout.LibraryRoot, ".hcsl", "cs2-install.json");
@@ -32,7 +34,9 @@ internal sealed class Cs2Installation(WorkspaceLayout layout)
         begun = true;
     }
 
-    internal void Complete()
+    /// <summary>Marks the install Ready, then tries to refresh the local baseline.</summary>
+    /// <returns>A warning when the baseline could not be written; the installation itself is still Ready.</returns>
+    internal string? Complete(Guid operationId)
     {
         var binary = OperatingSystem.IsWindows() ? "game/bin/win64/cs2.exe" : "game/bin/linuxsteamrt64/cs2";
         RequireFile(binary);
@@ -46,6 +50,10 @@ internal sealed class Cs2Installation(WorkspaceLayout layout)
             throw new SteamCmdException("HCSL-CS2-FILES", "CS2 installation metadata is missing or incomplete.");
         Write(new(1, 730, "Ready", build.Groups[1].Value));
         completed = true;
+        try { (refreshBaseline ?? ((l, b, o) => RuntimeDeploymentService.RefreshLocalBaseline(l, b, o)))(layout, build.Groups[1].Value, operationId); }
+        catch (Exception e) when (e is DeploymentException or IOException or UnauthorizedAccessException)
+        { return "HCSL-CS2-BASELINE-PENDING: CS2 is Ready but the startup baseline was not refreshed; run 'hcsl baseline refresh --yes' before deploying (" + e.Message + ")"; }
+        return null;
     }
 
     private string RequireFile(string relative)

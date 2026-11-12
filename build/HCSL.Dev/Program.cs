@@ -50,6 +50,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "import" => Import(invocation, json),
     "frameworks" => await FrameworksAsync(invocation, json, ct),
     "gc" => Gc(invocation),
+    "baseline" => Baseline(invocation, json),
     "test" => await TestAsync(invocation, json, ct),
     _ => throw new DevUsageException("Unknown command. Run: hcsl help")
 };
@@ -439,6 +440,43 @@ static int Import(DevInvocation invocation, JsonSerializerOptions json)
         if (!result.CurrentPlatformSupported) Console.WriteLine("warn       no binary for this platform");
         foreach (var warning in result.Warnings) Console.WriteLine("warn       " + warning);
     }
+    return 0;
+}
+
+static int Baseline(DevInvocation invocation, JsonSerializerOptions json)
+{
+    var workspace = Workspace(invocation);
+    var layout = new WorkspaceLayout(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot,
+        Path.Combine(workspace.LibraryRoot, "steamcmd"), Path.Combine(workspace.DataRoot, "instances"),
+        Path.Combine(workspace.LibraryRoot, "server"), Path.Combine(workspace.LibraryRoot, "runtime"));
+    var action = invocation.Positionals[0];
+    var installFile = Path.Combine(layout.LibraryRoot, ".hcsl", "cs2-install.json");
+    if (!File.Exists(installFile)) throw new DevUsageException("No managed CS2 installation. Install CS2 from the download center first.");
+    using var install = JsonDocument.Parse(File.ReadAllText(installFile));
+    var status = install.RootElement.GetProperty("Status").GetString();
+    var buildId = install.RootElement.TryGetProperty("BuildId", out var b) ? b.GetString() : null;
+    if (status != "Ready" || string.IsNullOrWhiteSpace(buildId))
+        throw new DevUsageException("CS2 installation is not Ready; finish or repair the installation first.");
+    if (action == "status")
+    {
+        var (source, installed, localBuild) = RuntimeDeploymentService.BaselineStatus(layout, buildId);
+        Console.WriteLine(invocation.Has("--json")
+            ? JsonSerializer.Serialize(new { Installed = installed, Source = source, LocalBuildId = localBuild }, json)
+            : $"installed  BuildId {installed}\nbaseline   source {source}" + (localBuild.Length > 0 ? ", local BuildId " + localBuild : "")
+              + (source == "None" ? "\nnext       hcsl baseline refresh --yes" : ""));
+        return source == "None" ? 1 : 0;
+    }
+    // refresh: dry-run unless --yes; the same routine the managed update uses.
+    if (!invocation.Has("--yes"))
+    {
+        var (source, installed, _) = RuntimeDeploymentService.BaselineStatus(layout, buildId);
+        Console.WriteLine($"installed  BuildId {installed}\nbaseline   source {source}");
+        Console.WriteLine("refresh    dry run: pass --yes to verify the installed files and write the local baseline");
+        return 0;
+    }
+    using var lease = new LocalWorkspaceManager().Acquire(workspace);
+    RuntimeDeploymentService.RebuildLocalBaseline(lease.Layout, buildId, Guid.NewGuid());
+    Console.WriteLine("refreshed  local baseline for BuildId " + buildId);
     return 0;
 }
 

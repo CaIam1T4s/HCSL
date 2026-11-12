@@ -118,8 +118,8 @@ public static class ServerStatusText
             ? "Deployment is stale: hcsl deploy"
             : "部署已过期：hcsl deploy",
         "HCSL-DEPLOY-BASELINE" or "HCSL-DEPLOY-FILES" => english
-            ? "The shared CS2 installation does not match the verified build."
-            : "共享 CS2 安装与已验证构建不一致。",
+            ? "The shared CS2 installation changed after an update; re-verify it with `hcsl baseline refresh --yes` before deploying."
+            : "共享 CS2 安装因更新发生变化；请先执行 `hcsl baseline refresh --yes` 重新验证并记录本地基线，再部署。",
         "HCSL-DEPLOY-SPACE" => english
             ? "Not enough free space on the library/data roots."
             : "内容库或数据目录可用空间不足。",

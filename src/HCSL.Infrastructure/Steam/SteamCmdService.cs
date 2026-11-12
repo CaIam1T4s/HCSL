@@ -8,7 +8,8 @@ using HCSL.Infrastructure.Storage;
 
 namespace HCSL.Infrastructure.Steam;
 
-public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClient? httpClient = null) : ISteamCmdService
+public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClient? httpClient = null,
+    Action<WorkspaceLayout, string, Guid>? baselineRefresh = null) : ISteamCmdService
 {
     private static readonly HttpClient DefaultClient = new() { Timeout = TimeSpan.FromMinutes(5) };
 
@@ -87,7 +88,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             SteamCmdTool.Validate(executable);
             if (installMode is not null)
             {
-                installation = new Cs2Installation(lease.Layout);
+                installation = new Cs2Installation(lease.Layout, baselineRefresh);
                 installation.Begin();
             }
             // Publish before launch: a crash at any later point fails closed until explicit recovery.
@@ -171,7 +172,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             if (installation is not null)
             {
                 if (!parser.AppInstalled) return Result(SteamCmdStage.Failed, "HCSL-CS2-UNCONFIRMED", process.ExitCode);
-                installation.Complete();
+                if (installation.Complete(id) is { } baselineWarning) Report(SteamCmdStage.Succeeded, baselineWarning);
                 return Result(SteamCmdStage.Succeeded, "HCSL-CS2-OK", process.ExitCode);
             }
             return parser.Authenticated ? Result(SteamCmdStage.Succeeded, "HCSL-STEAMCMD-OK", process.ExitCode)

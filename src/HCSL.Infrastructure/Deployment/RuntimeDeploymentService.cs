@@ -17,11 +17,18 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     internal sealed record InventoryFile(string Path, long Bytes, string Sha256);
     internal sealed record Baseline(string BuildId, string EntrypointSha256, InventoryFile[] Inventory, string[] Configs);
     private sealed record InstallState(int FormatVersion, int AppId, string Status, string? BuildId);
+    private sealed record LocalBaselineDocument(int FormatVersion, int AppId, string BuildId, string Source, string OperationId,
+        DateTimeOffset GeneratedAt, string EntrypointSha256, InventoryFile[] ConservativeCopyInventory, string[] IndependentConfigPaths);
     internal sealed record Transaction(int FormatVersion, Guid OperationId, Guid InstanceId, Guid DataId, Guid LibraryId);
+    private static readonly JsonSerializerOptions LocalBaselineJson = new()
+    { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
     private readonly Baseline baseline;
     private readonly Action<string>? checkpoint;
-    public RuntimeDeploymentService() : this(ReadBaseline()) { }
-    internal RuntimeDeploymentService(Baseline baseline, Action<string>? checkpoint = null) { this.baseline = baseline; this.checkpoint = checkpoint; }
+    private readonly bool useLocalBaseline;
+    public RuntimeDeploymentService() : this(ReadBaseline(), null, true) { }
+    internal RuntimeDeploymentService(Baseline baseline, Action<string>? checkpoint = null) : this(baseline, checkpoint, false) { }
+    private RuntimeDeploymentService(Baseline baseline, Action<string>? checkpoint, bool useLocalBaseline)
+    { this.baseline = baseline; this.checkpoint = checkpoint; this.useLocalBaseline = useLocalBaseline; }
     private static Baseline ReadBaseline()
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("HCSL.LinuxStartupBaseline")!;
@@ -30,6 +37,87 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             root.GetProperty("conservativeCopyInventory").EnumerateArray().Select(f => new InventoryFile(f.GetProperty("path").GetString()!, f.GetProperty("bytes").GetInt64(), f.GetProperty("sha256").GetString()!)).ToArray(),
             root.GetProperty("independentConfigPaths").EnumerateArray().Select(p => p.GetString()!).ToArray());
     }
+
+    private static string LocalBaselinePath(WorkspaceLayout layout) => Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json");
+
+    private static Baseline? ReadLocalBaseline(WorkspaceLayout layout, string buildId)
+    {
+        var path = LocalBaselinePath(layout);
+        LocalPaths.RejectLink(path);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            var document = JsonSerializer.Deserialize<LocalBaselineDocument>(File.ReadAllText(path), LocalBaselineJson);
+            if (document is not { FormatVersion: 1, AppId: 730, Source: "ManagedSteamCmd" }
+                || string.IsNullOrWhiteSpace(document.BuildId) || document.BuildId != buildId
+                || string.IsNullOrWhiteSpace(document.OperationId)
+                || document.ConservativeCopyInventory is not { Length: > 0 }
+                || document.IndependentConfigPaths is not { Length: > 0 })
+                return null;
+            return new(document.BuildId, document.EntrypointSha256, document.ConservativeCopyInventory, document.IndependentConfigPaths);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+        { return null; }
+    }
+
+    /// <summary>Refreshes the library-local baseline after a successful managed SteamCMD update.</summary>
+    internal static void RefreshLocalBaseline(WorkspaceLayout layout, string buildId, Guid operationId, Baseline? template = null)
+    {
+        Platform();
+        template ??= ReadBaseline();
+        var inventory = new List<InventoryFile>();
+        foreach (var item in template.Inventory)
+        {
+            var path = InRoot(layout.ServerRoot, item.Path);
+            LocalPaths.RejectLink(path);
+            var info = new FileInfo(path);
+            if (!info.Exists || info.LinkTarget is not null)
+                throw new DeploymentException("HCSL-DEPLOY-BASELINE", "A baseline native file is missing or linked: " + item.Path);
+            inventory.Add(new(item.Path, info.Length, HashFile(path)));
+        }
+        var entrypoint = InRoot(layout.ServerRoot, "game/cs2.sh");
+        LocalPaths.RejectLink(entrypoint);
+        if (!File.Exists(entrypoint)) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "The baseline entrypoint is missing.");
+        foreach (var config in template.Configs)
+        {
+            var path = InRoot(layout.ServerRoot, config);
+            LocalPaths.RejectLink(path);
+            if (!File.Exists(path) || new FileInfo(path).Length == 0)
+                throw new DeploymentException("HCSL-DEPLOY-BASELINE", "A baseline config is missing or empty: " + config);
+        }
+        var document = new LocalBaselineDocument(1, 730, buildId, "ManagedSteamCmd", operationId.ToString("N"),
+            DateTimeOffset.UtcNow, HashFile(entrypoint), [.. inventory], template.Configs);
+        var destination = LocalBaselinePath(layout);
+        LocalPaths.RejectLink(destination);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        var temporary = destination + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = LocalPaths.CreateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, document, LocalBaselineJson);
+                stream.Flush(true);
+            }
+            File.Move(temporary, destination, true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+
+    internal Baseline ActiveBaseline(WorkspaceLayout layout, string buildId) =>
+        useLocalBaseline ? ReadLocalBaseline(layout, buildId) ?? baseline : baseline;
+
+    /// <summary>Read-only report: which baseline deployment would use for the installed build.</summary>
+    public static (string Source, string BuildId, string LocalBuildId) BaselineStatus(WorkspaceLayout layout, string installedBuildId)
+    {
+        var local = ReadLocalBaseline(layout, installedBuildId);
+        var embedded = ReadBaseline();
+        var source = local is not null ? "Local" : embedded.BuildId == installedBuildId ? "Embedded" : "None";
+        return (source, installedBuildId, local?.BuildId ?? "");
+    }
+
+    /// <summary>Verifies the installed files and writes the library-local baseline (CLI/maintenance entry point).</summary>
+    public static void RebuildLocalBaseline(WorkspaceLayout layout, string buildId, Guid operationId) =>
+        RefreshLocalBaseline(layout, buildId, operationId);
     private static void Platform()
     {
         if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
@@ -94,7 +182,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             !authorization.TryGetProperty("Rules", out var rules) || rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() != 0)
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Access rules are not deployable yet; nonempty or unknown manifests are refused.");
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
-        if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || state.BuildId != baseline.BuildId)
+        if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
+            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must have a valid BuildId before deployment.");
+        var activeBaseline = ActiveBaseline(l, state.BuildId!);
+        if (state.BuildId != activeBaseline.BuildId)
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must match the verified deployment baseline. Update the baseline after a new game build.");
         var manifest = SmallText(InRoot(l.ServerRoot, "steamapps/appmanifest_730.acf"));
         if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase) ||
@@ -127,7 +218,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             if (!File.Exists(seed) || new FileInfo(seed).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
         }
-        VerifyBaseline(l.ServerRoot, ct);
+        VerifyBaseline(l.ServerRoot, activeBaseline, ct);
         var sdk = InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
         if (!File.Exists(sdk) || new FileInfo(sdk).Length == 0) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
         var mappings = new List<DeploymentMapping>
@@ -234,6 +325,21 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException) { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", e.Message); }
     }
+
+    /// <summary>Loads the previous framework package even when it is now disabled, so built-in module directories can be distinguished.</summary>
+    private static LocalPluginStore.Package[] FrameworkPackages(string presetPath, string libraryRoot, string? framework)
+    {
+        if (framework is null) return [];
+        try
+        {
+            var manifest = LocalPluginStore.ReadManifestForDeployment(InRoot(presetPath, "plugins.json"));
+            return manifest.Plugins.Where(p => string.Equals(p.Id, framework, StringComparison.Ordinal))
+                .Select(p => LocalPluginStore.LoadPackage(Path.Combine(libraryRoot, "plugin-packages"), p.Id, p.Version)).ToArray();
+        }
+        catch (Exception e) when (e is InstanceException or WorkspaceException or IOException or UnauthorizedAccessException or JsonException or OverflowException)
+        { throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "The previous framework package cannot be read; its user modules were not moved."); }
+    }
+
     private sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
     private sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
     private sealed record PluginLedgerFile(string Path, string Sha256);
@@ -720,18 +826,18 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (new FileInfo(path).Length > 1024 * 1024) throw new DeploymentException("HCSL-DEPLOY-STATE", "Installation metadata is too large.");
         return File.ReadAllText(path);
     }
-    internal void VerifyBaseline(string server, CancellationToken ct)
+    internal void VerifyBaseline(string server, Baseline activeBaseline, CancellationToken ct)
     {
-        VerifyHash(InRoot(server, "game/cs2.sh"), baseline.EntrypointSha256);
+        VerifyHash(InRoot(server, "game/cs2.sh"), activeBaseline.EntrypointSha256);
         if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(InRoot(server, "game/cs2.sh")) & UnixFileMode.UserExecute) == 0)
             throw new DeploymentException("HCSL-DEPLOY-FILES", "cs2.sh is not executable.");
-        foreach (var f in baseline.Inventory)
+        foreach (var f in activeBaseline.Inventory)
         {
             ct.ThrowIfCancellationRequested(); var path = InRoot(server, f.Path);
             if (new FileInfo(path).Length != f.Bytes) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Native file size differs from the verified baseline.");
             VerifyHash(path, f.Sha256);
         }
-        foreach (var config in baseline.Configs) if (new FileInfo(InRoot(server, config)).Length == 0)
+        foreach (var config in activeBaseline.Configs) if (new FileInfo(InRoot(server, config)).Length == 0)
             throw new DeploymentException("HCSL-DEPLOY-FILES", "Required path configuration is missing.");
     }
     internal static bool RotationFileMatches(DeploymentReceipt receipt, string target)
@@ -880,6 +986,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     internal DeploymentReceipt Deploy(IWorkspaceLease lease, DeploymentOptions options, IProgress<DeploymentEvent>? progress = null, CancellationToken cancellationToken = default)
     {
         Platform();
+        LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
         var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
         var tx = new Transaction(1, Guid.NewGuid(), options.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
         var journal = Journal(l, tx.InstanceId); var stage = Stage(l, tx); var previous = Previous(l, tx);
@@ -901,7 +1008,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             foreach (var dir in Directory.EnumerateDirectories(source))
             { cancellationToken.ThrowIfCancellationRequested(); LocalPaths.RejectLink(dir); Directory.CreateDirectory(InRoot(stage, Path.GetRelativePath(l.ServerRoot, dir).Replace(Path.DirectorySeparatorChar, '/'))); EmptyDirs(dir); }
         }
-        EmptyDirs(sourceGame); VerifyBaseline(stage, cancellationToken); checkpoint?.Invoke("Cloned");
+        EmptyDirs(sourceGame); VerifyBaseline(stage, ActiveBaseline(l, plan.BuildId), cancellationToken); checkpoint?.Invoke("Cloned");
         progress?.Report(new("PersistentData", done, plan.FileCount));
         foreach (var mapping in plan.PersistentMappings)
         {
@@ -940,6 +1047,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             frameworkData.Apply();
             MigratePersistentFromRuntime(plan.RuntimePath, plan.PersistentMappings);
             MigrateModuleDataFromRuntime(plan.RuntimePath, presetPath, plan.Framework, currentPlugins.Packages);
+            if (previousFramework is not null && !string.Equals(previousFramework, plan.Framework, StringComparison.Ordinal))
+                MigrateModuleDataFromRuntime(plan.RuntimePath, presetPath, previousFramework,
+                    FrameworkPackages(presetPath, l.LibraryRoot, previousFramework));
             SeedPersistentDefaults(plan.PersistentMappings, currentPlugins.Packages);
             var pluginChanges = PlanPlugins(stage, presetPath, currentPlugins.Packages, persistentPrefixes, plan.Framework);
             if (plan.RotationHash is not null)
@@ -999,8 +1109,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (route is null) return;
         var source = Path.Combine(runtime, "game", route.Value.PluginRoot.Replace('/', Path.DirectorySeparatorChar));
         if (!Directory.Exists(source) || new DirectoryInfo(source).LinkTarget is not null) return;
+        var frameworkPackages = packages.Where(p => p.FrameworkPayload && string.Equals(p.Framework, framework, StringComparison.Ordinal)).ToArray();
+        if (frameworkPackages.Length == 0 && Directory.EnumerateDirectories(source).Any(d => new DirectoryInfo(d).LinkTarget is null))
+            throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "The previous framework package is missing; user module directories cannot be separated from built-in modules.");
         var dataRoot = InRoot(presetPath, route.Value.DataRoot);
-        var builtIn = packages.Where(p => p.FrameworkPayload && string.Equals(p.Framework, framework, StringComparison.Ordinal))
+        var builtIn = frameworkPackages
             .SelectMany(p => p.Files)
             .Where(f => PluginRules.IsPathUnder(f.RelativePath, route.Value.PluginRoot))
             .Select(f => f.RelativePath[(route.Value.PluginRoot.Length + 1)..].Split('/')[0])
