@@ -58,6 +58,12 @@ try
         var resolved = new RuntimeDeploymentService().ActiveBaseline(lease.Layout, "123");
         Check(resolved.BuildId == "123" && resolved.Inventory.Length == 1 && resolved.Inventory[0].Sha256 == Hash(native),
             "local baseline was not resolved for deployment");
+        // A build id that Steam did not deliver must never become a baseline; the old file stays untouched.
+        var before = File.ReadAllBytes(local);
+        Reject("HCSL-DEPLOY-BASELINE", () => RuntimeDeploymentService.RefreshLocalBaseline(lease.Layout, "999", Guid.NewGuid(), baseline));
+        Check(File.ReadAllBytes(local).SequenceEqual(before), "rejected refresh modified the local baseline");
+        Check(new RuntimeDeploymentService().ActiveBaseline(lease.Layout, "999").BuildId != "999",
+            "rejected refresh still resolved an untrusted build");
     });
     Test("plan verifies without runtime or persistent-data seeding", () =>
     {

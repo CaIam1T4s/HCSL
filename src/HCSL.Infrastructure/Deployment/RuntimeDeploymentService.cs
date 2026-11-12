@@ -65,6 +65,21 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     {
         Platform();
         template ??= ReadBaseline();
+        // The recorded build must be the build Steam actually delivered: never bind a baseline to an
+        // edited install state or a different manifest. This runs before any hashing so nothing is written.
+        var manifestPath = InRoot(layout.ServerRoot, "steamapps/appmanifest_730.acf");
+        LocalPaths.RejectLink(manifestPath);
+        if (!File.Exists(manifestPath)) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "The Steam manifest is missing; the installation is not managed by HCSL.");
+        if (new FileInfo(manifestPath).Length > 1024 * 1024) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "The Steam manifest is too large to trust.");
+        var manifest = File.ReadAllText(manifestPath);
+        if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase)
+            || !Regex.IsMatch(manifest, "\"StateFlags\"\\s*\"4\"", RegexOptions.IgnoreCase)
+            || !Regex.IsMatch(manifest, "\"buildid\"\\s*\"" + Regex.Escape(buildId) + "\"", RegexOptions.IgnoreCase))
+            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest does not match the installation state; the baseline was not written.");
+        var steamInfoPath = InRoot(layout.ServerRoot, "game/csgo/steam.inf");
+        LocalPaths.RejectLink(steamInfoPath);
+        if (!File.Exists(steamInfoPath) || !Regex.IsMatch(File.ReadAllText(steamInfoPath), @"(?im)^\s*appid\s*=\s*730\s*$"))
+            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "game/csgo/steam.inf is missing or does not declare App 730.");
         var inventory = new List<InventoryFile>();
         foreach (var item in template.Inventory)
         {
