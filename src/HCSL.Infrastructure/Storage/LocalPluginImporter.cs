@@ -251,7 +251,12 @@ public sealed class LocalPluginImporter : IPluginImporter
     {
         var deps = Directory.EnumerateFiles(root, "*.deps.json", SearchOption.TopDirectoryOnly)
             .OrderByDescending(path => new FileInfo(path).Length).FirstOrDefault();
-        if (deps is null || new FileInfo(deps).Length > 1024 * 1024) return ManagedPluginFramework.Unknown;
+        return deps is null ? ManagedPluginFramework.Unknown : ClassifyManagedDependencyFile(deps);
+    }
+
+    internal static ManagedPluginFramework ClassifyManagedDependencyFile(string deps)
+    {
+        if (!File.Exists(deps) || new FileInfo(deps).Length > 1024 * 1024) return ManagedPluginFramework.Unknown;
         try
         {
             using var json = JsonDocument.Parse(File.ReadAllText(deps));
@@ -312,19 +317,19 @@ public sealed class LocalPluginImporter : IPluginImporter
         ManagedPluginFramework selected;
         if (requested is "swiftlys2")
         {
-            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.SwiftlyS2))
+            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous or ManagedPluginFramework.SwiftlyS2))
                 throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-MISMATCH", "deps.json identifies this as " + detected + ", not SwiftlyS2.");
             selected = ManagedPluginFramework.SwiftlyS2;
         }
         else if (requested is "modsharp")
         {
-            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.ModSharp))
+            if (detected is not (ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous or ManagedPluginFramework.ModSharp))
                 throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-MISMATCH", "deps.json identifies this as " + detected + ", not ModSharp.");
             selected = ManagedPluginFramework.ModSharp;
         }
         else
         {
-            if (detected == ManagedPluginFramework.Ambiguous)
+            if (detected == ManagedPluginFramework.Ambiguous && !allowUnknown)
                 throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-AMBIGUOUS", "deps.json contains both SwiftlyS2 and ModSharp dependencies.");
             if (detected == ManagedPluginFramework.Unknown && !allowUnknown)
                 throw new InstanceException("HCSL-PLUGIN-MANAGED-FRAMEWORK-UNKNOWN", "Cannot determine SwiftlyS2 or ModSharp from deps.json; choose a framework explicitly.");
@@ -332,11 +337,12 @@ public sealed class LocalPluginImporter : IPluginImporter
         }
         var framework = selected.FrameworkId();
         var targetRoot = FrameworkRules.PluginRootFor(framework);
-        if (framework is null || targetRoot is null)
-        {
+        if (selected == ManagedPluginFramework.Ambiguous)
+            warnings.Add("deps.json contains both SwiftlyS2 and ModSharp dependencies; choose the target framework before importing.");
+        else if (selected == ManagedPluginFramework.Unknown)
             warnings.Add("This managed plugin has no recognized framework dependency; choose SwiftlyS2 or ModSharp before importing.");
+        if (framework is null || targetRoot is null)
             targetRoot = "unknown";
-        }
         var mainDll = Directory.EnumerateFiles(root, "*.dll", SearchOption.TopDirectoryOnly)
             .OrderByDescending(path => new FileInfo(path).Length).First();
         var folder = Path.GetFileNameWithoutExtension(mainDll);

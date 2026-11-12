@@ -38,17 +38,33 @@ public sealed class LocalPluginStore : IPluginStore
             {
                 var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
                 LocalPaths.ValidateRoots(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot);
-                return ExecuteRoot(Path.Combine(paths.DataRoot, "instances"), Path.Combine(paths.LibraryRoot, "plugin-packages"), command);
+                var packagesRoot = Path.Combine(paths.LibraryRoot, "plugin-packages");
+                TryMigratePackages(workspace, packagesRoot);
+                return ExecuteRoot(Path.Combine(paths.DataRoot, "instances"), packagesRoot, command);
             }
             using var lease = new LocalWorkspaceManager().Acquire(workspace);
             if (File.Exists(Path.Combine(lease.Layout.LibraryRoot, ".hcsl", "server-session.json")))
                 throw new InstanceException("HCSL-SERVER-RECOVERY", "Recover the previous server session before editing plugins.");
-            return ExecuteRoot(lease.Layout.InstancesRoot, Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"), command);
+            var currentPackagesRoot = Path.Combine(lease.Layout.LibraryRoot, "plugin-packages");
+            LocalPluginMigration.Run(currentPackagesRoot);
+            return ExecuteRoot(lease.Layout.InstancesRoot, currentPackagesRoot, command);
         }
         catch (InstanceException) { throw; }
         catch (WorkspaceException) { throw; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         { throw new InstanceException("HCSL-PLUGIN-IO", "Plugin storage failed; no file content is logged."); }
+    }
+
+    /// <summary>Best-effort migration for read-only list calls; an active lease failure leaves the catalog untouched.</summary>
+    private static void TryMigratePackages(WorkspaceRequest workspace, string packagesRoot)
+    {
+        try
+        {
+            using var lease = new LocalWorkspaceManager().Acquire(workspace);
+            LocalPluginMigration.Run(packagesRoot);
+        }
+        catch (Exception e) when (e is WorkspaceException or InstanceException or IOException or UnauthorizedAccessException or JsonException or OverflowException)
+        { }
     }
 
     private static PluginResult RemovePackage(string instancesRoot, string packagesRoot, PluginCommand command)

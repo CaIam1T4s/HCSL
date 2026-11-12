@@ -88,11 +88,17 @@ public static class DevCliTests
         Check(statusText.Contains("Running") && statusText.Contains("de_dust2") && statusText.Contains("127.0.0.1"), "status projection lost fields.");
 
         var result = new PluginResult(
-            [new("metamod", "Metamod:Source", "2.0.0", "hash", 61, 8 * 1024 * 1024)],
+            [new("metamod", "Metamod:Source", "2.0.0", "hash", 61, 8 * 1024 * 1024, Category: PluginCategory.Metamod)],
             [new("metamod", "Metamod:Source", "2.0.0", true, true)],
             5, "manifest", [new("broken", "0.1.0", "HCSL-PLUGIN-PACKAGE")]);
         var pluginText = DevFormat.Plugins(result);
-        Check(pluginText.Contains("metamod") && pluginText.Contains("rejected   1") && pluginText.Contains("HCSL-PLUGIN-PACKAGE"), "plugin projection lost fields.");
+        Check(pluginText.Contains("[Metamod]") && pluginText.Contains("metamod") && pluginText.Contains("rejected   1") && pluginText.Contains("HCSL-PLUGIN-PACKAGE"), "plugin projection lost fields.");
+        Check(PluginPresentation.CategoryLabel(PluginCategory.Framework) == "框架本体" && PluginPresentation.CategoryLabel(PluginCategory.Other, true) == "Other", "plugin category label changed.");
+        var grouped = PluginPresentation.Grouped([
+            new("other", "Other", "1.0.0", "hash", 1, 1),
+            new("metamod", "Metamod", "1.0.0", "hash", 1, 1, Category: PluginCategory.Metamod),
+            new("modsharp", "ModSharp", "1.0.0", "hash", 1, 1, Category: PluginCategory.ModSharp)]);
+        Check(grouped.Select(g => g.Category).SequenceEqual([PluginCategory.Metamod, PluginCategory.ModSharp, PluginCategory.Other]), "plugin category order changed.");
         Check(DevFormat.ExplainPlugins(result).Contains("1 enabled"), "plugin explain summary wrong.");
 
         // Ordered plugin draft: array order is load order, so Move must swap and SaveCommand must keep it.

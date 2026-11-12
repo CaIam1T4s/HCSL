@@ -15,6 +15,7 @@ public sealed class PluginsDialog : Dialog
     private readonly ListView list = new() { X = 0, Y = 4, Width = Dim.Fill(), Height = Dim.Fill(5) };
     private readonly Label status = new() { X = 0, Y = Pos.AnchorEnd(4), Width = Dim.Fill(), Height = 2 };
     private readonly List<Button> actions = [];
+    private readonly List<int> displayed = [];
     private bool busy, closed;
     public PluginsDialog(PresetPluginClient client, InstanceClient instances, InstanceDefinition instance, PresetDefinition preset, bool english = false)
     {
@@ -25,10 +26,10 @@ public sealed class PluginsDialog : Dialog
         Add(new Label(T("部署只复制到实例运行目录；Metamod/CSS 包必须自带 addons/gameinfo overlay。", "Deployment copies only into the instance runtime; Metamod/CSS packages must ship addons/gameinfo overlays.")) { X = 0, Y = 2, Width = Dim.Fill(), Height = 2 });
         Add(list, status);
         AddAction(T("添加", "Add"), Add);
-        AddAction(T("移除", "Remove"), () => Edit(() => { draft.Remove(list.SelectedItem); Refresh(); }));
-        AddAction(T("启用/禁用", "Toggle"), () => Edit(() => { draft.Toggle(list.SelectedItem); Refresh(list.SelectedItem); }));
-        AddAction(T("上移", "Up"), () => Edit(() => Refresh(draft.Move(list.SelectedItem, -1))));
-        AddAction(T("下移", "Down"), () => Edit(() => Refresh(draft.Move(list.SelectedItem, 1))));
+        AddAction(T("移除", "Remove"), () => Edit(() => { draft.Remove(SelectedDraftIndex); Refresh(); }));
+        AddAction(T("启用/禁用", "Toggle"), () => Edit(() => { var index = SelectedDraftIndex; draft.Toggle(index); Refresh(index); }));
+        AddAction(T("上移", "Up"), () => Edit(() => Refresh(draft.Move(SelectedDraftIndex, -1))));
+        AddAction(T("下移", "Down"), () => Edit(() => Refresh(draft.Move(SelectedDraftIndex, 1))));
         AddAction(T("保存", "Save"), Save);
         AddAction(T("重读", "Reload"), () => { if (Discard()) Reload(); });
         AddAction(T("关闭", "Close"), Close);
@@ -38,10 +39,24 @@ public sealed class PluginsDialog : Dialog
     public void Initialize() => Reload();
     private void Refresh(int index = 0)
     {
-        list.SetSource(draft.Plugins.Select((p, i) => $"{i + 1}. [{(p.Enabled ? T("启用", "on") : T("禁用", "off"))}] {Name(p)} ({p.Id}) {p.Version}").ToList());
-        if (draft.Plugins.Count > 0) list.SelectedItem = Math.Clamp(index, 0, draft.Plugins.Count - 1);
+        displayed.Clear();
+        displayed.AddRange(Enumerable.Range(0, draft.Plugins.Count)
+            .OrderBy(i => Array.IndexOf(PluginPresentation.CategoryOrder, PackageFor(draft.Plugins[i])?.Category ?? PluginCategory.Other))
+            .ThenBy(i => i));
+        list.SetSource(displayed.Select(i =>
+        {
+            var p = draft.Plugins[i];
+            return $"{i + 1}. {Category(p)} [{(p.Enabled ? T("启用", "on") : T("禁用", "off"))}] {Name(p)} ({p.Id}) {p.Version}";
+        }).ToList());
+        var selected = displayed.IndexOf(index);
+        list.SelectedItem = displayed.Count == 0 ? -1 : Math.Max(0, selected >= 0 ? selected : Math.Min(list.SelectedItem, displayed.Count - 1));
     }
+    private int SelectedDraftIndex => list.SelectedItem >= 0 && list.SelectedItem < displayed.Count ? displayed[list.SelectedItem] : -1;
+    private PluginPackageInfo? PackageFor(PluginSelection selection) =>
+        draft.Loaded?.Available.FirstOrDefault(x => x.Id == selection.Id && x.Version == selection.Version);
     private string Name(PluginSelection selection) => draft.Loaded?.Selected.FirstOrDefault(x => x.Id == selection.Id && x.Version == selection.Version)?.Name ?? selection.Id;
+    private string Category(PluginSelection selection) =>
+        "[" + PluginPresentation.CategoryLabel(PackageFor(selection)?.Category ?? PluginCategory.Other, english) + "]";
     private void Edit(Action action)
     {
         if (busy) return;
@@ -53,7 +68,9 @@ public sealed class PluginsDialog : Dialog
     {
         if (busy) return;
         if (!client.CanWrite) { status.Text = T("活动会话只读；请先停服并完成恢复。", "Read-only while active; stop and finish recovery first."); return; }
-        var available = draft.Loaded?.Available.Where(x => draft.Plugins.All(p => p.Id != x.Id)).ToArray() ?? [];
+        var available = draft.Loaded?.Available.Where(x => draft.Plugins.All(p => p.Id != x.Id))
+            .OrderBy(x => Array.IndexOf(PluginPresentation.CategoryOrder, x.Category))
+            .ThenBy(x => x.Id, StringComparer.Ordinal).ToArray() ?? [];
         if (available.Length == 0) { status.Text = T("没有可添加的插件包。", "No package available."); return; }
         var chosen = Choose(available); if (chosen is null) return;
         try { draft.Add(chosen.Id, chosen.Version); Refresh(draft.Plugins.Count - 1); status.Text = T("草稿未保存。", "Unsaved draft."); }
@@ -63,7 +80,7 @@ public sealed class PluginsDialog : Dialog
     {
         var dialog = new Dialog(T("添加插件", "Add plugin"), 60, 16);
         var view = new ListView { X = 1, Y = 1, Width = Dim.Fill(2), Height = Dim.Fill(3) };
-        view.SetSource(available.Select(x => $"{x.Name} ({x.Id}) {x.Version}").ToList());
+        view.SetSource(available.Select(x => PluginPresentation.PackageLabel(x, english)).ToList());
         dialog.Add(view);
         var ok = new Button(T("添加", "Add")); var cancel = new Button(T("取消", "Cancel"));
         ok.Clicked += () => { if (view.SelectedItem >= 0 && view.SelectedItem < available.Length) Application.RequestStop(); };

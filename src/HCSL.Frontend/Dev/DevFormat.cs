@@ -59,11 +59,19 @@ public static class DevFormat
     {
         var total = result.AvailableTotal > result.Available.Length ? result.AvailableTotal : result.Available.Length;
         var lines = new List<string> { "available  " + result.Available.Length + (total > result.Available.Length ? " of " + total : "") + " package version(s)" };
-        lines.AddRange(result.Available.Select(a =>
-            "  " + a.Id + " " + a.Version + "  " + a.Name + "  " + a.Files + " files " + Bytes(a.Bytes)));
+        foreach (var group in PluginPresentation.Grouped(result.Available))
+        {
+            lines.Add("  [" + PluginPresentation.CategoryLabel(group.Category, english: true) + "]");
+            lines.AddRange(group.Packages.Select(a =>
+                "    " + a.Id + " " + a.Version + "  " + a.Name + "  " + a.Files + " files " + Bytes(a.Bytes)));
+        }
         lines.Add("selected   " + result.Selected.Length);
         lines.AddRange(result.Selected.Select(s =>
-            "  " + (s.Enabled ? "[on ] " : "[off] ") + s.Id + " " + s.Version + (s.Available ? "" : "  missing: " + (s.Error ?? "HCSL-PLUGIN-PACKAGE"))));
+        {
+            var category = result.Available.FirstOrDefault(a => a.Id == s.Id && a.Version == s.Version)?.Category ?? PluginCategory.Other;
+            return "  " + (s.Enabled ? "[on ] " : "[off] ") + "[" + PluginPresentation.CategoryLabel(category, english: true) + "] " + s.Id + " " + s.Version
+                + (s.Available ? "" : "  missing: " + (s.Error ?? "HCSL-PLUGIN-PACKAGE"));
+        }));
         if (result.Rejected is { Length: > 0 } rejected)
         {
             lines.Add("rejected   " + rejected.Length);

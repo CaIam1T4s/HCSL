@@ -138,6 +138,16 @@ public static class PluginImportTests
             var unknownProbe = importer.Probe(workspace, new(unknownManaged));
             Check(unknownProbe.ManagedFramework == ManagedPluginFramework.Unknown && unknownProbe.Framework is null, "Unknown managed plugin was classified without framework evidence.");
             Reject("HCSL-PLUGIN-MANAGED-FRAMEWORK-UNKNOWN", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, unknownManaged, "unknown", "Unknown", "1.0.0")));
+            var ambiguousManaged = Path.Combine(root, "ambiguous-managed");
+            WriteFile(ambiguousManaged, "Ambiguous.dll", "managed");
+            WriteFile(ambiguousManaged, "Ambiguous.deps.json", "{\"targets\":{\".NETCoreApp,Version=v10.0\":{\"Ambiguous/1.0.0\":{\"dependencies\":{\"SwiftlyS2.CS2\":\"1.2.2\",\"ModSharp.Sharp.Shared\":\"2.0.4\"}}}}}");
+            var ambiguousProbe = importer.Probe(workspace, new(ambiguousManaged));
+            Check(ambiguousProbe.ManagedFramework == ManagedPluginFramework.Ambiguous && ambiguousProbe.Framework is null,
+                "Ambiguous managed plugin was not reported as ambiguous.");
+            Reject("HCSL-PLUGIN-MANAGED-FRAMEWORK-AMBIGUOUS", () => importer.Execute(workspace, new(Guid.Empty, Guid.Empty, ambiguousManaged, "ambiguous", "Ambiguous", "1.0.0")));
+            var ambiguousExplicit = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, ambiguousManaged, "ambiguous", "Ambiguous", "1.0.0", Framework: "modsharp"));
+            Check(ambiguousExplicit.Framework == "modsharp" && File.Exists(Path.Combine(ambiguousExplicit.PackagePath, "files", "sharp", "modules", "Ambiguous", "Ambiguous.dll")),
+                "Explicit framework did not resolve an ambiguous managed plugin.");
 
             // 5d) Wrapper directory (SwiftlyS2) and game-root sharp/ (ModSharp) layouts.
             var swiftly = Path.Combine(root, "swiftly");

@@ -31,9 +31,10 @@ public partial class MainWindow
         int[] visible = [];
         string Label(PluginSelection p)
         {
-            var info = draft.Loaded?.Selected.FirstOrDefault(s => s.Id == p.Id && s.Version == p.Version);
+            var info = PackageFor(p);
+            var category = info?.Category ?? PluginCategory.Other;
             var name = info?.Name ?? p.Id;
-            return $"{(p.Enabled ? "[启用]" : "[禁用]")} {name} ({p.Id}) {p.Version}";
+            return $"[{PluginPresentation.CategoryLabel(category)}] {(p.Enabled ? "[启用]" : "[禁用]")} {name} ({p.Id}) {p.Version}";
         }
         PluginPackageInfo? PackageFor(PluginSelection p) =>
             draft.Loaded?.Available.FirstOrDefault(a => a.Id == p.Id && a.Version == p.Version);
@@ -51,6 +52,7 @@ public partial class MainWindow
         {
             if (p.Id == "metamod") return true;
             var package = PackageFor(p);
+            if (package?.Category == PluginCategory.Framework) return false;
             if (package?.Framework is null or "metamod") return true;
             return string.Equals(package.Framework, CurrentFramework(), StringComparison.Ordinal);
         }
@@ -72,7 +74,9 @@ public partial class MainWindow
                 frameworkSelect.SelectedIndex = Math.Max(0, choices.FindIndex(c => c.Id == current));
             }
             finally { updatingFramework = false; }
-            var indices = Enumerable.Range(0, draft.Plugins.Count).Where(i => Visible(draft.Plugins[i])).ToArray();
+            var indices = Enumerable.Range(0, draft.Plugins.Count).Where(i => Visible(draft.Plugins[i]))
+                .OrderBy(i => Array.IndexOf(PluginPresentation.CategoryOrder, PackageFor(draft.Plugins[i])?.Category ?? PluginCategory.Other))
+                .ThenBy(i => i).ToArray();
             visible = indices;
             list.ItemsSource = indices.Select(i => Label(draft.Plugins[i])).ToArray();
             var wanted = Array.IndexOf(indices, draftIndex);
@@ -125,7 +129,10 @@ public partial class MainWindow
         {
             var current = CurrentFramework();
             var available = draft.Loaded?.Available.Where(a => draft.Plugins.All(p => p.Id != a.Id)
-                && (a.Framework is null or "metamod" || a.Framework == current)).ToArray() ?? [];
+                && (a.Category != PluginCategory.Framework || a.Id == "metamod")
+                && (a.Framework is null or "metamod" || a.Framework == current))
+                .OrderBy(a => Array.IndexOf(PluginPresentation.CategoryOrder, a.Category))
+                .ThenBy(a => a.Id, StringComparer.Ordinal).ToArray() ?? [];
             if (available.Length == 0)
             {
                 await ChooseAsync("没有可添加的插件", "内容库 plugin-packages 中没有未选择的包版本。请先把包放到 <library>/plugin-packages/<id>/<version>/plugin.json + files/。", "返回");
@@ -133,7 +140,7 @@ public partial class MainWindow
             }
             var body = new StackPanel { Spacing = 10 };
             body.Children.Add(new TextBlock { Text = "添加插件包", FontSize = 20 });
-            var select = new Select { ItemsSource = available.Select(a => $"{a.Name} ({a.Id}) {a.Version}").ToArray(), SelectedIndex = 0 };
+            var select = new Select { ItemsSource = available.Select(a => PluginPresentation.PackageLabel(a)).ToArray(), SelectedIndex = 0 };
             body.Children.Add(select);
             body.Children.Add(new TextBlock { Text = "同一插件只能选择一个版本；数组顺序就是部署顺序。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             if (await ShowOverlayAsync(body, ["取消", "添加"]) == 1)
@@ -182,13 +189,29 @@ public partial class MainWindow
 
             var body = new StackPanel { Spacing = 8 };
             body.Children.Add(new TextBlock { Text = "导入插件包", FontSize = 20 });
+            var managed = preview.TargetRoot is not null;
+            var frameworkText = !managed ? "非受管插件"
+                : preview.Framework is null ? "待选择" : PluginPresentation.FrameworkLabel(preview.Framework);
             body.Children.Add(new TextBlock
             {
                 Text = (preview.Kind == "archive" ? "压缩包：" : preview.Kind == "file" ? "单文件：" : "目录：") + path
                     + "\n识别：Id=" + preview.Id + "，名称=" + preview.Name + "，版本=" + preview.Version
-                    + "\n规模：" + preview.Files + " 文件，" + preview.Bytes / 1024 + " KiB",
+                    + "\n规模：" + preview.Files + " 文件，" + preview.Bytes / 1024 + " KiB"
+                    + (managed ? "\n框架：" + frameworkText + (preview.Framework is null ? "" : "，目标：" + preview.TargetRoot) : "")
+                    + (preview.ManagedFramework == ManagedPluginFramework.Ambiguous ? "（deps.json 同时包含两种依赖）" : ""),
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap
             });
+            Select? importFramework = null;
+            if (managed && preview.ManagedFramework is ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = "该 DLL 的 deps.json 无法唯一确定框架，请选择导入目标：",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                });
+                importFramework = new Select { ItemsSource = new[] { "请选择框架", "SwiftlyS2", "ModSharp" }, SelectedIndex = 0 };
+                body.Children.Add(importFramework);
+            }
             var importId = new Input { Text = preview.Id };
             var importName = new Input { Text = preview.Name };
             var importVersion = new Input { Text = preview.Version };
@@ -213,6 +236,16 @@ public partial class MainWindow
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap
                 });
             if (await ShowOverlayAsync(body, ["取消", "导入"]) != 1) return;
+            var importFrameworkId = preview.Framework;
+            if (importFramework is not null)
+            {
+                importFrameworkId = importFramework.SelectedIndex switch { 1 => "swiftlys2", 2 => "modsharp", _ => null };
+                if (importFrameworkId is null)
+                {
+                    await ChooseAsync("需要选择框架", "该 managed 插件的 deps.json 无法唯一确定框架，请重新导入并选择 SwiftlyS2 或 ModSharp。", "返回");
+                    return;
+                }
+            }
 
             PluginImportResult result;
             try
@@ -220,7 +253,7 @@ public partial class MainWindow
                 result = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id,
                     archive is null ? path : "", importId.Text ?? "", importName.Text ?? "", importVersion.Text ?? "",
                     preview.MetaPlugin, importEnable.IsChecked == true, importForce.IsChecked == true, instance.Revision, archive,
-                    CfgIntoPreset: importCfg.IsChecked == true));
+                    CfgIntoPreset: importCfg.IsChecked == true, Framework: importFrameworkId));
             }
             catch (Exception e) when (e is IOException or InstanceException)
             {
