@@ -219,6 +219,14 @@ internal static class JsonSpanEditor
         return -1;
     }
 
+    /// <summary>Index of the first character of the line that contains <paramref name="index"/>.</summary>
+    private static int LineBegin(string text, int index)
+    {
+        var start = index;
+        while (start > 0 && text[start - 1] != '\n') start--;
+        return start;
+    }
+
     private static int FirstNonSpace(string text, int from, int to)
     {
         for (var i = from; i < to; i++) if (!char.IsWhiteSpace(text[i])) return i;
@@ -244,7 +252,7 @@ internal static class JsonSpanEditor
                 + newline + parentIndent + text[close..];
         }
         var first = members[0];
-        var indent = text[LineStart(text, first.KeyStart)..first.KeyStart];
+        var indent = text[LineBegin(text, first.KeyStart)..first.KeyStart];
         var anchor = members[^1];
         var next = FirstNonSpace(text, anchor.ValueEnd, parent.End - 1);
         var hasTrailingComma = next >= 0 && text[next] == ',';
@@ -267,7 +275,13 @@ internal static class JsonSpanEditor
         return start;
     }
 
-    private static string LineIndent(string text, int index) => text[LineStart(text, index)..index];
+    private static string LineIndent(string text, int index)
+    {
+        var start = LineBegin(text, index);
+        var end = start;
+        while (end < text.Length && text[end] is ' ' or '\t') end++;
+        return text[start..end];
+    }
 
     private static string Quote(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 }

@@ -35,13 +35,44 @@ public sealed class LocalAdminStore : IAdminStore
     private AdminResult ExecuteRoot(string instancesRoot, AdminCommand command)
     {
         var preset = PresetPath(instancesRoot, command.InstanceId, command.PresetId);
+        var enabled = EnabledFrameworks(Path.Combine(preset, "plugins.json"));
+        // Script frameworks are exclusive, so at most one admin source applies to a preset.
+        if (enabled.Contains("counterstrikesharp")) return CounterStrikeSharp(preset, command);
+        if (enabled.Contains("source2mod")) return Source2Mod(preset, command);
+        throw new InstanceException("HCSL-ADMIN-SOURCE", "This preset enables neither CounterStrikeSharp nor Source2Mod; the panel has no admin source.");
+    }
+
+    private AdminResult Source2Mod(string preset, AdminCommand command)
+    {
+        var configs = Path.Combine(preset, "addons", "source2mod", "configs");
+        Safe(configs);
+        var path = Path.Combine(configs, Source2ModAdminFile.FileName);
+        if (command.Action == AdminAction.List) return new(Source2ModAdminFile.Read(path, command), "HCSL-ADMIN-OK", []);
+        var hash = File.Exists(path) ? Hash(path) : "";
+        if (!string.Equals(hash, command.ExpectedHash ?? "", StringComparison.OrdinalIgnoreCase))
+            throw new InstanceException("HCSL-ADMIN-CONFLICT", "The admin file changed outside HCSL. Reload the list before saving; your draft was not written.");
+        AdminRules.Validate(command.Mutations, command.InitGroups);
+        var warnings = new List<string>();
+        var before = File.Exists(path) ? File.ReadAllText(path) : "";
+        if (command.InitGroups && before.Trim().Length == 0)
+            warnings.Add("Created permissions.json skeleton; define groups first, then grant with --groups or --flags.");
+        var text = Source2ModAdminFile.Apply(path, command, out var applied, warnings);
+        if (text != before)
+        {
+            Backup(preset, path, Source2ModAdminFile.Capabilities.SourceId, Source2ModAdminFile.FileName);
+            WriteAtomic(path, text);
+        }
+        var snapshot = Source2ModAdminFile.Read(path, command with { Offset = 0, Limit = AdminRules.MaxPageSize });
+        foreach (var warning in warnings) snapshot = snapshot with { Warnings = [.. snapshot.Warnings, warning] };
+        return new(snapshot, "HCSL-ADMIN-WRITTEN", applied, null);
+    }
+
+    private static AdminResult CounterStrikeSharp(string preset, AdminCommand command)
+    {
         var configs = Path.Combine(preset, "addons", "counterstrikesharp", "configs");
         Safe(configs);
         var adminsPath = Path.Combine(configs, AdminsFile);
         var groupsPath = Path.Combine(configs, GroupsFile);
-        var enabled = EnabledFrameworks(Path.Combine(preset, "plugins.json"));
-        if (!enabled.Contains("counterstrikesharp"))
-            throw new InstanceException("HCSL-ADMIN-SOURCE", "This preset does not enable CounterStrikeSharp; the panel has no admin source.");
 
         if (command.Action == AdminAction.List) return new(ReadSnapshot(adminsPath, groupsPath, command), "HCSL-ADMIN-OK", []);
 
@@ -49,7 +80,7 @@ public sealed class LocalAdminStore : IAdminStore
         var hash = Hash(adminsPath);
         if (!string.Equals(hash, command.ExpectedHash ?? "", StringComparison.OrdinalIgnoreCase))
             throw new InstanceException("HCSL-ADMIN-CONFLICT", "The admin file changed outside HCSL. Reload the list before saving; your draft was not written.");
-        AdminRules.Validate(command.Mutations);
+        AdminRules.Validate(command.Mutations, command.InitGroups);
         var warnings = new List<string>();
         if (command.InitGroups && !File.Exists(groupsPath))
         {
@@ -62,7 +93,7 @@ public sealed class LocalAdminStore : IAdminStore
         var text = Apply(before, command, warnings);
         if (text != before)
         {
-            Backup(preset, adminsPath);
+            Backup(preset, adminsPath, FrameworkId, AdminsFile);
             WriteAtomic(adminsPath, text);
         }
         var snapshot = ReadSnapshot(adminsPath, groupsPath, command);
@@ -237,15 +268,15 @@ public sealed class LocalAdminStore : IAdminStore
         return result;
     }
 
-    private static void Backup(string preset, string adminsPath)
+    private static void Backup(string preset, string adminsPath, string framework, string fileName)
     {
         if (!File.Exists(adminsPath)) return;
-        var root = Path.Combine(preset, "framework-data", FrameworkId, "admin-backups");
+        var root = Path.Combine(preset, "framework-data", framework, "admin-backups");
         Safe(root);
         Directory.CreateDirectory(root);
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
-        File.Copy(adminsPath, Path.Combine(root, stamp + "-" + AdminsFile), true);
-        foreach (var old in Directory.EnumerateFiles(root, "*-" + AdminsFile).OrderByDescending(f => f).Skip(10))
+        File.Copy(adminsPath, Path.Combine(root, stamp + "-" + fileName), true);
+        foreach (var old in Directory.EnumerateFiles(root, "*-" + fileName).OrderByDescending(f => f).Skip(10))
             try { File.Delete(old); } catch (IOException) { }
     }
 

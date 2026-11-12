@@ -66,6 +66,7 @@ public static class AdminRules
     public const int MaxPageSize = 200;
     public const int MaxNameLength = 64;
     public const string CounterStrikeSharp = "cssharp";
+    public const string Source2Mod = "source2mod";
 
     /// <summary>CounterStrikeSharp: display-name keys, separate groups file, reload by console command.</summary>
     public static readonly AdminSourceCapabilities CounterStrikeSharpCapabilities =
@@ -73,8 +74,18 @@ public static class AdminRules
             AdminFields.Groups | AdminFields.Flags | AdminFields.Immunity | AdminFields.CommandOverrides,
             AdminGroupsLayout.SeparateFile, AdminReloadKind.Command, "css_admins_reload");
 
-    public static AdminSourceCapabilities? Capabilities(string? sourceId) =>
-        string.Equals(sourceId, CounterStrikeSharp, StringComparison.Ordinal) ? CounterStrikeSharpCapabilities : null;
+    public static AdminSourceCapabilities? Capabilities(string? sourceId) => sourceId switch
+    {
+        CounterStrikeSharp => CounterStrikeSharpCapabilities,
+        Source2Mod => Source2ModCapabilities,
+        _ => null
+    };
+
+    /// <summary>Source2Mod: SteamID keys, groups and permissions in one JSONC file, reload by console command.</summary>
+    public static readonly AdminSourceCapabilities Source2ModCapabilities =
+        new(Source2Mod, "Source2Mod", AdminKeyKind.SteamId64,
+            AdminFields.Groups | AdminFields.Flags | AdminFields.Immunity,
+            AdminGroupsLayout.SameFile, AdminReloadKind.Command, "s2m admins reload");
 
     /// <summary>Page window for a list request; an unset limit uses the default page size.</summary>
     public static (int Offset, int Limit) Page(int offset, int limit)
@@ -150,10 +161,10 @@ public static class AdminRules
         return flags;
     }
 
-    public static void Validate(AdminMutation[]? mutations)
+    public static void Validate(AdminMutation[]? mutations, bool allowEmpty = false)
     {
         mutations ??= [];
-        if (mutations.Length == 0) throw new InstanceException("HCSL-ADMIN-REQUEST", "At least one change is required.");
+        if (mutations.Length == 0 && !allowEmpty) throw new InstanceException("HCSL-ADMIN-REQUEST", "At least one change is required.");
         if (mutations.Length > MaxMutationsPerRequest) throw new InstanceException("HCSL-ADMIN-LIMIT", "At most " + MaxMutationsPerRequest + " changes per request.");
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var mutation in mutations)

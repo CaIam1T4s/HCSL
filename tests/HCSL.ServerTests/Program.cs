@@ -53,6 +53,7 @@ if (only is null or "players")
     HCSL.ServerTests.ServerKickTests.Run();
     HCSL.ServerTests.JsonSpanEditorTests.Run();
     HCSL.ServerTests.AdminListTests.Run();
+    HCSL.ServerTests.Source2ModAdminTests.Run();
     if (only is "players") { Console.WriteLine("PASS only players"); return 0; }
 }
 

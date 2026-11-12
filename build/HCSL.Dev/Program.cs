@@ -230,10 +230,13 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
     switch (action)
     {
         case "grant":
-            if (groups.Length == 0 && flags.Length == 0 && !current.Snapshot.Groups.Any(g => g.Name == AdminRules.DefaultGroupName))
+            // The conservative default group only exists for CounterStrikeSharp; other sources must name theirs.
+            if (groups.Length == 0 && flags.Length == 0)
+            {
+                if (current.Snapshot.SourceId != AdminRules.CounterStrikeSharp)
+                    throw new DevUsageException("This source has no default group: pass --groups <name[,name]> or --flags <name[,name]>. Use `hcsl admins` to see the available groups and permissions.");
                 groups = [AdminRules.DefaultGroupName];
-            else if (groups.Length == 0 && flags.Length == 0)
-                groups = [AdminRules.DefaultGroupName];
+            }
             break;
         case "set-groups":
             break;
@@ -247,11 +250,14 @@ static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptio
             throw new DevUsageException("Pass --groups <name[,name]> or --flags <flag[,flag]>. Example: --groups #hcsl/admin");
         if (flags.Any(f => f is "@css/root" or "@css/rcon") && !invocation.Has("--root"))
             throw new DevUsageException("@css/root and @css/rcon grant full console access; add --root to confirm.");
+        if (current.Snapshot.SourceId == "source2mod" && (groups.Contains("*") || flags.Contains("*")) && !invocation.Has("--root"))
+            throw new DevUsageException("Source2Mod '*' grants every permission; add --root to confirm.");
         mutations.Add(new(AdminMutationKind.Upsert, AdminRules.SteamId(argument), invocation.Get("--name"),
             groups.Length == 0 ? null : groups, flags.Length == 0 ? null : flags));
     }
+    var initGroups = action == "init-groups" || invocation.Has("--init-groups");
     var result = await client.ApplyAsync(new(AdminAction.Apply, entry.Id, preset.Id, current.Snapshot.Hash, [.. mutations],
-        invocation.Has("--init-groups"), invocation.Has("--root")), ct);
+        initGroups, invocation.Has("--root")), ct);
     if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(result, json)); return 0; }
     Console.WriteLine("applied    " + (result.Applied.Length == 0 ? "no change" : string.Join(", ", result.Applied)));
     Console.WriteLine("reload     " + (result.Reload ?? "no reload command for this source"));
