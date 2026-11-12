@@ -53,9 +53,10 @@ public partial class MainWindow
                 try
                 {
                     var result = await model.KickAsync(instance.Id, run, player.UserId, player.SteamId64, "");
-                    status.Text = result.Written
-                        ? "已发送踢出命令：" + result.Command
-                        : result.Code + "：命令未被接受，玩家仍在。";
+                    if (!result.Written) status.Text = result.Code + "：命令未被接受，玩家仍在。";
+                    else if (result.Roster is { } after && after.Players.Any(p => p.UserId == result.UserId))
+                        status.Text = "已发送（" + result.Command + "），但目标仍在名单中；刷新再确认，或查看日志。";
+                    else status.Text = "已发送踢出命令：" + result.Command;
                     roster = null;
                 }
                 catch (Exception e) { status.Text = Describe(e); }

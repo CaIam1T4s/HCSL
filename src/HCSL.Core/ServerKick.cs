@@ -31,14 +31,19 @@ public static class ServerKickRules
         return text;
     }
 
-    /// <summary><c>kickid &lt;userid|uniqueid&gt; { message }</c> — engine-native, no plugin required.</summary>
+    /// <summary>
+    /// CS2's <c>kickid</c> takes a <b>userid</b> in this position, not a SteamID64: passing the 64-bit id makes the
+    /// engine parse it as a userid and fail (<c>userid "…" not found</c>, observed on build 2000943). The SteamID
+    /// therefore stays an identity pin verified against the live roster right before writing, never the target.
+    /// </summary>
     public static string Command(ServerKickCommand command)
     {
         if (command.RunId == Guid.Empty) throw new ServerException("HCSL-KICK-STATE", "A running server is required.");
-        var steamId = SteamId(command.SteamId64);
-        var target = steamId ?? command.UserId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        if (steamId is null && command.UserId < 0)
-            throw new ServerException("HCSL-KICK-TARGET", "A userid or SteamID64 is required to kick a client.");
+        if (SteamId(command.SteamId64) is null && command.UserId < 0)
+            throw new ServerException("HCSL-KICK-TARGET", "A userid from the current roster is required to kick a client.");
+        if (command.UserId < 0)
+            throw new ServerException("HCSL-KICK-TARGET", "The roster has no userid for this player; refresh it before kicking.");
+        var target = command.UserId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var reason = Reason(command.Reason);
         return reason.Length == 0 ? "kickid " + target : "kickid " + target + " " + reason;
     }

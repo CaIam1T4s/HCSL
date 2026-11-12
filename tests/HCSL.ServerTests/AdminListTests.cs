@@ -85,6 +85,15 @@ public static class AdminListTests
             var matched = store.Execute(workspace, Cmd(AdminAction.List));
             Check(matched.Snapshot.Entries.Length == 1, "Alternate identity created a duplicate entry.");
 
+            // 6b) Editing must work while the server runs: a held workspace lease must not block the write.
+            using (new LocalWorkspaceManager().Acquire(workspace))
+            {
+                var liveHash = store.Execute(workspace, Cmd(AdminAction.List)).Snapshot.Hash;
+                var live = store.Execute(workspace, Cmd(AdminAction.Apply, liveHash,
+                    [new(AdminMutationKind.Upsert, steamId, "CaIam1Tas", [AdminRules.DefaultGroupName])]));
+                Check(live.Snapshot.Entries.Any(e => e.SteamId64 == steamId), "Admin write failed while a server lease is held.");
+            }
+
             // 7) Large servers are paged, not capped: 300 entries still list with a cursor.
             var many = new System.Text.StringBuilder("{\n");
             for (var i = 0; i < 300; i++)

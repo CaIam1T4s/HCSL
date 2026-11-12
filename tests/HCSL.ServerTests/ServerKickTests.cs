@@ -25,7 +25,9 @@ public static class ServerKickTests
         // Command text is exactly what `kickid` accepts; the reason is trimmed and optional.
         Check(ServerKickRules.Command(new(Guid.Empty, run, 2, null, "  afk  ")) == "kickid 2 afk", "Userid command.");
         Check(ServerKickRules.Command(new(Guid.Empty, run, 2)) == "kickid 2", "Command without reason.");
-        Check(ServerKickRules.Command(new(Guid.Empty, run, -1, "76561198000000000", "cheating")) == "kickid 76561198000000000 cheating", "SteamID command.");
+        // CS2 rejects a SteamID64 in kickid's target slot, so the userid is always used; the SteamID stays a pin.
+        Check(ServerKickRules.Command(new(Guid.Empty, run, 2, "76561198000000000", "cheating")) == "kickid 2 cheating", "Userid must win over SteamID.");
+        Reject(() => ServerKickRules.Command(new(Guid.Empty, run, -1, "76561198000000000", "cheating")), "HCSL-KICK-TARGET");
 
         Reject(() => ServerKickRules.Command(new(Guid.Empty, Guid.Empty, 2)), "HCSL-KICK-STATE");
         Reject(() => ServerKickRules.Command(new(Guid.Empty, run, -1)), "HCSL-KICK-TARGET");

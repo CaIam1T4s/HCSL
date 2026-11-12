@@ -21,15 +21,11 @@ public sealed class LocalAdminStore : IAdminStore
     {
         if (!Enum.IsDefined(command.Action) || command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)
             throw new InstanceException("HCSL-ADMIN-REQUEST", "An admin action with stable instance/preset IDs is required.");
-        if (command.Action == AdminAction.List)
-        {
-            var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
-            return ExecuteRoot(Path.Combine(paths.DataRoot, "instances"), command);
-        }
-        using var lease = new LocalWorkspaceManager().Acquire(workspace);
-        if (File.Exists(Path.Combine(lease.Layout.LibraryRoot, ".hcsl", "server-session.json")))
-            throw new InstanceException("HCSL-SERVER-RECOVERY", "Recover the previous server session before editing admin lists.");
-        return ExecuteRoot(lease.Layout.InstancesRoot, command);
+        // Admin lists are edited while the server runs (that is how reload takes effect), so this store must not
+        // take the exclusive management lease, and the "server session" marker must not block it either: the file
+        // hash in the command is the concurrency guard, and an unrecovered session is reported by the daemon.
+        var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
+        return ExecuteRoot(Path.Combine(paths.DataRoot, "instances"), command);
     }
 
     private AdminResult ExecuteRoot(string instancesRoot, AdminCommand command)
