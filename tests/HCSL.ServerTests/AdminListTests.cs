@@ -58,6 +58,19 @@ public static class AdminListTests
             Check(File.Exists(adminsFile) && File.ReadAllText(adminsFile).Contains(steamId, StringComparison.Ordinal), "admins.json not written.");
             Check(granted.Applied.Length == 1 && granted.Code == "HCSL-ADMIN-WRITTEN", "Applied summary.");
 
+            // 2b) The entry key is the display name: renaming replaces the key, and the SteamID stays in identity.
+            var namedHash = store.Execute(workspace, Cmd(AdminAction.List)).Snapshot.Hash;
+            var renamed = store.Execute(workspace, Cmd(AdminAction.Apply, namedHash,
+                [new(AdminMutationKind.Upsert, steamId, "Renamed Admin", [AdminRules.DefaultGroupName])]));
+            var renamedText = File.ReadAllText(adminsFile);
+            Check(renamed.Snapshot.Entries.Single().DisplayName == "Renamed Admin", "Display name was not applied as the key.");
+            Check(renamedText.Contains("\"Renamed Admin\"") && !renamedText.Contains("\"CaIam1Tas\""), "Old key was not replaced.");
+            Check(renamedText.Contains("\"identity\": \"" + steamId + "\""), "SteamID must stay in identity.");
+            var keptHash = store.Execute(workspace, Cmd(AdminAction.List)).Snapshot.Hash;
+            store.Execute(workspace, Cmd(AdminAction.Apply, keptHash,
+                [new(AdminMutationKind.SetGroups, steamId, null, [AdminRules.DefaultGroupName], ["@css/ban"])]));
+            Check(File.ReadAllText(adminsFile).Contains("\"Renamed Admin\""), "Editing without a name changed the key.");
+
             // 3) A hand-written comment must survive later edits byte-for-byte.
             var withComment = File.ReadAllText(adminsFile).Replace("{\n", "{\n  // managed by hand\n", StringComparison.Ordinal);
             File.WriteAllText(adminsFile, withComment);
@@ -69,7 +82,7 @@ public static class AdminListTests
             Check(updated.Snapshot.Entries[0].Groups.Length == 1 && updated.Snapshot.Entries[0].Flags.Contains("@css/ban"), "SetGroups/flag update missing.");
 
             // 4) Stale hash is refused instead of overwriting an external edit.
-            Reject(() => store.Execute(workspace, Cmd(AdminAction.Apply, listed.Snapshot.Hash,
+            Reject(() => store.Execute(workspace, Cmd(AdminAction.Apply, new string('0', 64),
                 [new(AdminMutationKind.Remove, steamId)])), "HCSL-ADMIN-CONFLICT");
 
             // 5) Revoke removes the entry and leaves an empty object.

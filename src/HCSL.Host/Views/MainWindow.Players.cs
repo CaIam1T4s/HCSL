@@ -62,7 +62,7 @@ public partial class MainWindow
                 catch (Exception e) { status.Text = Describe(e); }
                 continue;
             }
-            await EditAdminsAsync(model, instance, preset, player.SteamId64);
+            await EditAdminsAsync(model, instance, preset, player.SteamId64, player.Name);
             roster = null;
         }
 

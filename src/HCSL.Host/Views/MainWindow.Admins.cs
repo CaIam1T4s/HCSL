@@ -7,7 +7,8 @@ namespace HCSL.Host.Views;
 public partial class MainWindow
 {
     /// <summary>Framework admin list for the selected preset: read, page, search, grant/revoke, reload.</summary>
-    public async Task EditAdminsAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset, string? grantSteamId = null)
+    public async Task EditAdminsAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset,
+        string? grantSteamId = null, string? grantName = null)
     {
         var content = new StackPanel { Spacing = 8 };
         content.Children.Add(new TextBlock { Text = "管理员 · " + instance.Name + " / " + preset.Name, FontSize = 20 });
@@ -50,7 +51,7 @@ public partial class MainWindow
             list.ItemsSource = (snapshot?.Entries ?? []).Select(Label).ToArray();
             if (list.SelectedIndex < 0 && list.ItemCount > 0) list.SelectedIndex = 0;
             status.Text = "";
-            var choice = await ShowOverlayAsync(content, ["关闭", "刷新", "搜索", "上一页", "下一页", "授予", "取消管理员", "初始化组", "重载"]);
+            var choice = await ShowOverlayAsync(content, ["关闭", "刷新", "搜索", "上一页", "下一页", "授予 / 修改", "移除所选", "初始化组", "重载"]);
             if (choice <= 0) return;
             switch (choice)
             {
@@ -94,31 +95,61 @@ public partial class MainWindow
                 catch (Exception e) { status.Text = Describe(e); }
                 continue;
             }
-            // Grant: SteamID + groups (or permissions for Source2Mod) entered explicitly; nothing is implicit.
-            var steam = new Input { Text = grantSteamId ?? "" };
-            var groupInput = new Input { Text = snapshot.Groups.FirstOrDefault()?.Name ?? "" };
-            var flagInput = new Input { PlaceholderText = "可选：权限/flag，逗号分隔（SwiftlyS2 忽略）" };
+            // Grant: the framework key matters. CSSharp keys by display name (SteamID goes into "identity"),
+            // the others key by SteamID itself, so the form only offers the fields that source can hold.
+            var existingEntry = snapshot.Entries.FirstOrDefault(e => grantSteamId is { Length: > 0 } && e.SteamId64 == grantSteamId);
+            var steam = new Input { Text = grantSteamId ?? existingEntry?.SteamId64 ?? "", PlaceholderText = "7656… / STEAM_0:0:… / [U:1:…]" };
+            var nameInput = new Input
+            {
+                Text = existingEntry?.DisplayName ?? grantName ?? "",
+                PlaceholderText = "显示名（这是 admins.json 的 key，可随时改）"
+            };
+            var groupInput = new Input
+            {
+                Text = existingEntry is { Groups.Length: > 0 } ? string.Join(",", existingEntry.Groups) : snapshot.Groups.FirstOrDefault()?.Name ?? "",
+                PlaceholderText = "组，逗号分隔"
+            };
+            var flagInput = new Input
+            {
+                Text = existingEntry is { Flags.Length: > 0 } ? string.Join(",", existingEntry.Flags) : "",
+                PlaceholderText = "可选：权限列表，逗号分隔"
+            };
             var form = new StackPanel { Spacing = 6 };
-            form.Children.Add(new TextBlock { Text = "SteamID64 / STEAM_X:Y:Z / [U:1:N]" });
+            var byName = snapshot.Capabilities?.Key != AdminKeyKind.SteamId64;
+            form.Children.Add(new TextBlock { Text = "SteamID（身份，写入 identity / 作为 key）" });
             form.Children.Add(steam);
-            form.Children.Add(new TextBlock { Text = "组（逗号分隔，可留空）" });
+            if (byName)
+            {
+                form.Children.Add(new TextBlock { Text = "显示名" });
+                form.Children.Add(nameInput);
+            }
+            form.Children.Add(new TextBlock { Text = "组（可用组：" + (snapshot.Groups.Length == 0 ? "无，先「初始化组」" : string.Join(" / ", snapshot.Groups.Select(g => g.Name))) + "）" });
             form.Children.Add(groupInput);
+            form.Children.Add(new TextBlock { Text = "额外权限（可选；SwiftlyS2 只记组成员）" });
             form.Children.Add(flagInput);
-            await ShowOverlayAsync(form, ["取消", "授予"]);
+            form.Children.Add(new TextBlock
+            {
+                Text = existingEntry is null ? "新条目：确认后会写入名单并发送重载命令。" : "已存在：确认后更新该条目的组/权限（显示名改了就会重命名 key）。",
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            if (await ShowOverlayAsync(form, ["取消", "写入"]) != 1) continue;
             var steamId = (steam.Text ?? "").Trim();
-            if (steamId.Length == 0) continue;
+            if (steamId.Length == 0) { status.Text = "需要 SteamID。"; continue; }
             var groupList = Split(groupInput.Text);
             var flagList = Split(flagInput.Text);
             if (groupList.Length == 0 && flagList.Length == 0) { status.Text = "至少给一个组或权限。"; continue; }
             if (flagList.Any(f => f is "@css/root" or "@css/rcon" or "*")
                 && await ChooseAsync("确认授予最高权限", "该权限等同完整控制台访问。确认继续？", "取消", "确认") != 1) continue;
+            var displayName = byName ? (nameInput.Text ?? "").Trim() : null;
             try
             {
                 var result = await model.ApplyAdminAsync(new(AdminAction.Apply, instance.Id, preset.Id, snapshot.Hash,
-                    [new(AdminMutationKind.Upsert, steamId, null, groupList, flagList)]));
-                status.Text = "已授予：" + string.Join(", ", result.Applied) + (result.Reload is { } r ? " · " + r : "");
+                    [new(AdminMutationKind.Upsert, steamId, string.IsNullOrEmpty(displayName) ? null : displayName, groupList, flagList)]));
+                status.Text = "已写入：" + string.Join(", ", result.Applied) + (result.Reload is { } r ? " · " + r : "")
+                    + (byName && string.IsNullOrEmpty(displayName) ? "\n未填显示名，key 用了 SteamID；下次写入填上名称即可重命名。" : "");
                 snapshot = result.Snapshot;
                 grantSteamId = null;
+                grantName = null;
             }
             catch (Exception e) { status.Text = Describe(e); }
         }

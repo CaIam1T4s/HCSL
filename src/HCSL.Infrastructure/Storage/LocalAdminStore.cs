@@ -153,14 +153,25 @@ public sealed class LocalAdminStore : IAdminStore
                     root = JsonSpanEditor.ParseObject(text);
                     if (existing?.DisplayName is { } key)
                     {
-                        text = JsonSpanEditor.SetMember(text, root, [], key, value);
+                        // CSSharp keys entries by display name; a new name renames the entry instead of
+                        // leaving a SteamID-shaped key behind (remove + insert keeps comments intact).
+                        var wanted = AdminRules.DisplayName(mutation.DisplayName);
+                        if (wanted.Length > 0 && wanted != key)
+                        {
+                            text = JsonSpanEditor.RemoveMember(text, ParseOrThrow(text), [], key);
+                            root = JsonSpanEditor.ParseObject(text);
+                            if (root.Members?.Any(m => m.Key == wanted) == true)
+                                throw new InstanceException("HCSL-ADMIN-CONFLICT", "The display name '" + wanted + "' is already used by another entry.");
+                        }
+                        else wanted = key;
+                        text = JsonSpanEditor.SetMember(text, root, [], wanted, value);
                         break;
                     }
                     var displayName = AdminRules.DisplayName(mutation.DisplayName);
-                    var wanted = displayName.Length > 0 ? displayName : steamId;
-                    if (root.Members?.Any(m => m.Key == wanted) == true)
-                        throw new InstanceException("HCSL-ADMIN-CONFLICT", "The display name '" + wanted + "' is already used by another entry; pass --name.");
-                    text = JsonSpanEditor.SetMember(text, root, [], wanted, value);
+                    var wantedNew = displayName.Length > 0 ? displayName : steamId;
+                    if (root.Members?.Any(m => m.Key == wantedNew) == true)
+                        throw new InstanceException("HCSL-ADMIN-CONFLICT", "The display name '" + wantedNew + "' is already used by another entry; pass --name.");
+                    text = JsonSpanEditor.SetMember(text, root, [], wantedNew, value);
                     break;
                 }
             }
