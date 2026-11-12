@@ -83,7 +83,8 @@ internal sealed record SteamCmdJournal(int Version, int OwnerPid, long OwnerStar
         if (Kill(-group, 0) == 0)
         {
             // A killed orphan can remain a zombie until init reaps it. Zombies cannot write files.
-            bool foundZombie = false;
+            // The kernel may also reap the last member between the probe above and this scan, so an
+            // empty scan is not evidence that the group is still alive.
             foreach (var directory in Directory.EnumerateDirectories("/proc"))
             {
                 if (!int.TryParse(Path.GetFileName(directory), out _)) continue;
@@ -93,12 +94,11 @@ internal sealed record SteamCmdJournal(int Version, int OwnerPid, long OwnerStar
                     var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     if (fields.Length < 3 || !int.TryParse(fields[2], out var pg) || pg != group) continue;
                     if (fields[0] is not ("Z" or "X")) return true;
-                    foundZombie = true;
                 }
                 catch (IOException) { }
-                catch (UnauthorizedAccessException) { return true; }
+                catch (UnauthorizedAccessException) { return true; } // Unknown visibility fails closed.
             }
-            return !foundZombie; // Unknown visibility fails closed.
+            return false;
         }
         var error = Marshal.GetLastPInvokeError();
         if (error == 3) return false; // ESRCH

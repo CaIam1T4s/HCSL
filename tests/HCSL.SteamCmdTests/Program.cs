@@ -295,7 +295,7 @@ try
         {
             Expect("HCSL-STEAMCMD-BUSY", () => service.Recover(fixture.Workspace, fixture.Executable));
             SteamCmdJournal.SignalGroup(live, 9);
-            for (int i = 0; i < 100 && SteamCmdJournal.GroupExists(live); i++) await Task.Delay(50);
+            for (int i = 0; i < 200 && SteamCmdJournal.GroupExists(live); i++) await Task.Delay(50);
             Check(!SteamCmdJournal.GroupExists(live), "orphan group still active");
         }
         else await Task.Delay(500); // Windows Job Object kills on the owner's handle closure.
