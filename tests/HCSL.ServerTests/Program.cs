@@ -51,6 +51,8 @@ if (only is null or "players")
 {
     await HCSL.ServerTests.PlayerRosterTests.RunAsync();
     HCSL.ServerTests.ServerKickTests.Run();
+    HCSL.ServerTests.JsonSpanEditorTests.Run();
+    HCSL.ServerTests.AdminListTests.Run();
     if (only is "players") { Console.WriteLine("PASS only players"); return 0; }
 }
 

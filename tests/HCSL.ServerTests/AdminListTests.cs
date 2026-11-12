@@ -1,0 +1,99 @@
+using HCSL.Application.Abstractions;
+using HCSL.Core;
+using HCSL.Infrastructure.Storage;
+namespace HCSL.ServerTests;
+
+/// <summary>CounterStrikeSharp admin list: read, edit, conflict, and comment preservation.</summary>
+public static class AdminListTests
+{
+    public static void Run()
+    {
+        void Check(bool value, string message) { if (!value) throw new Exception(message); }
+        void Reject(Action action, string code)
+        {
+            try { action(); throw new Exception("Expected " + code); }
+            catch (InstanceException e) when (e.Code == code) { }
+        }
+
+        // Identity formats accepted by the framework are normalised to SteamID64.
+        Check(AdminRules.SteamId("76561198000000000") == "76561198000000000", "SteamID64 passthrough.");
+        Check(AdminRules.SteamId("STEAM_0:0:19867136") == "76561198000000000", "STEAM_X:Y:Z conversion.");
+        Check(AdminRules.SteamId("[U:1:39734272]") == "76561198000000000", "[U:1:N] conversion.");
+        Reject(() => AdminRules.SteamId("7656119919085438"), "HCSL-ADMIN-ID");
+        Reject(() => AdminRules.SteamId("player"), "HCSL-ADMIN-ID");
+        Reject(() => AdminRules.Groups(["bad\"group"]), "HCSL-ADMIN-GROUP");
+        Reject(() => AdminRules.Flags(Enumerable.Range(0, AdminRules.MaxFlagsPerEntry + 1).Select(i => "f" + i)), "HCSL-ADMIN-LIMIT");
+
+        var root = Path.Combine(Path.GetTempPath(), "hcsl-admins-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
+            using (new LocalWorkspaceManager().Acquire(workspace)) { }
+            var instanceId = Guid.NewGuid();
+            var presetId = Guid.NewGuid();
+            var preset = Path.Combine(workspace.DataRoot, "instances", instanceId.ToString("D"), "presets", presetId.ToString("D"));
+            var configs = Path.Combine(preset, "addons", "counterstrikesharp", "configs");
+            Directory.CreateDirectory(configs);
+            var plugins = Path.Combine(preset, "plugins.json");
+            File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":1,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+
+            var store = new LocalAdminStore();
+            AdminCommand Cmd(AdminAction action, string? hash = null, AdminMutation[]? mutations = null, bool initGroups = false) =>
+                new(action, instanceId, presetId, hash, mutations, initGroups);
+            const string steamId = "76561198000000000";
+
+            // 1) Empty source: no files yet, but the panel is available and says why it is empty.
+            var empty = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(empty.Snapshot.SourceId == "cssharp" && empty.Snapshot.Entries.Length == 0 && empty.Snapshot.Groups.Length == 0, "Empty snapshot.");
+            Check(empty.Snapshot.Warnings.Any(w => w.Contains("admins.json", StringComparison.Ordinal)), "Missing file not reported.");
+
+            // 2) First grant with init-groups: creates the conservative group, not root.
+            var granted = store.Execute(workspace, Cmd(AdminAction.Apply, empty.Snapshot.Hash,
+                [new(AdminMutationKind.Upsert, steamId, "CaIam1Tas", [AdminRules.DefaultGroupName])], initGroups: true));
+            Check(granted.Snapshot.Entries.Length == 1 && granted.Snapshot.Entries[0].SteamId64 == steamId
+                && granted.Snapshot.Entries[0].DisplayName == "CaIam1Tas", "Grant did not persist.");
+            Check(granted.Snapshot.Groups.Any(g => g.Name == AdminRules.DefaultGroupName), "init-groups did not create the group.");
+            Check(granted.Snapshot.Groups.All(g => !g.Flags.Contains("@css/root")), "Default group must not include root.");
+            var adminsFile = Path.Combine(configs, "admins.json");
+            Check(File.Exists(adminsFile) && File.ReadAllText(adminsFile).Contains(steamId, StringComparison.Ordinal), "admins.json not written.");
+            Check(granted.Applied.Length == 1 && granted.Code == "HCSL-ADMIN-WRITTEN", "Applied summary.");
+
+            // 3) A hand-written comment must survive later edits byte-for-byte.
+            var withComment = File.ReadAllText(adminsFile).Replace("{\n", "{\n  // managed by hand\n", StringComparison.Ordinal);
+            File.WriteAllText(adminsFile, withComment);
+            var listed = store.Execute(workspace, Cmd(AdminAction.List));
+            var updated = store.Execute(workspace, Cmd(AdminAction.Apply, listed.Snapshot.Hash,
+                [new(AdminMutationKind.SetGroups, steamId, null, [AdminRules.DefaultGroupName], ["@css/ban"])]));
+            Check(File.ReadAllText(adminsFile).Contains("// managed by hand", StringComparison.Ordinal), "Comment was dropped by the edit.");
+            Check(Directory.Exists(Path.Combine(preset, "framework-data", "cssharp", "admin-backups")), "No backup of the previous version.");
+            Check(updated.Snapshot.Entries[0].Groups.Length == 1 && updated.Snapshot.Entries[0].Flags.Contains("@css/ban"), "SetGroups/flag update missing.");
+
+            // 4) Stale hash is refused instead of overwriting an external edit.
+            Reject(() => store.Execute(workspace, Cmd(AdminAction.Apply, listed.Snapshot.Hash,
+                [new(AdminMutationKind.Remove, steamId)])), "HCSL-ADMIN-CONFLICT");
+
+            // 5) Revoke removes the entry and leaves an empty object.
+            var current = store.Execute(workspace, Cmd(AdminAction.List));
+            var revoked = store.Execute(workspace, Cmd(AdminAction.Apply, current.Snapshot.Hash, [new(AdminMutationKind.Remove, steamId)]));
+            Check(revoked.Snapshot.Entries.Length == 0, "Revoke did not remove the entry.");
+            Check(!File.ReadAllText(adminsFile).Contains(steamId, StringComparison.Ordinal), "Identity still present after revoke.");
+            Check(File.ReadAllText(adminsFile).Contains("// managed by hand", StringComparison.Ordinal), "Comment lost on revoke.");
+
+            // 6) Alternate identity formats match the same entry.
+            var again = store.Execute(workspace, Cmd(AdminAction.List));
+            store.Execute(workspace, Cmd(AdminAction.Apply, again.Snapshot.Hash, [new(AdminMutationKind.Upsert, "[U:1:39734272]", "Alt", ["#hcsl/admin"])]));
+            var matched = store.Execute(workspace, Cmd(AdminAction.List));
+            Check(matched.Snapshot.Entries.Length == 1, "Alternate identity created a duplicate entry.");
+
+            // 7) A preset without CounterStrikeSharp has no admin source at all.
+            File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":2,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":false}]}""");
+            Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-SOURCE");
+
+            // 8) Unparseable file is reported, never "repaired".
+            File.WriteAllText(plugins, """{"FormatVersion":1,"Revision":3,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+            File.WriteAllText(adminsFile, "{ \"Broken\": ");
+            Reject(() => store.Execute(workspace, Cmd(AdminAction.List)), "HCSL-ADMIN-PARSE");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+}

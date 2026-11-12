@@ -51,6 +51,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "frameworks" => await FrameworksAsync(invocation, json, ct),
     "players" => await PlayersAsync(invocation, json, ct),
     "kick" => await KickAsync(invocation, json, ct),
+    "admins" => await AdminsAsync(invocation, json, ct),
     "gc" => Gc(invocation),
     "baseline" => Baseline(invocation, json),
     "test" => await TestAsync(invocation, json, ct),
@@ -185,6 +186,88 @@ static async Task<(DaemonClient Daemon, ServerClient Client)> ConnectAsync(DevIn
 }
 
 static WorkspacePaths Paths(WorkspaceRequest workspace) => new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+
+static async Task<int> AdminsAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, preset) = Target(workspace, invocation);
+    var (daemonClient, _) = await ConnectAsync(invocation, ct);
+    var client = new AdminClient(daemonClient);
+    var action = invocation.Positionals.Length == 0 ? "list" : invocation.Positionals[0];
+    var argument = invocation.Positionals.Length > 1 ? invocation.Positionals[1] : null;
+
+    if (action == "list")
+    {
+        var listed = await client.ListAsync(entry.Id, preset.Id, ct);
+        if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(listed, json)); return 0; }
+        PrintAdmins(listed.Snapshot);
+        if (listed.Snapshot.Warnings.Length > 0) Console.WriteLine("warning    " + string.Join("; ", listed.Snapshot.Warnings));
+        return 0;
+    }
+    if (action == "reload")
+    {
+        var reloaded = await client.ReloadAsync(entry.Id, preset.Id, ct);
+        Console.WriteLine("reload     " + (reloaded.Reload ?? "no reload command for this source"));
+        return 0;
+    }
+    if (action is not ("grant" or "revoke" or "set-groups" or "init-groups"))
+        throw new DevUsageException("admins accepts: list, grant <steamid>, revoke <steamid>, set-groups <steamid>, init-groups, reload.");
+    if (action != "init-groups" && argument is null)
+        throw new DevUsageException("admins " + action + " needs a SteamID64 (or STEAM_X:Y:Z / [U:1:N]). Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
+    var safe = action is "grant" or "revoke" or "set-groups" or "init-groups";
+    if (!safe) throw new DevUsageException("Unknown admins action.");
+    if (!invocation.Has("--yes")) throw new DevUsageException("Changing admin rights needs --yes. Example: hcsl admins grant 76561198000000000 --groups #hcsl/admin --yes");
+
+    var current = await client.ListAsync(entry.Id, preset.Id, ct);
+    var mutations = new List<AdminMutation>();
+    var groups = (invocation.Get("--groups") ?? invocation.Get("--group") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var flags = (invocation.Get("--flags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    switch (action)
+    {
+        case "grant":
+            if (groups.Length == 0 && flags.Length == 0 && !current.Snapshot.Groups.Any(g => g.Name == AdminRules.DefaultGroupName))
+                groups = [AdminRules.DefaultGroupName];
+            else if (groups.Length == 0 && flags.Length == 0)
+                groups = [AdminRules.DefaultGroupName];
+            break;
+        case "set-groups":
+            break;
+        case "revoke":
+            mutations.Add(new(AdminMutationKind.Remove, AdminRules.SteamId(argument)));
+            break;
+    }
+    if (action is "grant" or "set-groups")
+    {
+        if (groups.Length == 0 && flags.Length == 0)
+            throw new DevUsageException("Pass --groups <name[,name]> or --flags <flag[,flag]>. Example: --groups #hcsl/admin");
+        if (flags.Any(f => f is "@css/root" or "@css/rcon") && !invocation.Has("--root"))
+            throw new DevUsageException("@css/root and @css/rcon grant full console access; add --root to confirm.");
+        mutations.Add(new(AdminMutationKind.Upsert, AdminRules.SteamId(argument), invocation.Get("--name"),
+            groups.Length == 0 ? null : groups, flags.Length == 0 ? null : flags));
+    }
+    var result = await client.ApplyAsync(new(AdminAction.Apply, entry.Id, preset.Id, current.Snapshot.Hash, [.. mutations],
+        invocation.Has("--init-groups"), invocation.Has("--root")), ct);
+    if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(result, json)); return 0; }
+    Console.WriteLine("applied    " + (result.Applied.Length == 0 ? "no change" : string.Join(", ", result.Applied)));
+    Console.WriteLine("reload     " + (result.Reload ?? "no reload command for this source"));
+    foreach (var warning in result.Snapshot.Warnings) Console.WriteLine("warning    " + warning);
+    PrintAdmins(result.Snapshot);
+    return 0;
+}
+
+static void PrintAdmins(AdminListSnapshot snapshot)
+{
+    Console.WriteLine($"source     {snapshot.SourceName} ({snapshot.SourceId}) · hash {Short(snapshot.Hash)}");
+    Console.WriteLine($"groups     {snapshot.Groups.Length}");
+    foreach (var group in snapshot.Groups)
+        Console.WriteLine($"  {group.Name,-20} {group.Flags.Length} flag(s){(group.Immunity is { } immunity ? " · immunity " + immunity : "")}");
+    Console.WriteLine($"admins     {snapshot.Entries.Length}");
+    foreach (var admin in snapshot.Entries)
+        Console.WriteLine($"  {admin.DisplayName ?? admin.SteamId64,-24} {admin.SteamId64,-20} groups: {string.Join(", ", admin.Groups)}"
+            + (admin.Problems.Length > 0 ? " · " + string.Join(", ", admin.Problems) : ""));
+}
+
+static string Short(string hash) => hash.Length <= 12 ? (hash.Length == 0 ? "-" : hash) : hash[..12];
 
 static async Task<int> KickAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
 {

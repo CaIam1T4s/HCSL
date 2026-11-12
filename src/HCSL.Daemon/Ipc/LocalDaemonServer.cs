@@ -110,6 +110,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 try { response = request.Kind == RequestKind.Baseline ? await BaselineAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.Admin ? await AdminAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Kick ? await KickAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Players ? await PlayersAsync(request, deadline.Token)
                     : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
@@ -205,6 +206,42 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
         return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
     }
+    private async Task<LocalResponse> AdminAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson ?? "null")
+            ?? throw new InstanceException("HCSL-ADMIN-REQUEST", "Admin command is required.");
+        var workspace = new WorkspaceRequest(p.SettingsRoot, p.DataRoot, p.LibraryRoot);
+        var store = new LocalAdminStore();
+        if (command.Action == AdminAction.Reload)
+        {
+            var snapshot = store.Execute(workspace, command with { Action = AdminAction.List });
+            var reload = await ReloadAdminsAsync(AdminRules.ReloadCommandFor(snapshot.Snapshot.SourceId), ct);
+            var reloaded = new AdminResult(snapshot.Snapshot, "HCSL-ADMIN-RELOADED", [], reload);
+            return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded));
+        }
+        var result = store.Execute(workspace, command);
+        if (command.Action == AdminAction.Apply)
+            result = result with { Reload = await ReloadAdminsAsync(AdminRules.ReloadCommandFor(result.Snapshot.SourceId), ct) };
+        return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result));
+    }
+
+    /// <summary>A written admin list takes effect through the framework's own reload command; a stopped server applies it at next start.</summary>
+    private async Task<string?> ReloadAdminsAsync(string? consoleCommand, CancellationToken ct)
+    {
+        if (consoleCommand is null) return null;
+        if (servers is null) return "daemon has no server runtime; applies at next start";
+        var snapshot = servers.Snapshot();
+        if (!snapshot.Active || snapshot.RunId is not { } runId
+            || snapshot.State is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running))
+            return "server is not running; applies at next start";
+        var receipt = await servers.SendConsoleAsync(new(runId, Guid.NewGuid(), consoleCommand, ConfirmMutation: true), ct);
+        return receipt.Delivery == ConsoleDelivery.Written
+            ? consoleCommand + " sent (" + receipt.Code + ")"
+            : consoleCommand + " rejected (" + receipt.Code + ")";
+    }
+
     private async Task<LocalResponse> KickAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
