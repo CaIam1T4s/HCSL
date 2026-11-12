@@ -61,6 +61,8 @@ internal static class Source2ModAdminFile
                                 permissions = [.. permissionList.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString()!)];
                             if (admin.Value.TryGetProperty("Immunity", out var immunityValue) && immunityValue.TryGetInt32(out var parsed)) immunity = parsed;
                         }
+                        // The key IS the SteamID here; keep it for diagnostics (e.g. an unparsable key) and let the
+                        // UI collapse key==SteamID into a single column instead of printing it twice.
                         entries.Add(new(steamId, admin.Name, groupsOf, permissions, immunity, [.. problems]));
                     }
             }

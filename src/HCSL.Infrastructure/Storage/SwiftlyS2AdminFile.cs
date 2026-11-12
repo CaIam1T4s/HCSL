@@ -49,6 +49,8 @@ internal static class SwiftlyS2AdminFile
                             catch (InstanceException) { problems.Add("HCSL-ADMIN-ID"); }
                             var memberships = Strings(player.Value);
                             if (player.Value.ValueKind != JsonValueKind.Array) problems.Add("HCSL-ADMIN-PARSE");
+                            // SwiftlyS2 keys players by SteamID; keep the raw key for diagnostics and let the UI
+                            // collapse key==SteamID into a single column.
                             entries.Add(new(steamId, player.Name, memberships, [], null, [.. problems]));
                         }
                 }

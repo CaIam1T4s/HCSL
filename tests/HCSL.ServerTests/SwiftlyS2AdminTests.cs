@@ -52,6 +52,8 @@ public static class SwiftlyS2AdminTests
             var granted = store.Execute(workspace, Cmd(AdminAction.Apply, skeleton.Snapshot.Hash,
                 [new(AdminMutationKind.Upsert, steamId, null, ["vip", "admin"], ["test.1"], 50)]));
             Check(granted.Snapshot.Entries.Length == 1 && granted.Snapshot.Entries[0].Groups.SequenceEqual(["vip", "admin"]), "Groups not stored.");
+            Check(granted.Snapshot.Entries[0].DisplayName == granted.Snapshot.Entries[0].SteamId64,
+                "SwiftlyS2 keys players by SteamID; the key and identity must agree.");
             Check(granted.Applied[0].Contains("Upsert", StringComparison.Ordinal), "Applied summary missing.");
             Check(granted.Snapshot.Warnings.Any(w => w.Contains("ignored", StringComparison.Ordinal)), "Ignored flags not reported.");
             var written = File.ReadAllText(file);

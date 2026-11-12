@@ -163,10 +163,18 @@ public partial class MainWindow
             AdminReloadKind.Restart => "重启服务器",
             _ => "未知"
         };
-        static string Label(AdminEntry entry) =>
-            $"{entry.DisplayName ?? entry.SteamId64} · {entry.SteamId64} · 组：{string.Join(",", entry.Groups)}"
-            + (entry.Flags.Length > 0 ? " · 权限：" + string.Join(",", entry.Flags) : "")
-            + (entry.Problems.Length > 0 ? " · ⚠ " + string.Join(",", entry.Problems) : "");
+        static string Label(AdminEntry entry)
+        {
+            // Collapse "key == SteamID" into one column; show both only when they differ,
+            // and keep an unparsable key visible so the warning is actionable.
+            var same = entry.DisplayName == entry.SteamId64;
+            var who = same ? entry.SteamId64
+                : entry.SteamId64.Length == 0 ? (entry.DisplayName ?? "(no key)")
+                : entry.DisplayName + " (" + entry.SteamId64 + ")";
+            return $"{who} · 组：{string.Join(",", entry.Groups)}"
+                + (entry.Flags.Length > 0 ? " · 权限：" + string.Join(",", entry.Flags) : "")
+                + (entry.Problems.Length > 0 ? " · ⚠ " + string.Join(",", entry.Problems) : "");
+        }
         static string Describe(Exception e) => e is HCSL.Core.InstanceException failure ? failure.Code + ": " + failure.Message : e.Message;
     }
 }

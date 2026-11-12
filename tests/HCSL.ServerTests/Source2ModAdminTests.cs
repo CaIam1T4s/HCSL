@@ -51,6 +51,8 @@ public static class Source2ModAdminTests
             var granted = store.Execute(workspace, Cmd(AdminAction.Apply, skeleton.Snapshot.Hash,
                 [new(AdminMutationKind.Upsert, steamId, null, ["hcsl_admin"], ["admin.kick", "admin.ban"])]));
             Check(granted.Snapshot.Entries.Length == 1 && granted.Snapshot.Entries[0].SteamId64 == steamId, "Grant not persisted.");
+            Check(granted.Snapshot.Entries[0].DisplayName == granted.Snapshot.Entries[0].SteamId64,
+                "Source2Mod keys by SteamID; the key and identity must agree.");
             Check(granted.Snapshot.Entries[0].Groups.SequenceEqual(["hcsl_admin"]), "Groups not stored.");
             Check(granted.Snapshot.Entries[0].Flags.SequenceEqual(["admin.kick", "admin.ban"]), "Permissions not stored.");
             var written = File.ReadAllText(file);

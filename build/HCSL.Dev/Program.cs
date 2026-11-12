@@ -291,8 +291,17 @@ static void PrintAdmins(AdminListSnapshot snapshot)
     Console.WriteLine($"admins     {shown} of {snapshot.Total}"
         + (snapshot.Total > shown ? $" · offset {snapshot.Offset}{(snapshot.HasMore ? ", more available" : "")}" : ""));
     foreach (var admin in snapshot.Entries)
-        Console.WriteLine($"  {admin.DisplayName ?? admin.SteamId64,-24} {admin.SteamId64,-20} groups: {string.Join(", ", admin.Groups)}"
+    {
+        // Collapse "key == SteamID" into one column; show both only when they differ (e.g. STEAM_0:0:…),
+        // and keep an unparsable key visible so the warning is actionable.
+        var same = admin.DisplayName == admin.SteamId64;
+        var who = same ? admin.SteamId64
+            : admin.SteamId64.Length == 0 ? (admin.DisplayName ?? "(no key)")
+            : admin.DisplayName + " (" + admin.SteamId64 + ")";
+        Console.WriteLine($"  {who,-44} groups: {string.Join(", ", admin.Groups)}"
+            + (admin.Flags.Length > 0 ? " · permissions: " + string.Join(",", admin.Flags) : "")
             + (admin.Problems.Length > 0 ? " · " + string.Join(", ", admin.Problems) : ""));
+    }
 }
 
 static string Short(string hash) => hash.Length <= 12 ? (hash.Length == 0 ? "-" : hash) : hash[..12];
