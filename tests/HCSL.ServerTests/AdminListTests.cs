@@ -54,6 +54,7 @@ public static class AdminListTests
                 && granted.Snapshot.Entries[0].DisplayName == "CaIam1Tas", "Grant did not persist.");
             Check(granted.Snapshot.Groups.Any(g => g.Name == AdminRules.DefaultGroupName), "init-groups did not create the group.");
             Check(granted.Snapshot.Groups.All(g => !g.Flags.Contains("@css/root")), "Default group must not include root.");
+            Check(granted.Snapshot.Groups.SelectMany(g => g.Flags).Contains("@custom/prac"), "Default group must allow MatchZy practice mode.");
             var adminsFile = Path.Combine(configs, "admins.json");
             Check(File.Exists(adminsFile) && File.ReadAllText(adminsFile).Contains(steamId, StringComparison.Ordinal), "admins.json not written.");
             Check(granted.Applied.Length == 1 && granted.Code == "HCSL-ADMIN-WRITTEN", "Applied summary.");

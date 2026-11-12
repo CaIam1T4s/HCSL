@@ -102,9 +102,10 @@ public static class AdminRules
         return (offset, size);
     }
 
-    /// <summary>Conservative group written by <c>init-groups</c>: no rcon, cheats or root.</summary>
+    /// <summary>Conservative group written by <c>init-groups</c>: server moderation plus practice mode, but no
+    /// rcon, cheats or root. <c>@custom/prac</c>/<c>@css/map</c> are what MatchZy checks for <c>.prac</c>.</summary>
     public static readonly string[] DefaultGroupFlags =
-        ["@css/generic", "@css/kick", "@css/ban", "@css/slay", "@css/changemap", "@css/chat"];
+        ["@css/generic", "@css/kick", "@css/ban", "@css/slay", "@css/changemap", "@css/chat", "@css/map", "@custom/prac"];
     public const string DefaultGroupName = "#hcsl/admin";
 
     private static readonly Regex SteamId64Pattern = new(@"\A7656\d{13}\z", RegexOptions.CultureInvariant);
