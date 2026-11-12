@@ -59,6 +59,17 @@
       </Border>
       <Border Classes="panel">
         <StackPanel Spacing="10">
+          <TextBlock Classes="subheading" Text="启动基线"/>
+          <TextBlock Text="{Binding Baseline.StatusText}" TextWrapping="Wrap"/>
+          <TextBlock Classes="muted" Text="CS2 更新后，部署会以 HCSL-DEPLOY-BASELINE 拒绝旧哈希。此处重新校验已安装文件并记录本地基线；它不启动游戏，也不代表新构建已完成开服验收。" TextWrapping="Wrap"/>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <arc:Button Content="重新检查" Click="RefreshBaselineStatus" IsEnabled="{Binding Baseline.CanRefresh}" Variant="Secondary"/>
+            <arc:Button Content="校验并刷新基线" Click="RefreshBaseline" IsEnabled="{Binding Baseline.CanRefresh}" IsVisible="{Binding Baseline.NeedsRefresh}" Variant="Secondary"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="panel">
+        <StackPanel Spacing="10">
           <TextBlock Classes="subheading" Text="插件"/>
           <TextBlock Classes="muted" Text="插件下载和实例开服尚未接入。此处安装操作只维护全局服务端基础文件。" TextWrapping="Wrap"/>
         </StackPanel>

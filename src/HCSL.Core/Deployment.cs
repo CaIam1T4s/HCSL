@@ -18,4 +18,12 @@ public sealed record DeploymentReceipt(int FormatVersion, Guid OperationId, stri
     string? PluginSetHash = null, string? Framework = null,
     FrameworkReadinessProfile FrameworkReadiness = FrameworkReadinessProfile.Standard);
 public sealed record DeploymentEvent(string Stage, int FilesCompleted = 0, int TotalFiles = 0);
+
+/// <summary>Startup baseline maintenance: read-only status, or re-verify the installed build and record it.</summary>
+public enum BaselineAction { Status, Refresh }
+
+public sealed record BaselineCommand(BaselineAction Action);
+
+/// <summary>Source is Local (library baseline), Embedded (shipped baseline) or None (must refresh before deploying).</summary>
+public sealed record BaselineResult(string BuildId, string Source, string? LocalBuildId = null, string? LocalBaselinePath = null);
 public sealed class DeploymentException(string code, string message) : Exception(message) { public string Code { get; } = code; }

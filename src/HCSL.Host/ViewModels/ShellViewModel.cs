@@ -17,6 +17,7 @@ public sealed class ShellViewModel : ObservableObject
 {
     public SteamCmdController SteamCmd { get; }
     public HostServerController Servers { get; }
+    public BaselineController Baseline { get; }
     public IReadOnlyList<NavigationItem> Pages { get; } =
     [
         new("home", "首页", "选择实例，准备启动服务器。"),
@@ -77,10 +78,11 @@ public sealed class ShellViewModel : ObservableObject
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
 
-    public ShellViewModel(IThemeService themeService, SteamCmdController steamCmd, HostServerController servers)
+    public ShellViewModel(IThemeService themeService, SteamCmdController steamCmd, HostServerController servers, BaselineController baseline)
     {
         SteamCmd = steamCmd;
         Servers = servers;
+        Baseline = baseline;
         _selectedPage = Pages[0];
         _selectedPage.IsSelected = true;
         SetThemeCommand = new RelayCommand(value => { if (value is string theme) SelectedTheme = theme; });

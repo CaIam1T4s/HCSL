@@ -6,6 +6,7 @@ using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Contracts;
 using HCSL.Daemon.Workers;
+using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 namespace HCSL.Daemon.Ipc;
@@ -99,17 +100,21 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             try
             {
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
-                if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall)
+                if (request.Kind == RequestKind.Baseline)
+                    deadline.CancelAfter(TimeSpan.FromMinutes(10));
+                else if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall)
                     deadline.CancelAfter(TimeSpan.FromMinutes(20));
                 else if (request.Kind == RequestKind.PluginCfg)
                     deadline.CancelAfter(TimeSpan.FromMinutes(5));
                 LocalResponse response;
-                try { response = request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
+                try { response = request.Kind == RequestKind.Baseline ? await BaselineAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
                     : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
                     : Dispatch(request); }
                 catch (ServerException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
+                catch (DeploymentException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (InstanceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (WorkspaceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (OperationRejected ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
@@ -140,6 +145,42 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
         var plan = await servers.PlanDeployment(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command.InstanceId);
         return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan));
+    }
+    /// <summary>Startup baseline status/refresh. Refresh writes only the library-local baseline.</summary>
+    private Task<LocalResponse> BaselineAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION"));
+        var workspace = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<BaselineCommand>(request.BaselineJson ?? "null")
+            ?? throw new InstanceException("HCSL-BASELINE-REQUEST", "Baseline action is required.");
+        if (!Enum.IsDefined(command.Action))
+            throw new InstanceException("HCSL-BASELINE-REQUEST", "Unknown baseline action.");
+        var layout = new WorkspaceLayout(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot,
+            Path.Combine(workspace.LibraryRoot, "steamcmd"), Path.Combine(workspace.DataRoot, "instances"),
+            Path.Combine(workspace.LibraryRoot, "server"), Path.Combine(workspace.LibraryRoot, "runtime"));
+        var stateFile = Path.Combine(layout.LibraryRoot, ".hcsl", "cs2-install.json");
+        if (!File.Exists(stateFile))
+            throw new InstanceException("HCSL-BASELINE-NOT-READY", "No managed CS2 installation is available.");
+        using var state = JsonDocument.Parse(File.ReadAllText(stateFile));
+        var status = state.RootElement.TryGetProperty("Status", out var statusValue) ? statusValue.GetString() : null;
+        var buildId = state.RootElement.TryGetProperty("BuildId", out var buildValue) ? buildValue.GetString() : null;
+        if (status != "Ready" || string.IsNullOrWhiteSpace(buildId))
+            throw new InstanceException("HCSL-BASELINE-NOT-READY", "CS2 installation is not Ready; finish or repair it first.");
+        if (command.Action == BaselineAction.Status)
+        {
+            var (source, installed, localBuild) = RuntimeDeploymentService.BaselineStatus(layout, buildId);
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(installed, source, localBuild.Length == 0 ? null : localBuild,
+                    Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
+        }
+        if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
+            throw new InstanceException("HCSL-BASELINE-BUSY", "Stop the server/SteamCMD and complete recovery before refreshing the baseline.");
+        using (new LocalWorkspaceManager().Acquire(new WorkspaceRequest(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot)))
+            RuntimeDeploymentService.RebuildLocalBaseline(layout, buildId, Guid.NewGuid());
+        var result = RuntimeDeploymentService.BaselineStatus(layout, buildId);
+        return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+            BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(result.BuildId, result.Source, result.LocalBuildId,
+                Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
     }
     private async Task<LocalResponse> FrameworkCheckAsync(LocalRequest request, CancellationToken ct)
     {

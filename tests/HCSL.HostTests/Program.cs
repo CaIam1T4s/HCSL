@@ -30,10 +30,11 @@ var daemon = new FakeDaemon();
 using var server = new ServerController(daemon, a => Dispatcher.UIThread.Post(a));
 using var model = new HostServerController(server, new InstanceClient(daemon), daemon: daemon);
 using var steam = new SteamCmdController(daemon, a => Dispatcher.UIThread.Post(a));
+using var baseline = new BaselineController(new BaselineClient(daemon));
 PumpUntil(server.ConnectAsync());
 var owner = new MainWindow
 {
-    DataContext = new ShellViewModel(new ThemeService(Avalonia.Application.Current!), steam, model)
+    DataContext = new ShellViewModel(new ThemeService(Avalonia.Application.Current!), steam, model, baseline)
 };
 owner.Show();
 Layout();
@@ -348,6 +349,38 @@ Console.WriteLine("PASS gui.frameworks.download-and-incompatible-card");
 if (only is "frameworks") return 0;
 }
 
+if (only is null or "baseline")
+{
+    // Downloads page: baseline source drives the refresh button and every failure keeps its host code.
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("downloads"); Layout();
+    baseline.RefreshStatusAsync().GetAwaiter().GetResult();
+    Layout();
+    var refreshButton = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .First(b => Equals(b.Content, "校验并刷新基线"));
+    Check(refreshButton.IsEffectivelyVisible && refreshButton.IsEffectivelyEnabled, "Missing baseline must offer a refresh button.");
+    var statusText = owner.GetVisualDescendants().OfType<TextBlock>()
+        .First(t => t.Text?.Contains("安装 BuildId 26598758", StringComparison.Ordinal) == true).Text!;
+    Check(statusText.Contains("缺失", StringComparison.Ordinal), "Baseline NONE state not shown: " + statusText);
+    refreshButton.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("重新校验", StringComparison.Ordinal) == true));
+    Click(owner, "校验并刷新");
+    WaitUntil(() => daemon.BaselineRefreshes == 1);
+    WaitUntil(() => baseline.NeedsRefresh == false);
+    Check(baseline.StatusText.Contains("本地", StringComparison.Ordinal), "Baseline status did not become local: " + baseline.StatusText);
+    // The page reports the result through the shared overlay; close it before continuing.
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
+    Click(owner, "返回"); Layout();
+
+    // Busy host: the failure code must surface unchanged, not be rewritten.
+    daemon.BaselineBusy = true;
+    daemon.Baseline = new("26598758", "None");
+    Check(!baseline.RefreshBaselineAsync().GetAwaiter().GetResult(), "Busy refresh claimed success.");
+    Check(baseline.Status.Contains("HCSL-BASELINE-BUSY", StringComparison.Ordinal), "Busy code not preserved: " + baseline.Status);
+    daemon.BaselineBusy = false;
+    Console.WriteLine("PASS gui.baseline.status-refresh-confirm-and-host-code");
+if (only is "baseline") return 0;
+}
+
 if (only is null or "errors")
 {
     if (daemon.Catalog.Instances.Length == 0)
@@ -453,18 +486,18 @@ Check(!presetPage.FindControl<TKCode.Arc.Button>("CreatePresetButton")!.IsEnable
 Console.WriteLine("PASS gui.presets.catalog-browse-without-switch-cancel-selection-and-active-write-guards");
 var normalStart = owner.ConfirmStartAsync("测试启动确认");
 Layout();
-Check(owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single().IsChecked != true, "Low-memory consent must default off.");
+Check(owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single(c => c.IsEffectivelyVisible).IsChecked != true, "Low-memory consent must default off.");
 Click(owner, "启动"); PumpUntil(normalStart);
 Check(normalStart.Result is { Confirmed: true, AllowLowMemory: false }, "Ordinary start implicitly consented.");
 var debugStart = owner.ConfirmStartAsync("测试调试启动");
 Layout();
-owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single().IsChecked = true;
+owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single(c => c.IsEffectivelyVisible).IsChecked = true;
 Click(owner, "启动"); PumpUntil(debugStart);
 Check(debugStart.Result is { Confirmed: true, AllowLowMemory: true }, "Explicit debug consent missing.");
 var nextStart = owner.ConfirmStartAsync("测试不保存同意");
 Layout();
-Check(owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single().IsChecked != true, "Consent leaked into the next start.");
-owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single().IsChecked = true;
+Check(owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single(c => c.IsEffectivelyVisible).IsChecked != true, "Consent leaked into the next start.");
+owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single(c => c.IsEffectivelyVisible).IsChecked = true;
 Click(owner, "取消"); PumpUntil(nextStart);
 Check(nextStart.Result is { Confirmed: false, AllowLowMemory: false }, "Cancel must not return consent.");
 Console.WriteLine("PASS gui.start.low-memory-default-explicit-one-shot-and-cancel");
@@ -547,6 +580,9 @@ sealed class FakeDaemon : IDaemonClient
     public int PlanDeployments;
     public string DeployCode = "HCSL-SERVER-DEPLOYED";
     public bool CfgRunIdentity;
+    public int BaselineRefreshes;
+    public bool BaselineBusy;
+    public BaselineResult Baseline = new("26598758", "None");
     public int CfgWrites;
     public int PoolWrites;
     public bool RejectPoolWrites;
@@ -580,6 +616,17 @@ sealed class FakeDaemon : IDaemonClient
                 PoolWrites++; Pool = new(new(1, Pool.Pool.Revision + 1, c.Maps!), "pool-" + (Pool.Pool.Revision + 1));
             }
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(Pool)));
+        }
+        if (request.Kind == RequestKind.Baseline)
+        {
+            var command = JsonSerializer.Deserialize<BaselineCommand>(request.BaselineJson!)!;
+            if (command.Action == BaselineAction.Refresh)
+            {
+                if (BaselineBusy) return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-BASELINE-BUSY", "Stop the server first."));
+                BaselineRefreshes++;
+                Baseline = new("26598758", "Local", "26598758", "/library/.hcsl/linux-startup-baseline.json");
+            }
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, BaselineResultJson: JsonSerializer.Serialize(Baseline)));
         }
         if (request.Kind == RequestKind.FrameworkCheck)
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(FrameworkCheck)));

@@ -209,6 +209,17 @@ try
         await Finished(ui.LastSnapshot!.Id!.Value, ProbeStage.Succeeded);
         ui.Dispose();
     });
+    await Run("baseline status/refresh use real codes and fail closed without an installation", async () =>
+    {
+        var options = Fixture("baseline", "already-up-to-date");
+        var status = await SendBaseline(options, new BaselineCommand(BaselineAction.Status));
+        Check(!status.Success && status.Code == "HCSL-BASELINE-NOT-READY", "status without installation: " + status.Code);
+        var refresh = await SendBaseline(options, new BaselineCommand(BaselineAction.Refresh));
+        Check(!refresh.Success && refresh.Code == "HCSL-BASELINE-NOT-READY", "refresh without installation: " + refresh.Code);
+        var unknown = await SendBaseline(options, new BaselineCommand((BaselineAction)99));
+        Check(!unknown.Success && unknown.Code == "HCSL-BASELINE-REQUEST", "unknown baseline action: " + unknown.Code);
+        Check(!File.Exists(Path.Combine(options.Workspace.LibraryRoot, ".hcsl", "linux-startup-baseline.json")), "failed refresh wrote a baseline");
+    });
     if (OperatingSystem.IsLinux()) await Run("graceful daemon shutdown cancels and drains its tool process group", async () =>
     {
         var options = Fixture("shutdown", "hang");
@@ -314,6 +325,9 @@ ProbeOptions Fixture(string name, string scenario = "success")
 }
 Task<LocalResponse> Send(RequestKind kind, ProbeOptions? options = null, Guid? operation = null, Guid? challenge = null, string? secret = null)
     => client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), kind, options, operation, challenge, secret));
+Task<LocalResponse> SendBaseline(ProbeOptions options, BaselineCommand command)
+    => client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Baseline, options,
+        BaselineJson: JsonSerializer.Serialize(command)));
 async Task<Challenge> Pending(ChallengeKind kind)
 {
     Challenge? challenge = null;

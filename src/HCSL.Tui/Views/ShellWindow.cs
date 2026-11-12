@@ -10,6 +10,7 @@ using Application = global::Terminal.Gui.Application;
 public sealed partial class ShellWindow : Toplevel
 {
     private readonly SteamCmdController _steamCmd;
+    private readonly BaselineController _baseline;
     private readonly SteamCmdPanel _steamPanel;
     private readonly Window _window;
     private readonly NavigationBar _navigation;
@@ -43,6 +44,7 @@ public sealed partial class ShellWindow : Toplevel
     {
         _options = options ?? new(false);
         _steamCmd = new SteamCmdController(new DaemonClient(), action => Application.MainLoop.Invoke(action), new DaemonBootstrapper());
+        _baseline = new BaselineController(new BaselineClient(new DaemonClient()));
         _steamCmd.English = _options.English;
         _sections = PageCatalog.Sections(_options);
         _pages = PageCatalog.Create(_options).ToDictionary(page => page.Id);
@@ -134,7 +136,7 @@ public sealed partial class ShellWindow : Toplevel
         InitializeMaps();
         InitializePlugins();
         _page.Add(_instancesFrame);
-        _steamPanel = new SteamCmdPanel(_steamCmd) { X = 1, Y = 0, Visible = false };
+        _steamPanel = new SteamCmdPanel(_steamCmd, _baseline) { X = 1, Y = 0, Visible = false };
         _steamPanel.StateChanged += RefreshHostTitle;
         _page.Add(_steamPanel);
         _window.Add(_navigation, _summary, _submenuFrame, _page);
