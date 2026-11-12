@@ -75,6 +75,7 @@ public sealed class ShellViewModel : ObservableObject
     }
     public string SidebarBlurLabel => $"{SidebarBlurRadius:0} px";
     public IReadOnlyList<string> Themes { get; } = ["跟随系统", "浅色", "深色"];
+    public string VersionLabel => ProductVersion.Display;
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
 

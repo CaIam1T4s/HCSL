@@ -34,7 +34,7 @@ def main():
         layout = json.loads(line)['Layout']
         library = Path(layout['LibraryRoot'])
         installed = json.loads((library / '.hcsl/cs2-install.json').read_text())
-        baseline = json.loads((repo / 'docs/deployment/linux-startup-baseline.json').read_text())
+        baseline = json.loads((repo / 'src/HCSL.Infrastructure/Resources/linux-startup-baseline.json').read_text())
         if installed['Status'] != 'Ready' or installed['BuildId'] != baseline['buildId']:
             raise RuntimeError('Installation not ready or static baseline requires revalidation.')
         source = Path(layout['ServerRoot']) / 'game'

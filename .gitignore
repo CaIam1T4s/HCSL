@@ -59,3 +59,9 @@ Desktop.ini
 *.swp
 *.swo
 .pi/
+
+# Internal notes and local dev tooling that must not be published
+/plans/
+/skills/
+/dev-docs/
+/build/dev-sync/

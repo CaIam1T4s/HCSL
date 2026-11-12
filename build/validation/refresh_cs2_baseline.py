@@ -38,7 +38,7 @@ def main() -> int:
     if sys.platform != "linux":
         raise SystemExit("Linux only.")
     repo = Path(__file__).resolve().parents[2]
-    baseline_path = repo / "docs/deployment/linux-startup-baseline.json"
+    baseline_path = repo / "src/HCSL.Infrastructure/Resources/linux-startup-baseline.json"
     cli = repo / "build/HCSL.WorkspaceCheck/bin/Debug/net10.0/HCSL.WorkspaceCheck.dll"
     if not cli.is_file():
         raise SystemExit("Build HCSL.WorkspaceCheck before refreshing the baseline.")

@@ -1,16 +1,13 @@
 # Repository guidance
 
-For changes to this repository's architecture, project layout, feature placement,
-project references, or shared CS2 launcher behavior, read and apply
-[cs2-project-architecture](skills/cs2-project-architecture/SKILL.md).
-
-This is a repository-local skill stored outside `.agents` because that directory
-is read-only in the development environment. It is not installed as a global skill.
-
-For non-trivial investigation and change work, and when auditing why a session
-spent time on builds, tests, documentation, or context compression, read and
-apply [audit-before-change](skills/audit-before-change/SKILL.md).
+This repository publishes product code; user-facing documentation will be added
+in a later version. Internal planning notes, manual-verification records, and
+development skills are kept local (see `.gitignore`) and are not published.
 
 Keep scaffold directories separate from implemented projects: only add a project
 to the solution when its project file and implementation exist. Report build and
 runtime verification limits accurately.
+
+Architecture and placement rules follow the existing solution and project files;
+do not add platform logic to ViewModels or UI projects, and keep the dependency
+direction `Application → Core`, `Infrastructure → Application + Core`.

@@ -1,0 +1,799 @@
+{
+  "formatVersion": 1,
+  "appId": 730,
+  "buildId": "26598758",
+  "platform": "linux-x64",
+  "validation": "Static inventory refreshed from the installed server; no server was started.",
+  "entrypoint": "game/cs2.sh",
+  "workingDirectory": "game",
+  "arguments": [
+    "-dedicated"
+  ],
+  "nativeCandidateRoots": [
+    "cs2",
+    "libengine2.so",
+    "libhost.so",
+    "libserver.so",
+    "libmatchmaking.so"
+  ],
+  "nativeCandidateClosure": [
+    "game/bin/linuxsteamrt64/cs2",
+    "game/bin/linuxsteamrt64/libengine2.so",
+    "game/csgo/bin/linuxsteamrt64/libhost.so",
+    "game/csgo/bin/linuxsteamrt64/libmatchmaking.so",
+    "game/csgo/bin/linuxsteamrt64/libserver.so",
+    "game/bin/linuxsteamrt64/libsteam_api.so",
+    "game/bin/linuxsteamrt64/libsteamnetworkingsockets.so",
+    "game/bin/linuxsteamrt64/libtier0.so",
+    "game/bin/linuxsteamrt64/libv8.so",
+    "game/bin/linuxsteamrt64/libv8_icui18n.so",
+    "game/bin/linuxsteamrt64/libv8_icuuc.so",
+    "game/bin/linuxsteamrt64/libv8_libbase.so",
+    "game/bin/linuxsteamrt64/libv8_libcpp.so",
+    "game/bin/linuxsteamrt64/libv8_zlib.so"
+  ],
+  "externalNeededNames": [
+    "ld-linux-x86-64.so.2",
+    "libc.so.6",
+    "libdl.so.2",
+    "libgcc_s.so.1",
+    "libm.so.6",
+    "libpthread.so.0",
+    "librt.so.1",
+    "libstdc++.so.6",
+    "libuuid.so.1"
+  ],
+  "independentConfigPaths": [
+    "game/csgo/gameinfo.gi",
+    "game/csgo/gameinfo_branchspecific.gi",
+    "game/csgo/steam.inf",
+    "game/core/gameinfo.gi",
+    "game/core/gameinfo_branchspecific.gi"
+  ],
+  "conservativeCopyInventory": [
+    {
+      "path": "game/bin/linuxsteamrt64/cs2",
+      "bytes": 155548,
+      "sha256": "a8a299b270218ffc4cfb83eaa6c2037df5837e3bbd93f541801babf33ff5ef13",
+      "needed": [
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/fltlnx64.flt",
+      "bytes": 84104,
+      "sha256": "aa80d56edf84d0a0b13b7fe49ecb5e45e98141b3c52660023e1d3a9f91670e41",
+      "needed": [
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libSDL3.so.0",
+      "bytes": 3229400,
+      "sha256": "3e5ce8c0ec93e3b64f3041a3e4e7322988d88691bc1f544869670062ef230ad6",
+      "needed": [
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libanimationsystem.so",
+      "bytes": 15431576,
+      "sha256": "7b2bd75f8e3702270c5174c89d35b96b3e34d8ac7a82c7fd4853e1039ef9e468",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libavcodec.so.58",
+      "bytes": 3678216,
+      "sha256": "fca51ae34a5e6e557451aaf273609f783fa44041da38aa646da336e969a86d6a",
+      "needed": [
+        "libavutil.so.56",
+        "libvpx.so.6",
+        "libm.so.6",
+        "libva.so.2",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libavformat.so.58",
+      "bytes": 888848,
+      "sha256": "ae81dcb099a2174b7be6736c02910b9be6d152531a5b79826ddb001128067825",
+      "needed": [
+        "libavcodec.so.58",
+        "libavutil.so.56",
+        "libm.so.6",
+        "libbz2.so.1.0",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libavresample.so.4",
+      "bytes": 129496,
+      "sha256": "076d89b647133cd1bf2ff46c5aec03ada4b61be097ba61930225970efdcf1125",
+      "needed": [
+        "libavutil.so.56",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libavutil.so.56",
+      "bytes": 712672,
+      "sha256": "0e1efb9e722fab73c4d9742d4f1ad8ddd1d279436407bfe681cfe227e8e8f722",
+      "needed": [
+        "libvdpau.so.1",
+        "libX11.so.6",
+        "librt.so.1",
+        "libm.so.6",
+        "libdrm.so.2",
+        "libva.so.2",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libcairo.so",
+      "bytes": 1596148,
+      "sha256": "a448f8a4362f5ed4faba968d9005c080a0269b2cbb26db5b7a6d44ac66b07d41",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libengine2.so",
+      "bytes": 11041952,
+      "sha256": "ab8415aa2f926a2a4be71b2fca041a335288defa7d478ba43a0ee316374dbfe6",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libsteamnetworkingsockets.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libfilesystem_stdio.so",
+      "bytes": 3108744,
+      "sha256": "d2207e5853253bdc17e8474275995ae6a3960050f1ca54ae88592f336b1e285e",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libfontconfig.so.1",
+      "bytes": 1304272,
+      "sha256": "9c2918c39af7b2a0c6ea5f033d46ad37538ca230aa073d2254b8e5dd356c1650",
+      "needed": [
+        "libfreetype.so.6",
+        "libexpat.so.1",
+        "libuuid.so.1",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libfreetype.so.6",
+      "bytes": 3930056,
+      "sha256": "ec408ac872cddb7f28f90b327146acb47ae01a03e0ade85dbac1a6489013e47e",
+      "needed": [
+        "libz.so.1",
+        "libbz2.so.1.0",
+        "libharfbuzz.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libinputsystem.so",
+      "bytes": 513732,
+      "sha256": "52e332b2ff8cc6c7c74fe5dae52fe68f37f75bcc5d01c0059ddf67c367df5289",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/liblocalize.so",
+      "bytes": 648856,
+      "sha256": "64c6c03bb155a9b94d31670a5dcb4ebdc17ead0abbcd380d289f5e948d00a8ce",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libmaterialsystem2.so",
+      "bytes": 1796256,
+      "sha256": "1d79fa0a136d751b8443bee890d07a37e1e3534856f7cbaec40cc6b91332e67c",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libmeshsystem.so",
+      "bytes": 2011620,
+      "sha256": "4101be770c0a6ccdff319b7267580aa759092315f1a081b9d94820bfd01d1793",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libmpg123.so.0",
+      "bytes": 1051154,
+      "sha256": "56e445ab84dd10c843540cfccd4a5a08b95fae3c1d9e37ba3a5e33dcea258d63",
+      "needed": [
+        "libm.so.6",
+        "libdl.so.2",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libnetworksystem.so",
+      "bytes": 4822068,
+      "sha256": "93c662f717982697d119685461ab1f0fd681e2e5b863bd03ca433a6ad0d06870",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libsteamnetworkingsockets.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libogg.so.0",
+      "bytes": 35112,
+      "sha256": "ff861095add6d673d66992a568a78e00023952bfded34ad12377b141bb33a49a",
+      "needed": [
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpango-1.0.so.0",
+      "bytes": 1278424,
+      "sha256": "9b00db8b19e55cab9c7cd6971fc56d59d4d1a8dd028cd81400b80ab6805d1bfa",
+      "needed": [
+        "libgobject-2.0.so.0",
+        "libglib-2.0.so.0",
+        "libthai.so.0",
+        "libfribidi.so.0",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpangoft2-1.0.so.0",
+      "bytes": 442632,
+      "sha256": "f3b2bf6eca492ac1871d304fd6c4eb2f8b19ee43d3f8ba043f684ce1858c1209",
+      "needed": [
+        "libpango-1.0.so.0",
+        "libgobject-2.0.so.0",
+        "libglib-2.0.so.0",
+        "libharfbuzz.so.0",
+        "libfontconfig.so.1",
+        "libfreetype.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpanorama.so",
+      "bytes": 7025424,
+      "sha256": "0c0ae948add1fe4f453c5025d46fcec31b7214204f6cb3030237b63a6700c7f9",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "libSDL3.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libvideo.so",
+        "libv8.so",
+        "libsteam_api.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpanorama_text_pango.so",
+      "bytes": 3202820,
+      "sha256": "de7510fa7ea090c33c145c94064db81e0021c19bbd2964fdd76302a394cb6951",
+      "needed": [
+        "libpthread.so.0",
+        "libglib-2.0.so.0",
+        "libgobject-2.0.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libfreetype.so.6",
+        "libfontconfig.so.1",
+        "libpango-1.0.so.0",
+        "libpangoft2-1.0.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpanoramauiclient.so",
+      "bytes": 4871320,
+      "sha256": "15a34a5a531c66e78f23b34a74906dd39f06c2807c8873d37f57943b54c34fdd",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libvideo.so",
+        "libsteam_api.so",
+        "libv8.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libparticles.so",
+      "bytes": 8604856,
+      "sha256": "9078beb9a78870da17641d885fc1bf52816c545c29256ea07e23e2e64df19493",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libphonon.so",
+      "bytes": 40786720,
+      "sha256": "2be17cc1f460d52dfb3e95a5adfdaa75c79eba269da6c0d577a0fc4410586f1d",
+      "needed": [
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libpulse_system.so",
+      "bytes": 2358716,
+      "sha256": "0af4c47f4defce281df9e7490a52ee4e0de5d4ab748d48ee510eece9c3e17fa4",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/librendersystemempty.so",
+      "bytes": 3679424,
+      "sha256": "d49f40e8872aee68269945ea3756d09aa7c5e1c8d070c93269fce0ccf3c70700",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/librendersystemvulkan.so",
+      "bytes": 9199516,
+      "sha256": "ac26ffb6ab9aec18fad99228648ef2722abda9f0bb5f81c24a4a8e07415cc431",
+      "needed": [
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libresourcesystem.so",
+      "bytes": 800200,
+      "sha256": "55b7892420ade244dc8530c278603796ecb0dd3edf6c2de7a3493232b40449aa",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libscenefilecache.so",
+      "bytes": 3936472,
+      "sha256": "7f87b00ec80ea8055130f98eb15ff4e033809e343513d8c272acd9eab34d64ca",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libscenesystem.so",
+      "bytes": 10777468,
+      "sha256": "67cbabe4b1aa9839a42eeabcfb66d04aa005dbbf767a1818d50c015fef060ffd",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libschemasystem.so",
+      "bytes": 713948,
+      "sha256": "df48de5070fb259e92c0d41dacccc6a7084eba65c6da3f6b945aafa054e8af19",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libsoundsystem.so",
+      "bytes": 7955252,
+      "sha256": "bec026c5633e18ac5fee1cb85a97d11456136b18fbaf1f3a4838204bbb70f609",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libsteam_api.so",
+      "bytes": 381976,
+      "sha256": "60ce1b9e142fa18d999c025b353c9faabfc45613bf350b03c38755d694649315",
+      "needed": [
+        "libdl.so.2",
+        "ld-linux-x86-64.so.2",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libsteamaudio.so",
+      "bytes": 4764548,
+      "sha256": "fc650af3822bc17c4dd5519f606feb51146a0e687ffc8d07b1f21d1556742404",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libphonon.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libsteamnetworkingsockets.so",
+      "bytes": 5700658,
+      "sha256": "464f59ee1eda3fb677c56498139a8bff3f8bbd7af639cf7b84e9cf167c7b01e3",
+      "needed": [
+        "libstdc++.so.6",
+        "libpthread.so.0",
+        "librt.so.1",
+        "ld-linux-x86-64.so.2",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libswscale.so.5",
+      "bytes": 555448,
+      "sha256": "5de855cb82a7e2543a75cbe2c8832d4407ddc5e3a6ab229e2b411f616778e7b8",
+      "needed": [
+        "libavutil.so.56",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libtier0.so",
+      "bytes": 5028764,
+      "sha256": "d0b77c7c5631591197e0148d9e18aaed3c34e737fe8af65aad5e8698e834bd24",
+      "needed": [
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libuuid.so.1",
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8.so",
+      "bytes": 30769216,
+      "sha256": "e2c892cb363abf6c2aee12d254f2d0329e229701bf33551b378fd8b3d3313ee5",
+      "needed": [
+        "libv8_libbase.so",
+        "libv8_icui18n.so",
+        "libv8_icuuc.so",
+        "libv8_zlib.so",
+        "libv8_libcpp.so",
+        "libpthread.so.0",
+        "libm.so.6",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_icui18n.so",
+      "bytes": 2926872,
+      "sha256": "01b0d4d05e4133711524327c3e4e9aea3cde63db2285c68f8f291792aaaf5d8f",
+      "needed": [
+        "libv8_icuuc.so",
+        "libv8_libcpp.so",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_icuuc.so",
+      "bytes": 1916656,
+      "sha256": "fe3b4f779300756916dee441b2f3c2a97686eafcea878e26d11b45e48e0769ff",
+      "needed": [
+        "libv8_libcpp.so",
+        "libpthread.so.0",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_libbase.so",
+      "bytes": 215240,
+      "sha256": "5da50179405d6269d14f31db6f42f2349cfeb2d3d0753eacd5b0c4c43b226a69",
+      "needed": [
+        "libv8_libcpp.so",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libm.so.6",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_libcpp.so",
+      "bytes": 1172208,
+      "sha256": "435453d24d2dae28ccda3cc5a5b20e9805c7b806bb2723d1053c3268af0b9b0b",
+      "needed": [
+        "libpthread.so.0",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_libplatform.so",
+      "bytes": 113320,
+      "sha256": "cbb63a4921bb1ad4d1e6956815ae92e22a9a5f48420f501eaab8b6796d8677ab",
+      "needed": [
+        "libv8_libbase.so",
+        "libv8_libcpp.so",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8_zlib.so",
+      "bytes": 110600,
+      "sha256": "042539abb051849204b62fdfb54dd241a21b0f0b91cd491ae66c481c41935251",
+      "needed": [
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libv8system.so",
+      "bytes": 480560,
+      "sha256": "d22609c4bd02fbec8ab31f4043850c09527cf2ea336553c911927432229be7a2",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libv8.so",
+        "libv8_libplatform.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvconcomm.so",
+      "bytes": 494128,
+      "sha256": "0033f7c42b66ed277668ae7e56d5d54e1921e86dbb3351b4de2191e3ed94b25e",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvideo.so",
+      "bytes": 7032600,
+      "sha256": "f6bac7e19b5620614abe2c60069e7f85dfe2138b6ef6a6c0101c4e58418ee387",
+      "needed": [
+        "libdl.so.2",
+        "librt.so.1",
+        "ld-linux-x86-64.so.2",
+        "libavcodec.so.58",
+        "libavformat.so.58",
+        "libavresample.so.4",
+        "libavutil.so.56",
+        "libswscale.so.5",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvorbis.so.0",
+      "bytes": 183104,
+      "sha256": "224e0e7853213614a89f77620af7d948d7d1459ae65c9eed7417cd86aaebd1dc",
+      "needed": [
+        "libm.so.6",
+        "libogg.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvorbisenc.so.2",
+      "bytes": 690400,
+      "sha256": "c4e5cfee72993fe8c62b2744f01f8b0b1aca852a7e9bdde6d21eeb59edfffa67",
+      "needed": [
+        "libvorbis.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvorbisfile.so.3",
+      "bytes": 35360,
+      "sha256": "98e3451dee07cbdb4e7bbc453c9e120d8767f91883cae9e5cc4c960e98f732b0",
+      "needed": [
+        "libvorbis.so.0",
+        "libogg.so.0",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvphysics2.so",
+      "bytes": 5739752,
+      "sha256": "cc0ae6882e39679c9b95dd06eebea5900dea6ca9781cdf4ac8f52617f48e1001",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvpx.so.6",
+      "bytes": 3205768,
+      "sha256": "f6d55c2f251b0dfe5b15af42602531f264d9c987d28a152492144265982ff3ab",
+      "needed": [
+        "libpthread.so.0",
+        "libm.so.6",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libvscript.so",
+      "bytes": 1296400,
+      "sha256": "d47c688df6abb222c791124c44df8a4d68b0bcba33937daf3719787b928b1b0b",
+      "needed": [
+        "libm.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/bin/linuxsteamrt64/libworldrenderer.so",
+      "bytes": 4561380,
+      "sha256": "beb2a4576e986773ff6ef2e46c49ebe8696db133496696fc7178eafe20867149",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/csgo/bin/linuxsteamrt64/libclient.so",
+      "bytes": 73972024,
+      "sha256": "773d79d09cc3ba368f4f016d2ec6cad52cad1bdf39196c63bc9a9b98e9da2481",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libvideo.so",
+        "libsteam_api.so",
+        "libv8.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/csgo/bin/linuxsteamrt64/libhost.so",
+      "bytes": 3176892,
+      "sha256": "430c95fdc07bda57c89d91ac4d4ff369063bfccd3d3aaf775a5a7b230fd3d520",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/csgo/bin/linuxsteamrt64/libmatchmaking.so",
+      "bytes": 3764196,
+      "sha256": "e069944267f167a3ba6573a8f3e5ef8693014fb5d337491b07098ec87858a26d",
+      "needed": [
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libc.so.6"
+      ]
+    },
+    {
+      "path": "game/csgo/bin/linuxsteamrt64/libserver.so",
+      "bytes": 41619480,
+      "sha256": "acc5c6c332e032c4bb2e063b267f870027e19590952570f249a0e0e06d65fc75",
+      "needed": [
+        "libm.so.6",
+        "libpthread.so.0",
+        "ld-linux-x86-64.so.2",
+        "libtier0.so",
+        "libsteam_api.so",
+        "libv8.so",
+        "libc.so.6"
+      ]
+    }
+  ],
+  "conservativeCopyBytes": 362393036,
+  "entrypointSha256": "fe80e7a2f214d5cfb03e35070731cfb1e4eb8c3c238c419a1aae45be4529e971"
+}

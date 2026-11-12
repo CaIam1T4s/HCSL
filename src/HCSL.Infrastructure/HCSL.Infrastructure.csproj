@@ -7,5 +7,5 @@
   <ItemGroup>
     <ProjectReference Include="../HCSL.Application/HCSL.Application.csproj" />
   </ItemGroup>
-  <ItemGroup><EmbeddedResource Include="../../docs/deployment/linux-startup-baseline.json" LogicalName="HCSL.LinuxStartupBaseline" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Resources/linux-startup-baseline.json" LogicalName="HCSL.LinuxStartupBaseline" /></ItemGroup>
 </Project>

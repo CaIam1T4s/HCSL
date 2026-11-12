@@ -51,6 +51,7 @@
       <Border Classes="panel">
         <StackPanel Spacing="12">
           <TextBlock Classes="subheading" Text="关于此版本"/>
+          <TextBlock x:Name="VersionText" Text="{Binding VersionLabel}" AutomationProperties.Name="当前版本"/>
           <TextBlock Classes="muted" Text="开发预览 · 仅提供界面骨架。Steam 登录、建服、插件和组网尚未接入。"/>
         </StackPanel>
       </Border>

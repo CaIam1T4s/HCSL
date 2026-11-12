@@ -37,7 +37,7 @@ public static class DevCommandLine
           exec <command...>      Send one CS2 console command to the current run (no RunId needed).
           logs                   Print recent log lines (--follow, --after <sequence>).
           plugins                List available/selected/rejected plugin packages.
-          players                Print the online roster from the running server (RCON, see docs/player-roster.md).
+          players                Print the online roster from the running server (RCON).
           kick <userid|steamid64> [--reason <text>] [--yes]
                                  Disconnect one client; --yes is required because it affects a player.
           admins [list|find|grant|revoke|set-groups|init-groups|reload]
