@@ -42,12 +42,12 @@ case "$mode" in
         build_only HCSL.HostTests
         run_built HCSL.HostTests "${args[@]}"
         ;;
-    tui|deployment|ipc|instance|integration|player|bootstrap|steamcmd|core|application)
+    tui|deployment|ipc|instance|integration|player|bootstrap|steamcmd)
         declare -A projects=(
             [tui]=HCSL.TuiTests [deployment]=HCSL.DeploymentTests [ipc]=HCSL.IpcTests
             [instance]=HCSL.InstanceTests [integration]=HCSL.IntegrationTests
             [player]=HCSL.PlayerTests [bootstrap]=HCSL.BootstrapTests
-            [steamcmd]=HCSL.SteamCmdTests [core]=HCSL.Core.Tests [application]=HCSL.Application.Tests
+            [steamcmd]=HCSL.SteamCmdTests
         )
         project="${projects[$mode]}"
         build_only "$project"
@@ -55,15 +55,17 @@ case "$mode" in
         ;;
     full)
         dotnet build Hello_Counter_Strike_Launcher.slnx --no-restore -v:q -nodeReuse:false
-        for project in HCSL.Core.Tests HCSL.Application.Tests HCSL.DeploymentTests \
-            HCSL.ServerTests HCSL.HostTests HCSL.TuiTests HCSL.IpcTests HCSL.InstanceTests \
-            HCSL.IntegrationTests HCSL.PlayerTests HCSL.BootstrapTests HCSL.SteamCmdTests; do
+        # Discover test projects so scaffold-only directories are never invoked and new
+        # tests are picked up automatically once they have a project file.
+        shopt -s nullglob
+        for project_file in tests/*/*.csproj; do
+            project="$(basename "$project_file" .csproj)"
             echo "=== $project ==="
-            run_built "$project"
+            run_built "$project" </dev/null
         done
         ;;
     *)
-        echo "Usage: $0 {server|host|tui|deployment|ipc|instance|integration|player|bootstrap|steamcmd|core|application|full} [section]" >&2
+        echo "Usage: $0 {server|host|tui|deployment|ipc|instance|integration|player|bootstrap|steamcmd|full} [section]" >&2
         exit 2
         ;;
 esac
