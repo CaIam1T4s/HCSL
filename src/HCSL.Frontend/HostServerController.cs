@@ -18,13 +18,17 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
     private bool disposed, userSelected;
     private int logConsumers;
     private readonly FrameworkClient? frameworks;
+    /// <summary>Kept for the online-roster/admin clients; null when the host runs without a daemon (tests).</summary>
+    private readonly IDaemonClient? daemon;
     public HostServerController(ServerController server, InstanceClient instances, HCSL.Application.Abstractions.ILocalDirectoryOpener? directoryOpener = null,
         IDaemonClient? daemon = null)
     {
-        Server = server; this.instances = instances; this.directoryOpener = directoryOpener;
+        Server = server; this.instances = instances; this.directoryOpener = directoryOpener; this.daemon = daemon;
         frameworks = daemon is null ? null : new FrameworkClient(daemon);
         Server.PropertyChanged += ServerChanged;
     }
+    /// <summary>Preset the UI is looking at: the instance's selected preset.</summary>
+    private PresetDefinition? SelectedPreset => Selected?.Entry.Presets.FirstOrDefault(p => p.Id == Selected.Entry.Definition?.SelectedPresetId);
     public ServerController Server { get; }
     public IReadOnlyList<HostInstanceItem> Instances { get; private set; } = [];
     private string[] catalogAddresses = [];

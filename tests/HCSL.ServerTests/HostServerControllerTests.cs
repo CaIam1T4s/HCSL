@@ -36,6 +36,38 @@ public static class HostServerControllerTests
         Check(daemon.StopCalls == stopCalls, "disposing GUI stopped server");
         Console.WriteLine("PASS host.controller.catalog-selection-password-guards-start-stop-and-dispose");
 
+        // Online roster and admin list are delegated through the controller, never straight from the view.
+        var live = new FakeDaemon();
+        using var players = new HostServerController(new ServerController(live, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1)), new InstanceClient(live), daemon: live);
+        await players.InitializeAsync();
+        Check(!players.CanQueryPlayers, "roster offered while the server is stopped");
+        try { await players.PlayersAsync(); throw new Exception("roster read while stopped"); }
+        catch (IOException e) when (e.Message.Contains("HCSL-PLAYERS-STATE", StringComparison.Ordinal)) { }
+        Check(await players.StartAsync(), "start for roster failed");
+        Check(players.CanQueryPlayers, "roster not offered while running");
+        var roster = await players.PlayersAsync();
+        Check(roster.Humans == 1 && roster.Bots == 1 && roster.Players[0].SteamId64 == "76561198000000000", "roster not projected");
+        var runId = players.Server.Snapshot?.RunId ?? throw new Exception("run id missing");
+        var kicked = await players.KickAsync(live.First, runId, 2, "76561198000000000", "afk");
+        Check(kicked.Written && live.LastKick is { UserId: 2, SteamId64: "76561198000000000", Reason: "afk", RunId: var sent } && sent == runId,
+            "kick not delegated with run/user identity");
+
+        var admins = await players.AdminsAsync(200, 50, "Player");
+        Check(live.LastAdmin is { Action: AdminAction.List, Offset: 200, Limit: 50, Query: "Player" }, "admin paging/search not passed through");
+        Check(admins.Snapshot.Capabilities?.Key == AdminKeyKind.DisplayName, "admin capabilities missing");
+        var applied = await players.ApplyAdminAsync(new(AdminAction.Apply, live.First, live.PresetId, admins.Snapshot.Hash,
+            [new(AdminMutationKind.Upsert, "76561198000000000", "CaIam1Tas", ["#hcsl/admin"])]));
+        Check(live.LastAdmin is { Action: AdminAction.Apply, ExpectedHash: not null } && applied.Code == "HCSL-ADMIN-WRITTEN", "admin write not delegated");
+        try
+        {
+            await players.ApplyAdminAsync(new(AdminAction.Apply, live.Second, live.PresetId, admins.Snapshot.Hash, [new(AdminMutationKind.Remove, "76561198000000000")]));
+            throw new Exception("admin write accepted for a different instance");
+        }
+        catch (IOException e) when (e.Message.Contains("HCSL-ADMIN-REQUEST", StringComparison.Ordinal)) { }
+        var reloaded = await players.ReloadAdminsAsync();
+        Check(live.LastAdmin?.Action == AdminAction.Reload && reloaded.Reload == "css_admins_reload sent", "admin reload not delegated");
+        Console.WriteLine("PASS host.controller.roster-kick-and-admin-delegation");
+
         var recovery = new FakeDaemon { Recover = true };
         using var restored = new HostServerController(new ServerController(recovery, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1)), new InstanceClient(recovery));
         await restored.InitializeAsync();
@@ -92,6 +124,9 @@ public static class HostServerControllerTests
         public bool Recover;
         public Guid? Recovered, StopRun;
         public int PasswordCalls, StopCalls, DeployCalls, RecoverDeployments, PlanDeployments, ImportCalls, ProbeCalls;
+        public AdminCommand? LastAdmin;
+        public ServerKickCommand? LastKick;
+        public Guid PresetId => preset;
         public ServerCommand? LastStart;
         private bool hasPassword, active;
         private Guid current;
@@ -120,6 +155,34 @@ public static class HostServerControllerTests
                 if (c.Action == InstanceAction.SetPassword) { PasswordCalls++; hasPassword = !string.IsNullOrEmpty(c.Password); }
                 InstanceEntry Item(Guid id, string name, int port) => new(id, new(1, id, 1, name, port, preset), [new(1, preset, 1, "Default")], HasPassword: id == First && hasPassword);
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(new InstanceCatalog([Item(First, "First", 27015), Item(Second, "Second", 27016)]))));
+            }
+            if (request.Kind == RequestKind.Admin)
+            {
+                var admin = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson!)!;
+                LastAdmin = admin;
+                var adminSnapshot = new AdminListSnapshot("cssharp", "CounterStrikeSharp", true, ["admins.json"],
+                    [new("#hcsl/admin", ["@css/kick"], 50)],
+                    [new("76561198000000000", "CaIam1Tas", ["#hcsl/admin"], [], 100, [])],
+                    admin.ExpectedHash ?? "", [], AdminRules.CounterStrikeSharpCapabilities, 1, admin.Offset, admin.Limit <= 0 ? AdminRules.DefaultPageSize : admin.Limit);
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                    AdminResultJson: JsonSerializer.Serialize(new AdminResult(adminSnapshot, "HCSL-ADMIN-WRITTEN", ["Upsert"],
+                        admin.Action == AdminAction.Reload ? "css_admins_reload sent" : null))));
+            }
+            if (request.Kind == RequestKind.Server && JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!.Action == ServerAction.Players)
+            {
+                var roster = new PlayerRoster(DateTimeOffset.UtcNow,
+                    [new(2, "CaIam1Tas", false, "192.168.1.10:61466", "active", "00:12", 1, "76561198000000000"),
+                     new(0, "Bank", true, "", "active", "BOT", 0)]);
+                var snap = new ServerSnapshot(Run, First, ServerState.Running, true, "HCSL-SERVER-MAP-READY", true, false, null, 1, false, [], PlayerRoster: roster);
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snap)));
+            }
+            if (request.Kind == RequestKind.Server && JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!.Action == ServerAction.Kick)
+            {
+                var kick = JsonSerializer.Deserialize<ServerKickCommand>(request.ServerKickJson!)!;
+                LastKick = kick;
+                var result = new ServerKickResult(true, "HCSL-KICK-WRITTEN", kick.UserId, kick.SteamId64,
+                    "kickid " + kick.UserId, new(kick.UserId, "CaIam1Tas", false, "192.168.1.10:61466", "active", "00:12", 1, kick.SteamId64));
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result)));
             }
             var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson!)!;
             var code = "HCSL-SERVER-STOPPED";

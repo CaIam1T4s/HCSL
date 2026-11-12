@@ -45,6 +45,8 @@ public partial class InstancePage
         EditCfgButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         FrameworksButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         PluginsButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
+        PlayersButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
+        AdminsButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         MapPoolButton.IsEnabled = !operating && !watchingStart && !m.Busy && m.Server.Connected && p is not null;
         OpenCfgButton.IsEnabled = !operating && !m.Busy && m.Server.Connected && p is not null;
     }
@@ -96,6 +98,16 @@ public partial class InstancePage
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
         await owner.EditPluginsAsync(m, instance, p);
+    });
+    private async void OpenPlayers(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
+        await owner.EditPlayersAsync(m, instance, p);
+    });
+    private async void OpenAdmins(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } p) return;
+        await owner.EditAdminsAsync(m, instance, p);
     });
     private async void EditPresetMapPool(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {

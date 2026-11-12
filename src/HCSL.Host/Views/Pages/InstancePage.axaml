@@ -35,6 +35,8 @@
           <arc:Button x:Name="EditCfgButton" Content="CFG 管理" Variant="Secondary" Click="EditPresetCfg" Margin="0,0,8,8"/>
           <arc:Button x:Name="FrameworksButton" Content="框架" Variant="Secondary" Click="EditPresetFrameworks" Margin="0,0,8,8"/>
           <arc:Button x:Name="PluginsButton" Content="插件" Variant="Secondary" Click="EditPresetPlugins" Margin="0,0,8,8"/>
+          <arc:Button x:Name="PlayersButton" Content="在线玩家" Variant="Secondary" Click="OpenPlayers" Margin="0,0,8,8"/>
+          <arc:Button x:Name="AdminsButton" Content="管理员" Variant="Secondary" Click="OpenAdmins" Margin="0,0,8,8"/>
           <arc:Button x:Name="OpenCfgButton" Content="打开 CFG 目录" Variant="Secondary" Click="OpenPresetCfg" Margin="0,0,8,8"/>
           <arc:Button x:Name="OpenAddonsButton" Content="打开预设 addons" Variant="Secondary" Click="OpenPresetAddons" Margin="0,0,8,8"/>
           <arc:Button x:Name="OpenRuntimeButton" Content="打开运行目录" Variant="Secondary" Click="OpenRuntime" Margin="0,0,8,8"/>
