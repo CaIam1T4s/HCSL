@@ -31,9 +31,9 @@
           <TextBlock Text="首次使用建议将内容库放在空间充足的磁盘；新默认位置为用户主目录下的 HCSL-Library。安装目标为内容库下的 server 文件夹。安装中断会保留下载内容，可重新提交任务继续；校验可能重新下载文件。" Classes="muted" TextWrapping="Wrap"/>
           <arc:Checkbox Content="受管工具缺失时，从 Valve 下载 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}" IsEnabled="{Binding SteamCmd.CanEdit}"/>
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <arc:Button Content="准备并登录" Click="StartProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
-            <arc:Button Content="取消任务" Click="CancelProbe" IsEnabled="{Binding SteamCmd.CanCancel}" Variant="Secondary"/>
-            <arc:Button Content="恢复检查" Click="RecoverProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
+            <arc:Button Content="准备并登录" Click="StartProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Primary"/>
+            <arc:Button Content="取消任务" Click="CancelProbe" IsEnabled="{Binding SteamCmd.CanCancel}" Variant="Ghost"/>
+            <arc:Button Content="恢复检查" Click="RecoverProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Ghost"/>
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="12">
             <arc:Button Content="安装/更新 CS2" Click="InstallServer" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
@@ -45,7 +45,8 @@
         <StackPanel Spacing="10">
           <TextBlock Classes="subheading" Text="{Binding SteamCmd.StageText}"/>
           <TextBlock Classes="muted" Text="{Binding SteamCmd.Detail}" TextWrapping="Wrap"/>
-          <ProgressBar IsVisible="{Binding SteamCmd.ShowProgress}" IsIndeterminate="{Binding SteamCmd.ProgressIndeterminate}" Value="{Binding SteamCmd.ProgressPercent}" Minimum="0" Maximum="100" Height="5"/>
+          <arc:Progress IsVisible="{Binding SteamCmd.ShowDeterminateProgress}" Label="{Binding SteamCmd.StageText}" Value="{Binding SteamCmd.ProgressPercent}" IsValueVisible="True"/>
+          <arc:Skeleton IsVisible="{Binding SteamCmd.ShowIndeterminateProgress}" Height="36"/>
           <StackPanel IsVisible="{Binding SteamCmd.NeedsInput}" Spacing="8">
             <TextBlock Text="{Binding SteamCmd.ChallengeText}" TextWrapping="Wrap"/>
             <Grid ColumnDefinitions="*,Auto">
@@ -53,7 +54,7 @@
               <arc:Button Grid.Column="1" Content="提交" Click="SubmitSecret" IsEnabled="{Binding SteamCmd.CanSubmit}" Margin="12,0,0,0" Variant="Secondary"/>
             </Grid>
           </StackPanel>
-          <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="11"/>
+          <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
           <arc:Textarea x:Name="TaskLogOutput" Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="task-log"/>
         </StackPanel>
       </Border>

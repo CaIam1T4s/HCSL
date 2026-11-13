@@ -5,11 +5,11 @@
       <TextBlock Classes="muted" Text="复用本机宿主的服务器会话；关闭窗口不自动停服。"/>
       <arc:Select x:Name="InstanceSelect" Placeholder="选择实例"/>
       <WrapPanel>
-        <arc:Button x:Name="RefreshButton" Content="连接宿主 / 刷新实例" Variant="Secondary" Click="RefreshInstances" Margin="0,0,8,8"/>
-        <arc:Button x:Name="StartButton" Content="启动" Variant="Secondary" Click="StartServer" Margin="0,0,8,8"/>
+        <arc:Button x:Name="RefreshButton" Content="连接宿主 / 刷新实例" Variant="Ghost" Click="RefreshInstances" Margin="0,0,8,8"/>
+        <arc:Button x:Name="StartButton" Content="启动" Variant="Primary" Click="StartServer" Margin="0,0,8,8"/>
         <arc:Button x:Name="DeployButton" Content="部署（不启动）" Variant="Secondary" Click="DeployServer" Margin="0,0,8,8"/>
         <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Click="RecoverDeployment" Margin="0,0,8,8"/>
-        <arc:Button x:Name="StopButton" Content="停服" Variant="Secondary" Click="StopServer" Margin="0,0,8,8"/>
+        <arc:Button x:Name="StopButton" Content="停服" Variant="Danger" Click="StopServer" Margin="0,0,8,8"/>
         <arc:Button x:Name="RecoverButton" Content="恢复检查" Variant="Secondary" Click="RecoverServer" Margin="0,0,8,8"/>
         <arc:Button Content="进度 / 日志" Variant="Secondary" Click="OpenLogs" Margin="0,0,8,8"/>
         <arc:Button x:Name="ChangeMapButton" Content="即时换图" Variant="Secondary" Click="ChangeMap" Margin="0,0,8,8"/>

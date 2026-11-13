@@ -6,94 +6,53 @@ using TKCode.Arc;
 
 namespace HCSL.UI.Shared.Styles.Themes;
 
-/// <summary>Single palette source for the shell resources and native Arc theme presets.</summary>
+/// <summary>Arc theme preset and the small set of shell resources shared by HOST and CLIENT.</summary>
 public static class ThemeCatalog
 {
     private sealed record Palette(
         string Background, string Surface, string Raised, string MutedSurface,
         string Sidebar, string Foreground, string Secondary, string Border,
-        string Accent, string AccentSoft, string Disabled, string DisabledText,
+        string BorderSubtle, string BorderStrong, string Disabled, string DisabledText,
         string GradientStart, string GradientEnd, string Scrim, string Shadow);
 
-    private static readonly Palette WarmLight = new(
-        "#E7E0D4", "#F0EADF", "#F3EDE3", "#DFD6C8",
-        "#E5DDCF", "#302D28", "#696157", "#CFC4B3",
-        "#9C471A", "#EBD6BF", "#D9D0C2", "#736A60",
-        "#CDD8D5", "#C4A789", "#05B8A17D", "0 5 18 0 #382D2115");
+    private static readonly Palette Light = new(
+        "#FFFFFF", "#FFFFFF", "#FFFFFF", "#F8F8F8",
+        "#F8F8F8", "#0B0B0B", "#585858", "#E9E9E9",
+        "#F3F3F3", "#C4C4C4", "#F3F3F3", "#7D7D7D",
+        "#F5F3FF", "#ECE9F8", "#00000052", "0 4 16 0 #12000000");
 
     private static readonly Palette Dark = new(
-        "#171C24", "#222934", "#293240", "#202630",
-        "#202630", "#EDF1F7", "#A6B2C2", "#3B4655",
-        "#FFB47B", "#463226", "#3B4553", "#C0CAD7",
-        "#1B3444", "#594133", "#140D1724", "0 6 22 0 #70000000");
+        "#141414", "#191919", "#1F1F1F", "#242424",
+        "#191919", "#F2F2F2", "#B4B4B4", "#2B2B2B",
+        "#222222", "#484848", "#242424", "#8C8C8C",
+        "#141414", "#1B1726", "#0000008C", "0 6 22 0 #70000000");
 
     public static ArcThemePreset ArcPreset { get; } = ArcThemePreset.Create(
-        "HCSLWarm", preset =>
+        "HCSLArc", preset =>
         {
-            // Override only the light appearance; dark retains Arc's native palette.
-            preset.ForLight(light =>
-            {
-                foreach (var (token, color) in LightArcColors()) light.Token(token, color);
-            });
             preset.Token("Button", "FocusRingRadius", "999");
         }, "HCSLAppearance");
-
-    private static Dictionary<string, string> LightArcColors() => new()
-    {
-        ["Background"] = WarmLight.Background,
-        ["Surface"] = WarmLight.Surface,
-        ["SurfaceRaised"] = WarmLight.Raised,
-        ["SurfaceMuted"] = WarmLight.MutedSurface,
-        ["Foreground"] = WarmLight.Foreground,
-        ["TextSecondary"] = WarmLight.Secondary,
-        ["TextMuted"] = WarmLight.Secondary,
-        ["Border"] = WarmLight.Border,
-        ["BorderSubtle"] = WarmLight.MutedSurface,
-        ["BorderStrong"] = WarmLight.Secondary,
-        ["Accent"] = WarmLight.Accent,
-        ["AccentStrong"] = WarmLight.Accent,
-        ["AccentSubtle"] = WarmLight.AccentSoft,
-        ["AccentForeground"] = WarmLight.Raised,
-        ["FocusRing"] = WarmLight.Accent,
-        ["ControlFill"] = WarmLight.Surface,
-        ["ControlTrack"] = WarmLight.MutedSurface,
-        ["ControlTrackHover"] = WarmLight.Border,
-        ["ControlGlyph"] = WarmLight.Foreground,
-        ["ControlThumb"] = WarmLight.Raised
-    };
 
     public static ResourceDictionary CreateResources() => new()
     {
         ["PillRadius"] = new CornerRadius(999),
         ThemeDictionaries =
         {
-            [ThemeVariant.Light] = CreatePaletteResources(WarmLight),
+            [ThemeVariant.Light] = CreatePaletteResources(Light),
             [ThemeVariant.Dark] = CreatePaletteResources(Dark)
         }
     };
 
     private static ResourceDictionary CreatePaletteResources(Palette palette)
     {
-        var resources = new ResourceDictionary();
-        var brushes = new Dictionary<string, string>
+        var resources = new ResourceDictionary
         {
-            ["ShellBackground"] = palette.Background,
-            ["PanelBackground"] = palette.Surface,
-            ["SidebarBackground"] = palette.Sidebar,
-            ["PrimaryText"] = palette.Foreground,
-            ["MutedText"] = palette.Secondary,
-            ["Outline"] = palette.Border,
-            ["AccentBrush"] = palette.Accent,
-            ["AccentSoft"] = palette.AccentSoft,
-            ["DisabledBackground"] = palette.Disabled,
-            ["DisabledText"] = palette.DisabledText,
-            ["BackgroundScrim"] = palette.Scrim,
-            ["OnDangerText"] = "#FFFFFF"
+            ["ShellBackground"] = new SolidColorBrush(Color.Parse(palette.Background)),
+            ["SidebarBackground"] = new SolidColorBrush(Color.Parse(palette.Sidebar)),
+            ["BackgroundScrim"] = new SolidColorBrush(Color.Parse(palette.Scrim)),
+            ["BackdropStartColor"] = Color.Parse(palette.GradientStart),
+            ["BackdropEndColor"] = Color.Parse(palette.GradientEnd)
         };
-        foreach (var (key, value) in brushes) resources[key] = new SolidColorBrush(Color.Parse(value));
-        resources["BackdropStartColor"] = Color.Parse(palette.GradientStart);
-        resources["BackdropEndColor"] = Color.Parse(palette.GradientEnd);
-        resources["LaunchShadow"] = BoxShadows.Parse(palette.Shadow);
         return resources;
     }
 }

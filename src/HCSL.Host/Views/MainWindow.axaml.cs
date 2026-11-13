@@ -9,7 +9,7 @@ using HCSL.Core;
 
 namespace HCSL.Host.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow : ArcWindow
 {
     private Bitmap? _background;
     private TaskCompletionSource<int>? prompt;
@@ -25,12 +25,6 @@ public partial class MainWindow : Window
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape && prompt is not null) { prompt.TrySetResult(-1); e.Handled = true; }
-        };
-        PropertyChanged += (_, e) =>
-        {
-            if (e.Property == WindowStateProperty)
-                MaximizeGlyph.Data = WindowState == WindowState.Maximized
-                    ? ArcIcons.Minimize2 : ArcIcons.Square;
         };
     }
 
@@ -163,18 +157,6 @@ public partial class MainWindow : Window
         finally { closingFlow = false; }
     }
 
-    private void DragTitleBar(object? sender, PointerPressedEventArgs e)
-    {
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        if (e.ClickCount == 2) ToggleMaximizeWindow(sender, new RoutedEventArgs());
-        else BeginMoveDrag(e);
-        e.Handled = true;
-    }
-
-    private void MinimizeWindow(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void ToggleMaximizeWindow(object? sender, RoutedEventArgs e) =>
-        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void CloseWindow(object? sender, RoutedEventArgs e) => Close();
     public void SetBackground(Stream stream)
     {
         var image = new Bitmap(stream);

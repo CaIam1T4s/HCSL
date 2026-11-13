@@ -3,13 +3,15 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using HCSL.Frontend;
+using ArcWindow = TKCode.Arc.ArcWindow;
+using ArcTitleBar = TKCode.Arc.TitleBar;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
 
 namespace HCSL.Host.Views;
 
 /// <summary>View of the existing bounded, sanitized IPC log ring; no runtime ownership.</summary>
-public sealed class ServerLogWindow : Window
+public sealed class ServerLogWindow : ArcWindow
 {
     private readonly HostServerController model;
     private readonly MainWindow owner;
@@ -51,6 +53,7 @@ public sealed class ServerLogWindow : Window
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
         Title = "HCSL · 启动进度 / 服务器日志"; Width = 960; Height = 620; MinWidth = 600; MinHeight = 400;
+        TitleBar = new ArcTitleBar { Height = 44, Title = Title, CaptionButtons = TKCode.Arc.TitleBarCaptionButtons.Auto };
         text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,Auto,*,Auto,Auto") };
         grid.Children.Add(summary);

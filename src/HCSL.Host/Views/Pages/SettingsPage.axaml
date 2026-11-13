@@ -29,7 +29,7 @@
             <TextBlock Grid.Column="1" Text="{Binding BackgroundOpacityLabel}" Classes="muted"/>
           </Grid>
           <arc:Slider Minimum="0" Maximum="100" Value="{Binding BackgroundOpacityPercent, Mode=TwoWay}" AutomationProperties.Name="背景显示强度，百分比"/>
-          <TextBlock Classes="muted" Text="0% 为主题底色，100% 为完整背景。这不是窗口透明度，不会透出桌面。设置仅本次会话生效。" FontSize="12"/>
+          <TextBlock Classes="muted" Text="0% 为主题底色，100% 为完整背景。这不是窗口透明度，不会透出桌面。设置仅本次会话生效。" FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">
@@ -45,7 +45,7 @@
             <TextBlock Grid.Column="1" Text="{Binding SidebarBlurLabel}" Classes="muted"/>
           </Grid>
           <arc:Slider Minimum="0" Maximum="32" Value="{Binding SidebarBlurRadius, Mode=TwoWay}" AutomationProperties.Name="侧栏模糊半径"/>
-          <TextBlock Classes="muted" FontSize="12" Text="仅模糊应用内背景，文字与图标保持清晰。照片背景更容易看出模糊；着色 100% 时遮住背景，显示强度 0% 时只有纯色，模糊差异不明显。"/>
+          <TextBlock Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Text="仅模糊应用内背景，文字与图标保持清晰。照片背景更容易看出模糊；着色 100% 时遮住背景，显示强度 0% 时只有纯色，模糊差异不明显。"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">

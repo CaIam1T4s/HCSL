@@ -9,7 +9,7 @@ public sealed class ThemeService(Avalonia.Application application) : IThemeServi
 {
     public void Apply(ThemePreference preference)
     {
-        ArcTheme.Apply(theme => theme.Preset(ThemeCatalog.ArcPreset).Appearance(preference switch
+        ArcTheme.Apply(theme => theme.Preset(ThemeCatalog.ArcPreset).Accent(ArcAccentPreset.Violet).Appearance(preference switch
         {
             ThemePreference.Light => ArcAppearance.Light,
             ThemePreference.Dark => ArcAppearance.Dark,

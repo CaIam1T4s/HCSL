@@ -14,5 +14,7 @@ internal static class Program
         .UsePlatformDetect()
         .WithInterFont()
         .UseArc(arc => arc.UseArcControls()
-            .WithTheme(theme => theme.Appearance(ArcAppearance.System).Preset(ThemeCatalog.ArcPreset)));
+            .WithTheme(theme => theme.Appearance(ArcAppearance.System)
+                .Accent(ArcAccentPreset.Violet)
+                .Preset(ThemeCatalog.ArcPreset)));
 }

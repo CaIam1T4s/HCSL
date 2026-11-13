@@ -3,11 +3,11 @@
     <TextBlock Classes="heading" Text="实例列表"/>
     <TextBlock Classes="muted" TextWrapping="Wrap" Text="创建、编辑或删除本机实例。运行中及待恢复时禁止修改；配置预设管理仍使用 TUI。"/>
     <WrapPanel Orientation="Horizontal">
-      <arc:Button Content="创建实例" Click="CreateInstance" IsEnabled="{Binding Servers.CanCreate}" Variant="Secondary" Margin="0,0,8,8"/>
+      <arc:Button Content="创建实例" Click="CreateInstance" IsEnabled="{Binding Servers.CanCreate}" Variant="Primary" Margin="0,0,8,8"/>
       <arc:Button Content="编辑实例" Click="EditInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Secondary" Margin="0,0,8,8"/>
       <arc:Button Content="迁移布局" Click="MigrateLayout" IsEnabled="{Binding Servers.CanMigrateLayout}" IsVisible="{Binding Servers.CanMigrateLayout}" Variant="Secondary" Margin="0,0,8,8"/>
-      <arc:Button Content="删除实例" Click="DeleteInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Secondary" Margin="0,0,8,8"/>
-      <arc:Button Content="刷新列表" Click="RefreshInstances" IsEnabled="{Binding !Servers.Busy}" Variant="Secondary" Margin="0,0,8,8"/>
+      <arc:Button Content="删除实例" Click="DeleteInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Danger" Margin="0,0,8,8"/>
+      <arc:Button Content="刷新列表" Click="RefreshInstances" IsEnabled="{Binding !Servers.Busy}" Variant="Ghost" Margin="0,0,8,8"/>
     </WrapPanel>
     <arc:Select ItemsSource="{Binding Servers.Instances}" SelectedItem="{Binding Servers.Selected, Mode=TwoWay}" Placeholder="选择已有实例" IsEnabled="{Binding !Servers.Busy}"/>
     <TextBlock Text="{Binding Servers.SelectionText}" TextWrapping="Wrap"/>

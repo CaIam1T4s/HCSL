@@ -5,7 +5,9 @@ using Avalonia.Input.Platform;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Styling;
+using TKCode.Arc;
 using ArcButton = TKCode.Arc.Button;
+using ArcWindow = TKCode.Arc.ArcWindow;
 using TextBox = TKCode.Arc.Input;
 using CheckBox = TKCode.Arc.Checkbox;
 using ListBox = TKCode.Arc.Select;
@@ -15,7 +17,7 @@ using HCSL.Frontend;
 namespace HCSL.Client.Views;
 
 /// <summary>Presentation only. Storage, validation and game launch belong to injected controller/services.</summary>
-public sealed partial class PlayerWindow : Window
+public sealed partial class PlayerWindow : ArcWindow
 {
     private PlayerClientController controller => (PlayerClientController)DataContext!;
     private readonly ListBox list = new() { Placeholder = "选择已保存的服务器" };
@@ -68,16 +70,16 @@ public sealed partial class PlayerWindow : Window
             if (Selected is not { } server) return;
             // Explicit confirmation: two-step rather than immediate deletion.
             var confirm = new Window { Title = "删除服务器？", Width = 360, Height = 140, CanResize = false };
-            var yes = new ArcButton { Content = "确认删除", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            var yes = new ArcButton { Content = "确认删除", Variant = TKCode.Arc.ButtonVariant.Danger, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             yes.Click += (_, _) => confirm.Close(true); confirm.Content = yes;
             if (await confirm.ShowDialog<bool>(this)) { await controller.DeleteAsync(server.Id); Reset(); }
-        });
+        }, TKCode.Arc.ButtonVariant.Danger);
         startGame = Add("启动 CS2", () => controller.StartGameAsync());
         connectGame = Add("连接服务器", async () =>
         {
             if (Selected is { } server)
                 await controller.ConnectAsync(server, confirmGameReady: controller.GameState == HCSL.Application.Abstractions.GameRunState.Unknown);
-        });
+        }, TKCode.Arc.ButtonVariant.Primary);
         Add("复制命令", async () =>
         {
             if (Selected is not { } server) return;
@@ -164,15 +166,6 @@ public sealed partial class PlayerWindow : Window
     private void ShowHome(object? sender, RoutedEventArgs e) => Navigate("home");
     private void ShowServers(object? sender, RoutedEventArgs e) => Navigate("servers");
     private void ShowSettings(object? sender, RoutedEventArgs e) => Navigate("settings");
-    private void DragTitleBar(object? sender, PointerPressedEventArgs e)
-    {
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        if (e.ClickCount == 2) ToggleMaximizeWindow(sender, new RoutedEventArgs());
-        else BeginMoveDrag(e);
-    }
-    private void MinimizeWindow(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-    private void ToggleMaximizeWindow(object? sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    private void CloseWindow(object? sender, RoutedEventArgs e) => Close();
     private void SystemTheme(object? sender, RoutedEventArgs e) => SetTheme(ThemeVariant.Default);
     private void LightTheme(object? sender, RoutedEventArgs e) => SetTheme(ThemeVariant.Light);
     private void DarkTheme(object? sender, RoutedEventArgs e) => SetTheme(ThemeVariant.Dark);
@@ -180,14 +173,15 @@ public sealed partial class PlayerWindow : Window
     {
         TKCode.Arc.ArcTheme.Apply(builder => builder
             .Preset(HCSL.UI.Shared.Styles.Themes.ThemeCatalog.ArcPreset)
+            .Accent(TKCode.Arc.ArcAccentPreset.Violet)
             .Appearance(theme == ThemeVariant.Light ? TKCode.Arc.ArcAppearance.Light :
                         theme == ThemeVariant.Dark ? TKCode.Arc.ArcAppearance.Dark : TKCode.Arc.ArcAppearance.System));
         if (Avalonia.Application.Current is { } app) app.RequestedThemeVariant = theme;
     }
     private PlayerServer? Selected => list.SelectedItem as PlayerServer;
-    private ArcButton Add(string label, Func<Task> action)
+    private ArcButton Add(string label, Func<Task> action, TKCode.Arc.ButtonVariant variant = TKCode.Arc.ButtonVariant.Secondary)
     {
-        var button = new ArcButton { Content = label, Variant = TKCode.Arc.ButtonVariant.Secondary };
+        var button = new ArcButton { Content = label, Variant = variant };
         button.Click += async (_, _) =>
         {
             try { await action(); }

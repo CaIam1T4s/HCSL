@@ -38,6 +38,8 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
     public bool CanSubmit => connected && Running && snapshot?.Challenge is not null && requestInFlight == 0;
     public bool NeedsInput => connected && snapshot?.Challenge is not null;
     public bool ShowProgress => connected && Running;
+    public bool ShowDeterminateProgress => ShowProgress && !ProgressIndeterminate;
+    public bool ShowIndeterminateProgress => ShowProgress && ProgressIndeterminate;
     public Guid? ChallengeId => snapshot?.Challenge?.Id;
     public OperationSnapshot? LastSnapshot => snapshot;
     private string T(string zh, string en) => english ? en : zh;
