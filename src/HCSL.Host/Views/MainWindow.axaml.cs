@@ -1,7 +1,11 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using HCSL.UI.Shared.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using Avalonia.VisualTree;
 using TKCode.Arc;
 using HCSL.Host.ViewModels;
 using Avalonia.Layout;
@@ -21,12 +25,39 @@ public partial class MainWindow : ArcWindow
     {
         InitializeComponent();
         InitializeHomeShell();
+        // This trial keeps the fixed-width legacy shell; do not let Arc's Ctrl+B shortcut collapse only its contents.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.B && e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta &&
+                e.Source is Avalonia.Visual source && MainSidebar.IsVisualAncestorOf(source))
+                e.Handled = true;
+        }, RoutingStrategies.Tunnel);
         Closed += (_, _) => { windowClosed = true; prompt?.TrySetResult(-1); ResetBackground(); };
         Closing += OnClosing;
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape && prompt is not null) { prompt.TrySetResult(-1); e.Handled = true; }
         };
+    }
+
+    protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
+    {
+        base.OnApplyTemplate(e);
+        if (SidebarGlass is not null)
+        {
+            SidebarGlass.Source = e.NameScope.Find<BackgroundScene>("PART_WindowBackdrop");
+            if (e.NameScope.Find<ArcFrostedBackdrop>("PART_TitleBarGlass") is { } titleGlass)
+            {
+                titleGlass.Bind(ArcFrostedBackdrop.BlurRadiusProperty, SidebarGlass.GetObservable(ArcFrostedBackdrop.BlurRadiusProperty));
+                titleGlass.Bind(ArcFrostedBackdrop.TintOpacityProperty, SidebarGlass.GetObservable(ArcFrostedBackdrop.TintOpacityProperty));
+            }
+        }
+    }
+
+    private void SidebarItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
+    {
+        if (DataContext is ShellViewModel shell && e.Item.Key is { } route)
+            shell.NavigateCommand.Execute(route);
     }
 
     public async Task<(bool Confirmed, bool AllowLowMemory)> ConfirmStartAsync(string text)
@@ -161,13 +192,13 @@ public partial class MainWindow : ArcWindow
     public void SetBackground(Stream stream)
     {
         var image = new Bitmap(stream);
-        BackgroundLayer.ImageSource = image;
+        WindowBackdrop.SetImageSource(this, image);
         _background?.Dispose();
         _background = image;
     }
     public void ResetBackground()
     {
-        BackgroundLayer.ImageSource = null;
+        WindowBackdrop.SetImageSource(this, null);
         _background?.Dispose();
         _background = null;
     }

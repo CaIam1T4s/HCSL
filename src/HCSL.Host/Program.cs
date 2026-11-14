@@ -13,7 +13,7 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<App>()
         .UsePlatformDetect()
         .WithInterFont()
-        .UseArc(arc => arc.UseArcControls()
+        .UseArc(arc => arc.UseArcControls().UseArcBlocks().UseArcSpecial()
             .WithTheme(theme => theme.Appearance(ArcAppearance.System)
                 .Accent(ArcAccentPreset.Violet)
                 .Preset(ThemeCatalog.ArcPreset)));

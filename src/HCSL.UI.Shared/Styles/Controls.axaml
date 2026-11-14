@@ -1,7 +1,63 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-        xmlns:ui="using:HCSL.UI.Shared.Services">
+        xmlns:ui="using:HCSL.UI.Shared.Services"
+        xmlns:controls="clr-namespace:HCSL.UI.Shared.Controls;assembly=HCSL.UI.Shared">
+  <!-- Keep Arc's title-bar and overlay template parts, but place one scene behind both rows. -->
+  <Style Selector="arc|ArcWindow.wallpaper-shell">
+    <Setter Property="Template">
+      <ControlTemplate TargetType="arc:ArcWindow" x:CompileBindings="False">
+        <Panel>
+          <Border Name="PART_TransparencyFallback" IsHitTestVisible="False"/>
+          <Border Name="PART_Root" Background="{TemplateBinding Background}">
+            <Grid>
+              <controls:BackgroundScene Name="PART_WindowBackdrop"
+                  ImageSource="{Binding (controls:WindowBackdrop.ImageSource), RelativeSource={RelativeSource TemplatedParent}}"
+                  Strength="{Binding (controls:WindowBackdrop.Strength), RelativeSource={RelativeSource TemplatedParent}}"/>
+              <VisualLayerManager Name="PART_VisualLayerManager" EnableOverlayLayer="True">
+                <Grid RowDefinitions="Auto,*">
+                  <Grid ZIndex="1" IsVisible="{TemplateBinding IsTitleBarVisible}">
+                    <Border Name="PART_TitleBarShadow" BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" Background="Transparent">
+                      <controls:ArcFrostedBackdrop Name="PART_TitleBarGlass" Source="{Binding #PART_WindowBackdrop}"/>
+                    </Border>
+                    <ContentPresenter Name="PART_TitleBarPresenter" Content="{TemplateBinding TitleBar}"/>
+                  </Grid>
+                  <ContentPresenter Name="PART_ContentPresenter" Grid.Row="1" Margin="{TemplateBinding Padding}"
+                                    HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                    Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"/>
+                </Grid>
+              </VisualLayerManager>
+            </Grid>
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|TitleBar">
+    <Setter Property="BorderThickness" Value="0"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell .main-sidebar /template/ Border#PART_FooterSeparator">
+    <Setter Property="Opacity" Value="0"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ThemeSwitcher /template/ arc|Button#PART_Button">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell Grid#HomeSurface">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell Grid#HomeSurface.wallpaper">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions arc|ExpandingButtonGroupItem:expanded">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.55}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|Popover.launch-configuration arc|PopoverSurface">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.82}"/>
+  </Style>
   <Style Selector="Window">
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
   </Style>
@@ -52,6 +108,9 @@
   <Style Selector="Border.sidebar">
     <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}"/>
     <Setter Property="BorderThickness" Value="0,0,1,0"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell Border.sidebar">
+    <Setter Property="BorderThickness" Value="0"/>
   </Style>
   <Style Selector="arc|Button">
     <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusPill}"/>

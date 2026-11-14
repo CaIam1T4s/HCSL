@@ -17,8 +17,8 @@
       </Border>
       <Border Classes="panel">
         <StackPanel Spacing="12">
-          <TextBlock Classes="subheading" Text="首页背景"/>
-          <TextBlock Classes="muted" Text="默认使用随主题变化的渐变占位背景，也可选择本地 PNG 或 JPEG。默认渐变随浅/深色主题切换；自定义图片仅本次会话生效。"/>
+          <TextBlock Classes="subheading" Text="窗口背景"/>
+          <TextBlock Classes="muted" Text="选择本地 PNG 或 JPEG 作为标题栏、侧栏和所有主页面的统一背景；未选择图片时，首页使用随主题变化的渐变与光晕。自定义图片仅本次会话生效。"/>
           <StackPanel Orientation="Horizontal" Spacing="10">
             <arc:Button Content="选择图片" Click="ChooseBackground" Variant="Secondary"/>
             <arc:Button Content="恢复默认" Click="ResetBackground" Variant="Secondary"/>
@@ -34,18 +34,18 @@
       </Border>
       <Border Classes="panel">
         <StackPanel Spacing="12">
-          <TextBlock Classes="subheading" Text="侧栏毛玻璃"/>
+          <TextBlock Classes="subheading" Text="标题栏与侧栏磨砂玻璃"/>
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="侧栏着色不透明度"/>
+            <TextBlock Text="着色不透明度"/>
             <TextBlock Grid.Column="1" Text="{Binding SidebarTintLabel}" Classes="muted"/>
           </Grid>
-          <arc:Slider Minimum="0" Maximum="100" Value="{Binding SidebarTintPercent, Mode=TwoWay}" AutomationProperties.Name="侧栏着色不透明度，百分比"/>
+          <arc:Slider Minimum="0" Maximum="100" Value="{Binding SidebarTintPercent, Mode=TwoWay}" AutomationProperties.Name="标题栏与侧栏着色不透明度，百分比"/>
           <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="侧栏模糊强度"/>
+            <TextBlock Text="模糊强度"/>
             <TextBlock Grid.Column="1" Text="{Binding SidebarBlurLabel}" Classes="muted"/>
           </Grid>
-          <arc:Slider Minimum="0" Maximum="32" Value="{Binding SidebarBlurRadius, Mode=TwoWay}" AutomationProperties.Name="侧栏模糊半径"/>
-          <TextBlock Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Text="仅模糊应用内背景，文字与图标保持清晰。照片背景更容易看出模糊；着色 100% 时遮住背景，显示强度 0% 时只有纯色，模糊差异不明显。"/>
+          <arc:Slider Minimum="0" Maximum="32" Value="{Binding SidebarBlurRadius, Mode=TwoWay}" AutomationProperties.Name="标题栏与侧栏模糊半径"/>
+          <TextBlock Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Text="使用 Arc 磨砂玻璃，仅处理应用内背景，文字与图标保持清晰。照片背景更容易看出模糊；着色 100% 时遮住背景，显示强度 0% 时只有纯色，模糊差异不明显。"/>
         </StackPanel>
       </Border>
       <Border Classes="panel">

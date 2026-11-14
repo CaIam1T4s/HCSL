@@ -17,7 +17,7 @@ using TKCode.Arc;
 // Real Arc templates, fake IPC only: no desktop, Steam, files, daemon or CS2 process.
 var only = ParseOnly(args);
 AppBuilder.Configure<HCSL.Host.App>().UseHeadless(new AvaloniaHeadlessPlatformOptions())
-    .UseArc(a => a.UseArcControls().WithTheme(t => t.Appearance(ArcAppearance.Dark).Preset(ThemeCatalog.ArcPreset)))
+    .UseArc(a => a.UseArcControls().UseArcBlocks().UseArcSpecial().WithTheme(t => t.Appearance(ArcAppearance.Dark).Preset(ThemeCatalog.ArcPreset)))
     .SetupWithoutStarting();
 if (only is "input")
 {
@@ -38,6 +38,116 @@ var owner = new MainWindow
 };
 owner.Show();
 Layout();
+if (only is null or "background")
+{
+    var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
+    var scene = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.BackgroundScene>()
+        .Single(s => s.Name == "PART_WindowBackdrop");
+    var sidebarGlass = owner.FindControl<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>("SidebarGlass")!;
+    var titlebar = owner.FindControl<TitleBar>("ShellTitleBar")!;
+    var titleGlass = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>()
+        .Single(g => g.Name == "PART_TitleBarGlass");
+    var defaultBackdrop = home.FindControl<Grid>("HomeBackdrop")!;
+    var homeSurface = home.FindControl<Grid>("HomeSurface")!;
+    Check(scene.Bounds.Height >= titlebar.Bounds.Height + owner.FindControl<Grid>("ShellContent")!.Bounds.Height &&
+          ReferenceEquals(sidebarGlass.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(sidebarGlass), scene),
+        "One window-sized scene must cover both the title bar and content, with an aligned sidebar copy.");
+    Check(ReferenceEquals(titleGlass.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(titleGlass), scene) && !titleGlass.IsHitTestVisible &&
+          titleGlass.Bounds.Height == titlebar.Bounds.Height && titleGlass.Bounds.Width == scene.Bounds.Width &&
+          titleGlass.BlurRadius == sidebarGlass.BlurRadius && titleGlass.TintOpacity == sidebarGlass.TintOpacity,
+        "The title bar must have a correctly aligned, noninteractive Arc glass layer matching the sidebar.");
+    Check(titlebar.BorderThickness == default && owner.FindControl<Sidebar>("MainSidebar")!.BorderThickness == default &&
+          owner.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("sidebar")).BorderThickness == default &&
+          owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_FooterSeparator").Opacity == 0,
+        $"Chrome rims must be removed: title={titlebar.BorderThickness}, sidebar={owner.FindControl<Sidebar>("MainSidebar")!.BorderThickness}, frame={owner.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("sidebar")).BorderThickness}, footerOpacity={owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_FooterSeparator").Opacity}.");
+    Check(owner.FindControl<Border>("SidebarShadow")!.BoxShadow.Count > 0 &&
+          owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_TitleBarShadow").BoxShadow.Count > 0,
+        "Chrome must separate from content through soft token-based shadows.");
+    foreach (var material in new[] { titleGlass, sidebarGlass })
+    {
+        Check(!GlassBackdrop.GetIsLive(material) && material.MaxTilt == 0 && material.SheenIntensity == 0 &&
+              material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.EdgeLight)]
+                  is Avalonia.Media.Color { A: 0 },
+            "Arc frost must stay static and avoid adding bright card rims.");
+    }
+    var shellModel = (ShellViewModel)owner.DataContext!;
+    var originalBlur = shellModel.SidebarBlurRadius;
+    var originalTint = shellModel.SidebarTintPercent;
+    shellModel.SidebarBlurRadius = 12; shellModel.SidebarTintPercent = 40; Layout();
+    Check(titleGlass.BlurRadius == 12 && Math.Abs(titleGlass.TintOpacity - 0.4) < 0.001 &&
+          titlebar.Effect is null,
+        "The shared glass settings must update the title backdrop without blurring title-bar controls.");
+    shellModel.SidebarBlurRadius = originalBlur; shellModel.SidebarTintPercent = originalTint; Layout();
+    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Light)); Layout();
+    foreach (var material in new[] { titleGlass, sidebarGlass })
+    {
+        var tint = (Avalonia.Media.Color)material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.Tint)]!;
+        var neutral = ArcTokens.GetColor(material, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Surface);
+        Check(tint.R == neutral.R && tint.G == neutral.G && tint.B == neutral.B && tint.A < 255,
+            $"Arc frost must follow the neutral theme surface: tint={tint}, neutral={neutral}, opacity={material.TintOpacity}.");
+    }
+    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark)); Layout();
+    var themeButton = owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.GetVisualDescendants()
+        .OfType<TKCode.Arc.Button>().Single(b => b.Name == "PART_Button");
+    Check(themeButton.Background is Avalonia.Media.ISolidColorBrush { Opacity: > 0, Color.A: > 0 } themeSurface &&
+          (themeSurface.Opacity < 1 || themeSurface.Color.A < 255) && themeButton.Opacity == 1,
+        $"The theme-switcher background must remain translucent: brush={themeButton.Background}, brushOpacity={themeButton.Background?.Opacity}, controlOpacity={themeButton.Opacity}.");
+    Check(defaultBackdrop.IsVisible && !HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner),
+        "Without wallpaper the home glow must remain visible.");
+    using var bitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(2, 2), new Vector(96, 96));
+    using var imageStream = new MemoryStream();
+    bitmap.Save(imageStream, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default); imageStream.Position = 0;
+    owner.SetBackground(imageStream); Layout();
+    Check(HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner) && scene.ImageSource is not null &&
+          !defaultBackdrop.IsVisible && !home.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccentOrb")!.IsEffectivelyVisible &&
+          homeSurface.Background is Avalonia.Media.ISolidColorBrush { Opacity: 0 } or
+              Avalonia.Media.ISolidColorBrush { Color.A: 0 },
+        "Wallpaper must replace the home background rather than sit behind an opaque glow scene.");
+    var originalStrength = ((ShellViewModel)owner.DataContext!).BackgroundOpacityPercent;
+    ((ShellViewModel)owner.DataContext!).BackgroundOpacityPercent = 40; Layout();
+    Check(Math.Abs(scene.Strength - 0.4) < 0.001, "Wallpaper strength must reach the shared full-window scene.");
+    ((ShellViewModel)owner.DataContext!).BackgroundOpacityPercent = originalStrength;
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("settings"); Layout();
+    Check(scene.IsEffectivelyVisible && scene.ImageSource is not null && titlebar.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 },
+        "Other pages and the transparent title bar must keep the same wallpaper.");
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home");
+    owner.ResetBackground(); Layout();
+    Check(scene.ImageSource is null && !HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner) && defaultBackdrop.IsVisible,
+        "Resetting wallpaper must restore the default home glow.");
+    Console.WriteLine("PASS gui.background.full-window-wallpaper-titlebar-sidebar-strength-and-reset");
+    if (only is "background") return 0;
+}
+if (only is null or "sidebar")
+{
+    var sidebar = owner.FindControl<Sidebar>("MainSidebar")!;
+    var shell = (ShellViewModel)owner.DataContext!;
+    Check(sidebar.ExpandedWidth == 216 && !sidebar.IsCollapsed && !sidebar.IsCollapseButtonVisible && !sidebar.IsFilterVisible,
+        "The trial Arc sidebar must retain the existing expanded layout without extra chrome.");
+    Check(sidebar.Sections.Count == 2 && sidebar.Sections[0].Items.Count == 4 && sidebar.Sections[1].Items.Count == 1,
+        "The sidebar must preserve server and general navigation groups.");
+    Check(sidebar.Header is not null && sidebar.Footer is not null &&
+          owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.IsEffectivelyVisible,
+        "The account header and theme-switching footer must remain visible.");
+    foreach (var page in shell.Pages)
+    {
+        shell.NavigateCommand.Execute(page.Id); Layout();
+        Check(sidebar.SelectedKey == page.Id && sidebar.SelectedItem?.Key == page.Id,
+            "Programmatic navigation must update the Arc sidebar selection.");
+    }
+    var homeLabel = sidebar.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == "首页");
+    var clickPoint = homeLabel.TranslatePoint(new Point(homeLabel.Bounds.Width / 2, homeLabel.Bounds.Height / 2), owner)!.Value;
+    owner.MouseDown(clickPoint, Avalonia.Input.MouseButton.Left);
+    owner.MouseUp(clickPoint, Avalonia.Input.MouseButton.Left); Layout();
+    Check(shell.IsHome && sidebar.SelectedKey == "home", "Clicking an Arc sidebar row must navigate to its page.");
+    owner.KeyPress(Avalonia.Input.Key.B, Avalonia.Input.RawInputModifiers.Control, Avalonia.Input.PhysicalKey.None, ""); Layout();
+    Check(!sidebar.IsCollapsed, "The fixed-width trial sidebar must not collapse through Ctrl+B.");
+    owner.KeyPress(Avalonia.Input.Key.Down, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+    owner.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
+    Check(shell.IsInstance && sidebar.SelectedKey == "instance", "Keyboard navigation must invoke the selected Arc row.");
+    shell.NavigateCommand.Execute("home"); Layout();
+    Console.WriteLine("PASS gui.sidebar.arc-sections-header-footer-and-route-synchronization");
+    if (only is "sidebar") return 0;
+}
 if (only is "home")
 {
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
@@ -84,7 +194,6 @@ if (only is "home")
     ArcTheme.Apply(t => t.Preset(ThemeCatalog.ArcPreset).Accent(ArcAccentPreset.Violet)); Layout();
     Check(((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color == originalAccent,
         "The home accent circle must follow the active Arc accent.");
-    var create = home.FindControl<TKCode.Arc.Button>("CreateButton")!;
     var launch = home.FindControl<ExpandingButtonGroupItem>("LaunchButton")!;
     var actions = home.FindControl<ExpandingButtonGroup>("LaunchActions")!;
     var configuration = home.FindControl<ExpandingButtonGroupItem>("ConfigurationButton")!;
@@ -92,7 +201,14 @@ if (only is "home")
     var instances = home.FindControl<MorphSelect>("InstancePicker")!;
     var presets = home.FindControl<MorphSelect>("PresetPicker")!;
     var maps = home.FindControl<MorphSelect>("MapPicker")!;
-    Check(create.IsVisible && !launch.IsVisible && !instances.IsVisible, "Empty home must offer only creation.");
+    Check(actions.IsVisible && launch.IsVisible && !launch.IsDisabled && launch.Label == "实例列表" &&
+          configuration.IsDisabled && !instances.IsVisible && home.FindControl<TKCode.Arc.Button>("CreateButton") is null,
+        "Empty home must reuse the main action for the instance list and disable configuration, without a separate button.");
+    configuration.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+    Check(!popover.IsOpen, "Empty home must not allow the startup configuration menu to open.");
+    launch.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+    Check(((ShellViewModel)owner.DataContext!).IsInstances, "The empty-state main action must navigate to the instance list.");
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home"); Layout();
     var p = new PresetDefinition(1, Guid.NewGuid(), 1, "Home preset");
     var id = Guid.NewGuid();
     daemon.IdleForPresetTests = true;
@@ -100,8 +216,9 @@ if (only is "home")
     PumpUntil(server.RefreshAsync());
     PumpUntil(model.RefreshInstancesAsync());
     WaitUntil(() => maps.ItemsSource is ServerMapTarget[] { Length: 2 } && !model.Busy);
-    Check(!create.IsVisible && launch.IsVisible && Equals(instances.SelectedItem, model.Selected),
-        "Selected instance must be reflected by home.");
+    Check(launch.IsVisible && !configuration.IsDisabled && configuration.IsEnabled &&
+          launch.Label == "启动服务器" && Equals(instances.SelectedItem, model.Selected),
+        "Adding an instance must restore startup and enable its configuration menu.");
     Check(maps.SelectedItem is ServerMapTarget { Value: "de_dust2" } && !launch.IsDisabled,
         "Startup map must come from the preset pool.");
     Check(actions.IsVisible && !popover.IsOpen && actions.Items.Count == 2,
@@ -142,6 +259,14 @@ if (only is "home")
     }
     Check(ReferenceEquals(home.FindControl<TKCode.Arc.Button>("PoolButton")!.Parent, popover.Content),
         "Map pool management must be inside the configuration menu.");
+    Check(actions.Background is Avalonia.Media.ISolidColorBrush { Opacity: > 0, Color.A: > 0 } actionSurface &&
+          (actionSurface.Opacity < 1 || actionSurface.Color.A < 255) && actions.Opacity == 1 &&
+          configuration.Opacity == 1,
+        "Only the launch surface brush may be translucent; action text and icons must remain opaque.");
+    var popoverSurface = ((StackPanel)popover.Content!).GetVisualAncestors().OfType<PopoverSurface>().Single();
+    Check(popoverSurface.Background is Avalonia.Media.ISolidColorBrush { Opacity: > 0, Color.A: > 0 } menuSurface &&
+          (menuSurface.Opacity < 1 || menuSurface.Color.A < 255) && popoverSurface.Opacity == 1,
+        "The launch menu surface must be translucent without fading its controls.");
     var anchor = home.FindControl<Grid>("LaunchAnchor")!;
     Check(ReferenceEquals(popover.Anchor, anchor), "The popover must use the fixed action-area anchor.");
     var anchorBounds = anchor.Bounds;
@@ -183,6 +308,12 @@ if (only is "home")
     daemon.Pool = new(new(1, 1, []), "empty");
     home.FindControl<TKCode.Arc.Button>("RetryButton")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
     WaitUntil(() => home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsEnabled);
+    configuration.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+    Check(popover.IsOpen, "Configuration must remain available before the final instance is removed.");
+    daemon.Catalog = new([]);
+    PumpUntil(model.RefreshInstancesAsync()); Layout();
+    Check(actions.IsVisible && launch.Label == "实例列表" && !launch.IsDisabled && configuration.IsDisabled && !popover.IsOpen,
+        "Removing the last instance must restore the list action and close and disable configuration.");
     Console.WriteLine("PASS gui.home.pool-selection-layout-and-stable-status");
     return 0;
 }
@@ -328,7 +459,7 @@ var editor = owner.EditInstanceAsync(null, draft =>
     saveCalls++; savedDraft = draft; return Task.FromResult<string?>(null);
 });
 Layout();
-var inputs = owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray();
+var inputs = owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray();
 Check(inputs.Length == 3, "Instance form must contain name, port and address fields.");
 inputs[0].Text = "New instance"; inputs[1].Text = "not-a-port";
 Click(owner, "保存");
@@ -353,7 +484,7 @@ var presetEditor = owner.EditPresetAsync("新建配置预设", null, false, draf
     presetCalls++; savedPreset = draft; return Task.FromResult<string?>(null);
 });
 Layout();
-var presetInputs = owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray();
+var presetInputs = owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray();
 Check(presetInputs.Length == 4, "Preset editor must contain name, map, game_type and game_mode.");
 presetInputs[0].Text = "Practice"; presetInputs[1].Text = "workshop/123/map";
 Click(owner, "保存");
@@ -368,7 +499,7 @@ var copyEditor = owner.EditPresetAsync("复制配置预设", sourcePreset, true,
     presetCalls++; savedPreset = draft; return Task.FromResult<string?>(null);
 });
 Layout();
-Check(owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().Count() == 1, "Copy dialog must edit only the name.");
+Check(owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<TKCode.Arc.Input>().Count() == 1, "Copy dialog must edit only the name.");
 Click(owner, "保存"); PumpUntil(copyEditor);
 Check(copyEditor.Result && savedPreset is { Revision: 4, VacPreferred: false } && savedPreset.Name.EndsWith("副本"), "Copy draft modified source settings.");
 var cancelledPreset = owner.EditPresetAsync("编辑配置预设", sourcePreset, false, _ => { presetCalls++; return Task.FromResult<string?>(null); });
@@ -378,7 +509,7 @@ Console.WriteLine("PASS gui.presets.editor-validation-create-copy-preserve-setti
 var workshopEditor = owner.EditPresetAsync("工坊启动地图", sourcePreset, false, draft => { savedPreset = draft; return Task.FromResult<string?>(null); });
 Layout();
 owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Single(s => s.IsEffectivelyVisible).SelectedIndex = 1;
-owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray()[1].Text = "3070244462";
+owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray()[1].Text = "3070244462";
 Click(owner, "保存"); PumpUntil(workshopEditor);
 Check(savedPreset is { MapKind: ServerMapKind.Workshop, Map: "3070244462", VacPreferred: false }, "Workshop editor lost source/ID or changed VAC.");
 var mapTarget = owner.MapTargetAsync(); Layout();

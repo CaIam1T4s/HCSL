@@ -102,10 +102,10 @@ public partial class HomePage : UserControl
             PresetPicker.SelectedItem = preset;
             MapPicker.ItemsSource = maps;
             MapPicker.SelectedItem = maps.FirstOrDefault(x => x.Kind == preset?.MapKind && x.Value == preset.Map);
-            InstancePicker.IsVisible = PresetPicker.IsVisible = VacSwitch.IsVisible = LaunchActions.IsVisible = LaunchButton.IsVisible = hasInstance;
+            InstancePicker.IsVisible = PresetPicker.IsVisible = VacSwitch.IsVisible = hasInstance;
             ConfigurationButton.IsEnabled = hasInstance;
+            ConfigurationButton.IsDisabled = !hasInstance;
             if (!hasInstance) ConfigurationPopover.IsOpen = false;
-            CreateButton.IsVisible = !hasInstance;
             InstanceRow.IsVisible = PresetRow.IsVisible = hasInstance;
             InstancePicker.IsEnabled = PresetPicker.IsEnabled = selectable;
             MapRow.IsVisible = MapPicker.IsVisible = hasInstance && maps.Length > 0;
@@ -117,9 +117,10 @@ public partial class HomePage : UserControl
             RetryButton.IsVisible = hasInstance && failure is not null;
             PoolNotice.IsVisible = hasInstance && hasCollection;
             RetryButton.IsEnabled = !m.Busy && !reading;
-            LaunchButton.IsDisabled = !(writable && preset is not null && maps.Any(x => x.Kind == preset.MapKind && x.Value == preset.Map)
+            LaunchButton.IsDisabled = hasInstance && !(writable && preset is not null && maps.Any(x => x.Kind == preset.MapKind && x.Value == preset.Map)
                 && m.Server.CanStart);
-            LaunchButton.Label = m.Server.Active ? "服务器运行中" : reading ? "读取地图池…" : "启动服务器";
+            LaunchButton.Label = !hasInstance ? "实例列表" : m.Server.Active ? "服务器运行中" : reading ? "读取地图池…" : "启动服务器";
+            LaunchButton.Icon = hasInstance ? TKCode.Arc.ArcIcons.Play : TKCode.Arc.ArcIcons.List;
             Feedback.Content = failure ?? configurationFailure ?? (m.Error.Length > 0 ? m.Error : null);
             Feedback.IsVisible = Feedback.Content is not null;
         }
@@ -198,12 +199,19 @@ public partial class HomePage : UserControl
     }
     private void ToggleConfiguration(object? sender, RoutedEventArgs e)
     {
+        if (ConfigurationButton.IsDisabled) return;
         if (ConfigurationPopover.IsOpen) ConfigurationPopover.IsOpen = false;
         else ConfigurationPopover.ShowAt(LaunchAnchor);
     }
     private async void Launch(object? sender, RoutedEventArgs e)
     {
-        if (!LaunchButton.IsDisabled && Owner is { } owner)
+        if (model is null || LaunchButton.IsDisabled) return;
+        if (model.Selected?.Entry.Definition is null)
+        {
+            (DataContext as ShellViewModel)?.NavigateCommand.Execute("instances");
+            return;
+        }
+        if (Owner is { } owner)
         {
             ConfigurationPopover.IsOpen = false;
             await owner.StartHomeServerAsync();
@@ -215,6 +223,5 @@ public partial class HomePage : UserControl
         ConfigurationPopover.IsOpen = false;
         (DataContext as ShellViewModel)?.NavigateCommand.Execute("instance");
     }
-    private void CreateInstance(object? sender, RoutedEventArgs e) => (DataContext as ShellViewModel)?.NavigateCommand.Execute("instances");
     private async void RetryPool(object? sender, RoutedEventArgs e) => await ReadPoolAsync();
 }

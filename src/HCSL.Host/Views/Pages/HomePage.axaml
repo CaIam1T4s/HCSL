@@ -2,11 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:local="using:HCSL.Host.Views.Pages"
+             xmlns:controls="clr-namespace:HCSL.UI.Shared.Controls;assembly=HCSL.UI.Shared"
              x:Class="HCSL.Host.Views.Pages.HomePage">
-  <Grid x:Name="HomeSurface" ClipToBounds="True" Background="{arc:ArcDesignTokenResource Surface}">
+  <Grid x:Name="HomeSurface" ClipToBounds="True"
+        Classes.wallpaper="{ReflectionBinding $parent[Window].(controls:WindowBackdrop.HasImage)}">
     <!-- Blur only the accent decoration, never tint or blur the whole page or its controls. -->
     <Grid x:Name="HomeBackdrop" Background="{arc:ArcDesignTokenResource Background}"
-          ClipToBounds="True" IsHitTestVisible="False">
+          ClipToBounds="True" IsHitTestVisible="False"
+          IsVisible="{ReflectionBinding !$parent[Window].(controls:WindowBackdrop.HasImage)}">
       <Border Opacity="0.25" x:CompileBindings="False">
         <Border.Background>
           <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
@@ -37,7 +40,7 @@
       <arc:Alert x:Name="Feedback" IsVisible="False" Tone="Danger" Title="操作未完成"/>
       <arc:Alert x:Name="PoolNotice" IsVisible="False" Tone="Info" Title="地图池包含工坊合集"
                  Content="合集不是单张启动地图；请在实例管理中配置合集启动。"/>
-      <arc:Popover x:Name="ConfigurationPopover" Placement="Top" Alignment="End" TriggerMode="Manual">
+      <arc:Popover x:Name="ConfigurationPopover" Classes="launch-configuration" Placement="Top" Alignment="End" TriggerMode="Manual">
         <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}"
                     TextElement.Foreground="{arc:ArcDesignTokenResource Foreground}">
           <Grid x:Name="InstanceRow" ColumnDefinitions="Auto,*" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
@@ -67,7 +70,7 @@
       </arc:Popover>
       <Grid x:Name="LaunchAnchor" Width="{arc:ArcDesignTokenResource MediaSizeXL}"
             Height="{arc:ArcDesignTokenResource Space16}" HorizontalAlignment="Right">
-      <arc:ExpandingButtonGroup x:Name="LaunchActions" Label="服务器启动操作" HorizontalAlignment="Right"
+      <arc:ExpandingButtonGroup x:Name="LaunchActions" Classes="launch-actions" Label="服务器启动操作" HorizontalAlignment="Right"
                                 DefaultExpandedItem="{Binding #LaunchButton}">
         <arc:ExpandingButtonGroup.Styles>
           <Style Selector="arc|ExpandingButtonGroupItem">
@@ -85,12 +88,6 @@
                                       Icon="{x:Static arc:ArcIcons.Settings}" Click="ToggleConfiguration"/>
       </arc:ExpandingButtonGroup>
       </Grid>
-      <arc:Button x:Name="CreateButton" Width="160" HorizontalAlignment="Right" Click="CreateInstance">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock Text="创建实例"/>
-          <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowRight}" Size="16"/>
-        </StackPanel>
-      </arc:Button>
     </StackPanel>
     </Grid>
   </Grid>

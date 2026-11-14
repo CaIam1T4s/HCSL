@@ -1,6 +1,6 @@
-<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:DataType="vm:ShellViewModel" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
+<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
-    <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto">
+    <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto" Background="Transparent">
       <arc:TitleBar.LeftContent>
         <arc:Badge x:Name="ServerStatusBadge" Size="Medium"/>
       </arc:TitleBar.LeftContent>
@@ -10,12 +10,17 @@
     </arc:TitleBar>
   </arc:ArcWindow.TitleBar>
   <Grid>
-    <controls:BackgroundScene x:Name="BackgroundLayer" Strength="{Binding BackgroundOpacity}"/>
     <Grid x:Name="ShellContent" ColumnDefinitions="216,*">
-      <Grid>
-        <controls:BackgroundGlass Source="{Binding #BackgroundLayer}" OffsetY="0" BlurRadius="{Binding SidebarBlurRadius}" TintOpacity="{Binding SidebarTintOpacity}"/>
+      <Grid ZIndex="1">
+        <Border x:Name="SidebarShadow" BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" Background="Transparent">
+          <controls:ArcFrostedBackdrop x:Name="SidebarGlass" BlurRadius="{Binding SidebarBlurRadius}" TintOpacity="{Binding SidebarTintOpacity}"/>
+        </Border>
           <Border Classes="sidebar">
-            <Grid Margin="12,8,12,16" RowDefinitions="Auto,*,Auto">
+            <arc:Sidebar x:Name="MainSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
+                         IsCollapseButtonVisible="False" IsFilterVisible="False"
+                         Background="Transparent" Label="主导航"
+                         SelectedKey="{Binding SelectedPage.Id, Mode=OneWay}" ItemInvoked="SidebarItemInvoked">
+              <arc:Sidebar.Header>
               <StackPanel Spacing="10">
                 <TextBlock Text="账号" Classes="section"/>
                 <Grid ColumnDefinitions="42,*" Margin="10,0,0,10">
@@ -28,53 +33,28 @@
                   </StackPanel>
                 </Grid>
               </StackPanel>
-              <ScrollViewer Grid.Row="1">
-                <StackPanel Spacing="3">
-                  <TextBlock Text="服务器" Classes="section"/>
-                  <arc:Button Classes="nav" Classes.selected="{Binding Pages[0].IsSelected}" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="home">
-                    <Grid ColumnDefinitions="28,*">
-                      <Path Data="{x:Static arc:ArcIcons.House}" Classes="glyph" VerticalAlignment="Center"/>
-                      <TextBlock Grid.Column="1" Text="首页" VerticalAlignment="Center"/>
-                    </Grid>
-                  </arc:Button>
-                  <arc:Button Classes="nav" Classes.selected="{Binding Pages[1].IsSelected}" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="instance">
-                    <Grid ColumnDefinitions="28,*">
-                      <Path Data="{x:Static arc:ArcIcons.Server}" Classes="glyph" VerticalAlignment="Center"/>
-                      <TextBlock Grid.Column="1" Text="实例管理" VerticalAlignment="Center"/>
-                    </Grid>
-                  </arc:Button>
-                  <arc:Button Classes="nav" Classes.selected="{Binding Pages[2].IsSelected}" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="instances">
-                    <Grid ColumnDefinitions="28,*">
-                      <Path Data="{x:Static arc:ArcIcons.List}" Classes="glyph" VerticalAlignment="Center"/>
-                      <TextBlock Grid.Column="1" Text="实例列表" VerticalAlignment="Center"/>
-                    </Grid>
-                  </arc:Button>
-                  <arc:Button Classes="nav" Classes.selected="{Binding Pages[3].IsSelected}" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="downloads">
-                    <Grid ColumnDefinitions="28,*">
-                      <Path Data="{x:Static arc:ArcIcons.Download}" Classes="glyph" VerticalAlignment="Center"/>
-                      <TextBlock Grid.Column="1" Text="下载中心" VerticalAlignment="Center"/>
-                    </Grid>
-                  </arc:Button>
-                  <TextBlock Text="通用" Classes="section"/>
-                  <arc:Button Classes="nav" Classes.selected="{Binding Pages[4].IsSelected}" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="settings">
-                    <Grid ColumnDefinitions="28,*">
-                      <Path Data="{x:Static arc:ArcIcons.Settings}" Classes="glyph" VerticalAlignment="Center"/>
-                      <TextBlock Grid.Column="1" Text="设置" VerticalAlignment="Center"/>
-                    </Grid>
-                  </arc:Button>
-                </StackPanel>
-              </ScrollViewer>
-              <StackPanel Grid.Row="2" Spacing="8" Margin="0,16,0,0">
+              </arc:Sidebar.Header>
+              <arc:SidebarSection Header="服务器">
+                <arc:SidebarItem Key="home" Label="首页" Icon="{x:Static arc:ArcIcons.House}"/>
+                <arc:SidebarItem Key="instance" Label="实例管理" Icon="{x:Static arc:ArcIcons.Server}"/>
+                <arc:SidebarItem Key="instances" Label="实例列表" Icon="{x:Static arc:ArcIcons.List}"/>
+                <arc:SidebarItem Key="downloads" Label="下载中心" Icon="{x:Static arc:ArcIcons.Download}"/>
+              </arc:SidebarSection>
+              <arc:SidebarSection Header="通用">
+                <arc:SidebarItem Key="settings" Label="设置" Icon="{x:Static arc:ArcIcons.Settings}"/>
+              </arc:SidebarSection>
+              <arc:Sidebar.Footer>
+              <StackPanel Spacing="8" Margin="0,16,0,0">
                 <arc:ThemeSwitcher x:Name="SidebarThemeSwitcher" Variant="Reveal"
                                    Text="切换到深色模式" ThemeChangeRequested="SidebarThemeRequested"/>
                 <TextBlock Text="● 开发预览" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Margin="12,0,0,0"/>
               </StackPanel>
-            </Grid>
+              </arc:Sidebar.Footer>
+            </arc:Sidebar>
           </Border>
         </Grid>
         <Grid Grid.Column="1">
           <pages:HomePage IsVisible="{Binding IsHome}"/>
-          <Border IsVisible="{Binding !IsHome}" Background="{DynamicResource ShellBackground}"/>
           <pages:InstancePage x:Name="InstanceManagementPage" IsVisible="{Binding IsInstance}"/>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>
