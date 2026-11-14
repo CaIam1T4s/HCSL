@@ -47,7 +47,6 @@ if (only is null or "background")
     var titlebar = owner.FindControl<TitleBar>("ShellTitleBar")!;
     var titleGlass = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>()
         .Single(g => g.Name == "PART_TitleBarGlass");
-    var defaultBackdrop = home.FindControl<Grid>("HomeBackdrop")!;
     var homeSurface = home.FindControl<Grid>("HomeSurface")!;
     Check(scene.Bounds.Height >= titlebar.Bounds.Height + owner.FindControl<Grid>("ShellContent")!.Bounds.Height &&
           ReferenceEquals(sidebarGlass.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(sidebarGlass), scene),
@@ -92,17 +91,15 @@ if (only is null or "background")
     Check(themeButton.Background is Avalonia.Media.ISolidColorBrush { Opacity: > 0, Color.A: > 0 } themeSurface &&
           (themeSurface.Opacity < 1 || themeSurface.Color.A < 255) && themeButton.Opacity == 1,
         $"The theme-switcher background must remain translucent: brush={themeButton.Background}, brushOpacity={themeButton.Background?.Opacity}, controlOpacity={themeButton.Opacity}.");
-    Check(defaultBackdrop.IsVisible && !HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner),
-        "Without wallpaper the home glow must remain visible.");
+    Check(scene.ImageSource is null && homeSurface.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 } &&
+          home.FindControl<Grid>("HomeBackdrop") is null && home.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccentOrb") is null,
+        "Without wallpaper home must reveal the shared default background, with no private gradient or circle.");
     using var bitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(2, 2), new Vector(96, 96));
     using var imageStream = new MemoryStream();
     bitmap.Save(imageStream, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default); imageStream.Position = 0;
     owner.SetBackground(imageStream); Layout();
-    Check(HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner) && scene.ImageSource is not null &&
-          !defaultBackdrop.IsVisible && !home.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccentOrb")!.IsEffectivelyVisible &&
-          homeSurface.Background is Avalonia.Media.ISolidColorBrush { Opacity: 0 } or
-              Avalonia.Media.ISolidColorBrush { Color.A: 0 },
-        "Wallpaper must replace the home background rather than sit behind an opaque glow scene.");
+    Check(scene.ImageSource is not null && homeSurface.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 },
+        "Wallpaper must remain visible through the transparent home page.");
     var originalStrength = ((ShellViewModel)owner.DataContext!).BackgroundOpacityPercent;
     ((ShellViewModel)owner.DataContext!).BackgroundOpacityPercent = 40; Layout();
     Check(Math.Abs(scene.Strength - 0.4) < 0.001, "Wallpaper strength must reach the shared full-window scene.");
@@ -112,8 +109,8 @@ if (only is null or "background")
         "Other pages and the transparent title bar must keep the same wallpaper.");
     ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home");
     owner.ResetBackground(); Layout();
-    Check(scene.ImageSource is null && !HCSL.UI.Shared.Controls.WindowBackdrop.GetHasImage(owner) && defaultBackdrop.IsVisible,
-        "Resetting wallpaper must restore the default home glow.");
+    Check(scene.ImageSource is null && homeSurface.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 },
+        "Resetting wallpaper must restore the shared default background without a private home overlay.");
     Console.WriteLine("PASS gui.background.full-window-wallpaper-titlebar-sidebar-strength-and-reset");
     if (only is "background") return 0;
 }
@@ -152,48 +149,10 @@ if (only is "home")
 {
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
     var surface = home.FindControl<Grid>("HomeSurface")!;
-    var scenery = home.FindControl<Grid>("HomeBackdrop")!;
     var content = home.FindControl<Grid>("HomeContent")!;
-    var orb = home.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccentOrb")!;
-    Check(surface.ClipToBounds && scenery.ClipToBounds && !scenery.IsHitTestVisible && !orb.IsHitTestVisible,
-        "The clipped home scenery must not intercept input.");
-    Check(surface.Children.Count == 2 && surface.Children.IndexOf(scenery) < surface.Children.IndexOf(content) &&
-          surface.Effect is null && scenery.Effect is null && content.Effect is null,
-        "Home must not add a full-page glass tint or blur the controls.");
-    Check(orb.Effect is Avalonia.Media.BlurEffect { Radius: > 96 } && orb.Width > 640 && orb.Opacity < 0.12,
-        "The larger accent circle must have a wider blur and a subtler tint.");
-    var orbCorner = orb.TranslatePoint(new Point(orb.Bounds.Width, orb.Bounds.Height), scenery)!.Value;
-    Check(orb.Bounds.Width == orb.Bounds.Height && orbCorner.X > scenery.Bounds.Width && orbCorner.Y > scenery.Bounds.Height,
-        "The accent circle must extend beyond the clipped bottom-right home boundary.");
-    var orbCenter = orb.TranslatePoint(new Point(orb.Bounds.Width / 2, orb.Bounds.Height / 2), scenery)!.Value;
-    Check(Math.Abs(orbCenter.X - scenery.Bounds.Width) < 1 && Math.Abs(orbCenter.Y - scenery.Bounds.Height) < 1,
-        "The circle center must align with the viewport corner, leaving its upper-left quarter visible.");
-    var originalOrbSize = orb.Width;
-    orb.SetCurrentValue(Avalonia.Layout.Layoutable.WidthProperty, originalOrbSize / 2);
-    orb.SetCurrentValue(Avalonia.Layout.Layoutable.HeightProperty, originalOrbSize / 2); Layout();
-    var resizedCenter = orb.TranslatePoint(new Point(orb.Bounds.Width / 2, orb.Bounds.Height / 2), scenery)!.Value;
-    Check(Math.Abs(resizedCenter.X - scenery.Bounds.Width) < 1 && Math.Abs(resizedCenter.Y - scenery.Bounds.Height) < 1,
-        "Changing the decoration size must preserve the visible quarter rather than move the glow off-screen.");
-    orb.SetCurrentValue(Avalonia.Layout.Layoutable.WidthProperty, originalOrbSize);
-    orb.SetCurrentValue(Avalonia.Layout.Layoutable.HeightProperty, originalOrbSize); Layout();
-    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).Accent(ArcAccentPreset.Violet)); Layout();
-    var originalAccent = ((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color;
-    var otherAccent = Enum.GetValues<ArcAccentPreset>().First(a => a != ArcAccentPreset.Violet);
-    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Light).Accent(otherAccent)); Layout();
-    Check(((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color != originalAccent,
-        "Changing the Arc accent must update the background circle.");
-    var lightBackground = ((Avalonia.Media.ISolidColorBrush)scenery.Background!).Color;
-    var gradient = (Avalonia.Media.LinearGradientBrush)((Border)scenery.Children[0]).Background!;
-    Check(gradient.GradientStops[0].Color == lightBackground &&
-          gradient.GradientStops[1].Color == ((Avalonia.Media.ISolidColorBrush)surface.Background!).Color,
-        "The subtle home gradient must use the current neutral theme colors.");
-    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark)); Layout();
-    Check(((Avalonia.Media.ISolidColorBrush)scenery.Background!).Color != lightBackground,
-        "The home background must follow light and dark theme changes.");
-    // Restore the original preset accent after checking a different accent.
-    ArcTheme.Apply(t => t.Preset(ThemeCatalog.ArcPreset).Accent(ArcAccentPreset.Violet)); Layout();
-    Check(((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color == originalAccent,
-        "The home accent circle must follow the active Arc accent.");
+    Check(surface.ClipToBounds && surface.Children.Count == 1 && ReferenceEquals(surface.Children[0], content) &&
+          surface.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 } && surface.Effect is null && content.Effect is null,
+        "Home must reveal the same window background as other pages, without a private backdrop or blur.");
     var launch = home.FindControl<ExpandingButtonGroupItem>("LaunchButton")!;
     var actions = home.FindControl<ExpandingButtonGroup>("LaunchActions")!;
     var configuration = home.FindControl<ExpandingButtonGroupItem>("ConfigurationButton")!;

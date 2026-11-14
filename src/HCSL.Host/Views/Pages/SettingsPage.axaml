@@ -18,7 +18,7 @@
       <Border Classes="panel">
         <StackPanel Spacing="12">
           <TextBlock Classes="subheading" Text="窗口背景"/>
-          <TextBlock Classes="muted" Text="选择本地 PNG 或 JPEG 作为标题栏、侧栏和所有主页面的统一背景；未选择图片时，首页使用随主题变化的渐变与光晕。自定义图片仅本次会话生效。"/>
+          <TextBlock Classes="muted" Text="选择本地 PNG 或 JPEG 作为标题栏、侧栏和所有主页面的统一背景；未选择图片时，所有页面使用同一套随主题变化的默认渐变。自定义图片仅本次会话生效。"/>
           <StackPanel Orientation="Horizontal" Spacing="10">
             <arc:Button Content="选择图片" Click="ChooseBackground" Variant="Secondary"/>
             <arc:Button Content="恢复默认" Click="ResetBackground" Variant="Secondary"/>

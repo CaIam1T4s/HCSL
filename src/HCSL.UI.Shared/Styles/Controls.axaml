@@ -43,12 +43,6 @@
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ThemeSwitcher /template/ arc|Button#PART_Button">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
   </Style>
-  <Style Selector="arc|ArcWindow.wallpaper-shell Grid#HomeSurface">
-    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}"/>
-  </Style>
-  <Style Selector="arc|ArcWindow.wallpaper-shell Grid#HomeSurface.wallpaper">
-    <Setter Property="Background" Value="Transparent"/>
-  </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
   </Style>

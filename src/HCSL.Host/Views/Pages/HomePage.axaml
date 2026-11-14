@@ -1,37 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             xmlns:local="using:HCSL.Host.Views.Pages"
-             xmlns:controls="clr-namespace:HCSL.UI.Shared.Controls;assembly=HCSL.UI.Shared"
              x:Class="HCSL.Host.Views.Pages.HomePage">
-  <Grid x:Name="HomeSurface" ClipToBounds="True"
-        Classes.wallpaper="{ReflectionBinding $parent[Window].(controls:WindowBackdrop.HasImage)}">
-    <!-- Blur only the accent decoration, never tint or blur the whole page or its controls. -->
-    <Grid x:Name="HomeBackdrop" Background="{arc:ArcDesignTokenResource Background}"
-          ClipToBounds="True" IsHitTestVisible="False"
-          IsVisible="{ReflectionBinding !$parent[Window].(controls:WindowBackdrop.HasImage)}">
-      <Border Opacity="0.25" x:CompileBindings="False">
-        <Border.Background>
-          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
-            <GradientStop Offset="0" Color="{Binding #HomeBackdrop.Background.Color}"/>
-            <GradientStop Offset="1" Color="{Binding #HomeSurface.Background.Color}"/>
-          </LinearGradientBrush>
-        </Border.Background>
-      </Border>
-      <Ellipse x:Name="AccentOrb" Width="{arc:ArcDesignTokenResource ContentMaxWidthMD}"
-               Height="{arc:ArcDesignTokenResource ContentMaxWidthMD}" Fill="{arc:ArcDesignTokenResource Accent}"
-               Opacity="0.08" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-               IsHitTestVisible="False">
-        <Ellipse.Effect>
-          <BlurEffect Radius="{arc:ArcDesignTokenResource MediaSizeLG}"/>
-        </Ellipse.Effect>
-        <Ellipse.RenderTransform>
-          <!-- Half-diameter offsets put the center at the viewport corner at every token size. -->
-          <TranslateTransform X="{Binding #AccentOrb.Width, Converter={x:Static local:HomePage.HalfLength}}"
-                              Y="{Binding #AccentOrb.Height, Converter={x:Static local:HomePage.HalfLength}}"/>
-        </Ellipse.RenderTransform>
-      </Ellipse>
-    </Grid>
+  <!-- All pages reveal the same window-level default gradient or selected wallpaper. -->
+  <Grid x:Name="HomeSurface" ClipToBounds="True" Background="Transparent">
     <Grid x:Name="HomeContent" Margin="32" RowDefinitions="Auto,*,Auto">
     <arc:Switch x:Name="VacSwitch" Content="VAC · 尚未接入" IsEnabled="False"
                 HorizontalAlignment="Right"/>
