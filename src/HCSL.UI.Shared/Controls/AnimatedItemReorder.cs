@@ -83,7 +83,7 @@ public sealed class AnimatedItemReorder
     private void UpdateIndicator()
     {
         if (owner.SelectedItem is not { } selected || owner.ContainerFromItem(selected) is not { } row ||
-            owner.GetVisualDescendants().OfType<GlidingIndicator>().FirstOrDefault() is not { } indicator ||
+            owner.GetVisualDescendants().OfType<GlidingIndicator>().FirstOrDefault() is not { IsVisible: true } indicator ||
             row.TranslatePoint(default, indicator) is not { } position) return;
         // Keep Arc's selection outline attached to the moving selected row, not on a competing spring.
         indicator.MoveTo(new Rect(position, row.Bounds.Size).Deflate(indicator.StrokeThickness / 2), animate: false);

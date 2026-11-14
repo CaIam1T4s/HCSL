@@ -7,7 +7,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Interactivity;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using HCSL.Core;
@@ -16,7 +15,6 @@ using HCSL.Host.ViewModels;
 using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
-using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Motion;
 using TKCode.Arc.Primitives;
 
@@ -24,8 +22,6 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class InstancesPage : UserControl
 {
-    private static readonly StyledProperty<BoxShadows> SubtleShadowProperty =
-        AvaloniaProperty.Register<InstancesPage, BoxShadows>("SubtleShadow");
     private ShellViewModel? shell;
     private bool operating, refreshing, updating;
     private readonly Dictionary<Guid, InstanceListRow> rows = [];
@@ -47,30 +43,13 @@ public partial class InstancesPage : UserControl
         CreateButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
         SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowDown);
         ToolbarActions.DefaultExpandedItem = SortButton;
-        ToolbarActions.SizeChanged += (_, _) =>
-        {
-            // Arc recommends a stable start edge. Reserve the widest measured expansion so a shorter label
-            // cannot shift a right-aligned group out from under the pointer and bounce its hover intent.
-            if (ToolbarActions.IsVisible && ToolbarActions.Bounds.Width > ToolbarSlot.MinWidth)
-                ToolbarSlot.MinWidth = ToolbarActions.Bounds.Width;
-        };
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         DeletePopover.Closed += (_, _) => { if (!operating) { pendingDelete = null; DeleteConfirm.IsConfirmed = false; } };
         PropertiesPopover.Closed += (_, _) => propertiesId = null;
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => { Unsubscribe(); CloseOverlays(); };
-        PropertyChanged += (_, e) =>
-        {
-            if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays();
-            if (e.Property == SubtleShadowProperty)
-            {
-                // Use Arc's quietest elevation throughout this page, including its native glass overlays.
-                Resources[ArcDesignTokens.Key(ArcDesignTokenKind.ShadowRaised)] = GetValue(SubtleShadowProperty);
-                Resources[ArcDesignTokens.Key(ArcDesignTokenKind.ShadowFloating)] = GetValue(SubtleShadowProperty);
-            }
-        };
-        ArcTokens.Bind(this, SubtleShadowProperty, ArcDesignTokenKind.ShadowResting);
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays(); };
     }
 
     private void CloseOverlays()

@@ -17,6 +17,7 @@ using Avalonia.Media;
 using TKCode.Arc.Motion;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
+using TKCode.Arc.DesignTokens;
 using ArcButton = TKCode.Arc.Button;
 
 internal static class InstancesPageTests
@@ -78,7 +79,8 @@ internal static class InstancesPageTests
                 "Loading must use three independent field blocks per row, never one full-list solid mask.");
             Check(!page.GetVisualDescendants().OfType<Table>().Any() && !page.GetVisualDescendants().OfType<RadioButton>().Any(), "No table/header/standalone radio should remain.");
             Check(choices.GetVisualDescendants().OfType<Panel>().Where(p => p.Name == "PART_Mark").All(p => !p.IsVisible), "The native radio marks must be hidden.");
-            Check(choices.GetVisualDescendants().OfType<TKCode.Arc.Primitives.GlidingIndicator>().Any(), "RadioGroup's native gliding highlight must be retained.");
+            Check(choices.GetVisualDescendants().OfType<TKCode.Arc.Primitives.GlidingIndicator>().Single().IsVisible == false,
+                "Selection must use elevation, not Arc's moving selection outline.");
             Check(Rows().All(r => r.CreatedAt == "暂无记录" && r.LastRunAt == "暂无记录" && r.StatusText == "已停止"), "Unavailable dates must not be invented.");
             var row = Container(first);
             var badge = row.GetVisualDescendants().OfType<Badge>().Single();
@@ -89,19 +91,30 @@ internal static class InstancesPageTests
                   actions.Background is ISolidColorBrush { Opacity: < 1 }, "Non-glass badge and toolbar backgrounds must be translucent.");
             Check(!row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row").BoxShadow.Equals(default(BoxShadows)) &&
                   !badge.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Frame").BoxShadow.Equals(default(BoxShadows)),
-                "Row and badge surfaces must use restrained Arc resting shadows.");
+                "Row and badge surfaces must have Arc shadows.");
             var badgeOrigin = badge.TranslatePoint(default, row)!.Value;
             Check(badge.HorizontalAlignment == HorizontalAlignment.Right && badge.VerticalAlignment == VerticalAlignment.Center &&
                   Math.Abs(badgeOrigin.Y + badge.Bounds.Height / 2 - row.Bounds.Height / 2) < 2 &&
                   row.Bounds.Width - badgeOrigin.X - badge.Bounds.Width < 30, "The badge must be aligned to the right and vertically centered in the row.");
             Check(search.TranslatePoint(default, page)!.Value.X == choices.TranslatePoint(default, page)!.Value.X,
                 "Search must start at the list's left edge, not be centered in its toolbar lane.");
+            var toolbar = page.FindControl<Grid>("InstancesToolbar")!;
+            Check(toolbar.ColumnDefinitions.Count == 3 && toolbar.ColumnDefinitions[1].ActualWidth > 0 &&
+                  toolbar.ColumnDefinitions[0].ActualWidth <= toolbar.ColumnDefinitions[1].ActualWidth * 3 + 1 &&
+                  search.Bounds.Width <= toolbar.ColumnDefinitions[0].ActualWidth + 1 &&
+                  Grid.GetColumn(page.FindControl<Grid>("ToolbarSlot")!) == 2,
+                "Search must use the shorter three-quarter lane and leave spacing before the right-aligned action group.");
             Check(page.FindControl<ExpandingButtonGroupItem>("CreateButton")!.Icon!.ToString() == Lucide.Geometry(LucideIconKind.Plus).ToString(), "Create must use Lucide plus.");
 
             // Native keyboard selection, not a synthetic SelectionChanged event.
             row.Focus(); SendKey(owner, Key.Space);
             Check(shell.StartupInstanceId == first && model.Selected?.Entry.Id == first && shell.IsInstances, "Selecting a row must choose startup without navigating to management.");
             var secondRow = Container(second); secondRow.Focus(); SendKey(owner, Key.Space);
+            Border Surface(RadioGroupItem item) => item.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row");
+            Check(Surface(secondRow).BoxShadow.Equals(ArcTokens.Get<BoxShadows>(secondRow, ArcDesignTokenKind.ShadowFloating)) &&
+                  Surface(Container(first)).BoxShadow.Equals(ArcTokens.Get<BoxShadows>(Container(first), ArcDesignTokenKind.ShadowRaised)) &&
+                  !Surface(secondRow).BoxShadow.Equals(Surface(Container(first)).BoxShadow),
+                "The selected row must carry a deeper floating shadow while other rows use the raised shadow.");
             ArcMotion.SetLevel(page, ArcMotionLevel.Off);
             var menu = OpenMenu(first);
             Check(shell.StartupInstanceId == second && choices.SelectedItem is InstanceListRow { Id: var selected } && selected == second,
@@ -186,6 +199,28 @@ internal static class InstancesPageTests
             daemon.IdleForPresetTests = true; daemon.CfgRunIdentity = originalIdentity; daemon.ListRunInstanceId = originalRunInstance;
             Pump(server.RefreshAsync()); Layout();
             Check(daemon.InstanceWrites.Count == originalWriteCount, "Selection, browsing, properties, filtering and sorting must not write metadata.");
+            // Test the longest sort label against the shorter labels using real pointer input.
+            // A transparent fixed hit area must not resize with the pill or lose hover as that pill shrinks.
+            ArcMotion.SetLevel(actions, ArcMotionLevel.Off);
+            page.FindControl<ExpandingButtonGroupItem>("CreateButton")!.Focus(NavigationMethod.Tab);
+            search.Focus(); owner.MouseMove(new Point(1, 1)); Layout();
+            var pill = actions.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Pill");
+            var rightEdge = page.FindControl<Grid>("ToolbarSlot")!.TranslatePoint(default, page)!.Value.X +
+                            page.FindControl<Grid>("ToolbarSlot")!.Bounds.Width;
+            foreach (var name in new[] { "RefreshButton", "CreateButton", "SortButton" })
+            {
+                var item = page.FindControl<ExpandingButtonGroupItem>(name)!;
+                var point = item.TranslatePoint(new Point(item.Bounds.Width / 2, item.Bounds.Height / 2), owner)!.Value;
+                owner.MouseMove(point); Layout();
+                Pump(server.RefreshAsync());
+                for (var tick = 0; tick < 4; tick++) { Layout(); Thread.Sleep(5); }
+                Check(actions.ExpandedItem == item && Math.Abs(pill.TranslatePoint(default, page)!.Value.X + pill.Bounds.Width - rightEdge) < 1 &&
+                      pill.Bounds.Width <= actions.Bounds.Width + 1,
+                    "The pill must stay right-aligned and retain its hovered item without width feedback or polling resets.");
+            }
+            owner.MouseMove(new Point(1, 1)); Layout();
+            Check(actions.ExpandedItem == page.FindControl<ExpandingButtonGroupItem>("SortButton"), "Leaving the fixed hit area must restore the current sort label.");
+            actions.ClearValue(ArcMotion.LevelProperty);
             ArcMotion.SetLevel(loading, ArcMotionLevel.Full);
             daemon.InstanceListGate = new TaskCompletionSource();
             var refresh = page.FindControl<ExpandingButtonGroupItem>("RefreshButton")!;
@@ -273,7 +308,7 @@ internal static class InstancesPageTests
             daemon.InstanceListGate?.TrySetResult(); daemon.InstanceListGate = null;
             daemon.AllowInstanceWrites = daemon.RejectInstanceDeletes = false;
             daemon.Catalog = originalCatalog; daemon.IdleForPresetTests = originalIdle; daemon.CfgRunIdentity = originalIdentity; daemon.ListRunInstanceId = originalRunInstance;
-            page.ClearValue(ArcMotion.LevelProperty); choices.ClearValue(ArcMotion.LevelProperty); loading.ClearValue(ArcMotion.LevelProperty);
+            page.ClearValue(ArcMotion.LevelProperty); choices.ClearValue(ArcMotion.LevelProperty); loading.ClearValue(ArcMotion.LevelProperty); actions.ClearValue(ArcMotion.LevelProperty);
             search.Text = ""; popover.IsOpen = properties.IsOpen = false;
             Pump(server.RefreshAsync()); Pump(model.RefreshInstancesAsync());
             shell.NavigateCommand.Execute("home"); Layout();
