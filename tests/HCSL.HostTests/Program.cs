@@ -41,6 +41,49 @@ Layout();
 if (only is "home")
 {
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
+    var surface = home.FindControl<Grid>("HomeSurface")!;
+    var scenery = home.FindControl<Grid>("HomeBackdrop")!;
+    var content = home.FindControl<Grid>("HomeContent")!;
+    var orb = home.FindControl<Avalonia.Controls.Shapes.Ellipse>("AccentOrb")!;
+    Check(surface.ClipToBounds && scenery.ClipToBounds && !scenery.IsHitTestVisible && !orb.IsHitTestVisible,
+        "The clipped home scenery must not intercept input.");
+    Check(surface.Children.Count == 2 && surface.Children.IndexOf(scenery) < surface.Children.IndexOf(content) &&
+          surface.Effect is null && scenery.Effect is null && content.Effect is null,
+        "Home must not add a full-page glass tint or blur the controls.");
+    Check(orb.Effect is Avalonia.Media.BlurEffect { Radius: > 96 } && orb.Width > 640 && orb.Opacity < 0.12,
+        "The larger accent circle must have a wider blur and a subtler tint.");
+    var orbCorner = orb.TranslatePoint(new Point(orb.Bounds.Width, orb.Bounds.Height), scenery)!.Value;
+    Check(orb.Bounds.Width == orb.Bounds.Height && orbCorner.X > scenery.Bounds.Width && orbCorner.Y > scenery.Bounds.Height,
+        "The accent circle must extend beyond the clipped bottom-right home boundary.");
+    var orbCenter = orb.TranslatePoint(new Point(orb.Bounds.Width / 2, orb.Bounds.Height / 2), scenery)!.Value;
+    Check(Math.Abs(orbCenter.X - scenery.Bounds.Width) < 1 && Math.Abs(orbCenter.Y - scenery.Bounds.Height) < 1,
+        "The circle center must align with the viewport corner, leaving its upper-left quarter visible.");
+    var originalOrbSize = orb.Width;
+    orb.SetCurrentValue(Avalonia.Layout.Layoutable.WidthProperty, originalOrbSize / 2);
+    orb.SetCurrentValue(Avalonia.Layout.Layoutable.HeightProperty, originalOrbSize / 2); Layout();
+    var resizedCenter = orb.TranslatePoint(new Point(orb.Bounds.Width / 2, orb.Bounds.Height / 2), scenery)!.Value;
+    Check(Math.Abs(resizedCenter.X - scenery.Bounds.Width) < 1 && Math.Abs(resizedCenter.Y - scenery.Bounds.Height) < 1,
+        "Changing the decoration size must preserve the visible quarter rather than move the glow off-screen.");
+    orb.SetCurrentValue(Avalonia.Layout.Layoutable.WidthProperty, originalOrbSize);
+    orb.SetCurrentValue(Avalonia.Layout.Layoutable.HeightProperty, originalOrbSize); Layout();
+    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark).Accent(ArcAccentPreset.Violet)); Layout();
+    var originalAccent = ((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color;
+    var otherAccent = Enum.GetValues<ArcAccentPreset>().First(a => a != ArcAccentPreset.Violet);
+    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Light).Accent(otherAccent)); Layout();
+    Check(((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color != originalAccent,
+        "Changing the Arc accent must update the background circle.");
+    var lightBackground = ((Avalonia.Media.ISolidColorBrush)scenery.Background!).Color;
+    var gradient = (Avalonia.Media.LinearGradientBrush)((Border)scenery.Children[0]).Background!;
+    Check(gradient.GradientStops[0].Color == lightBackground &&
+          gradient.GradientStops[1].Color == ((Avalonia.Media.ISolidColorBrush)surface.Background!).Color,
+        "The subtle home gradient must use the current neutral theme colors.");
+    ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark)); Layout();
+    Check(((Avalonia.Media.ISolidColorBrush)scenery.Background!).Color != lightBackground,
+        "The home background must follow light and dark theme changes.");
+    // Restore the original preset accent after checking a different accent.
+    ArcTheme.Apply(t => t.Preset(ThemeCatalog.ArcPreset).Accent(ArcAccentPreset.Violet)); Layout();
+    Check(((Avalonia.Media.ISolidColorBrush)orb.Fill!).Color == originalAccent,
+        "The home accent circle must follow the active Arc accent.");
     var create = home.FindControl<TKCode.Arc.Button>("CreateButton")!;
     var launch = home.FindControl<ExpandingButtonGroupItem>("LaunchButton")!;
     var actions = home.FindControl<ExpandingButtonGroup>("LaunchActions")!;

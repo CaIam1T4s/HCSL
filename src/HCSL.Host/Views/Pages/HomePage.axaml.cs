@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
 using Avalonia.Interactivity;
@@ -14,6 +15,7 @@ namespace HCSL.Host.Views.Pages;
 /// <summary>Home projections over existing instance/preset/map-pool use cases.</summary>
 public partial class HomePage : UserControl
 {
+    public static FuncValueConverter<double, double> HalfLength { get; } = new(value => value / 2);
     private HostServerController? model;
     private bool updating, editing, reading, hasCollection;
     private (Guid Instance, Guid Preset, long Revision)? loaded;
