@@ -14,12 +14,12 @@
               <controls:BackgroundScene Name="PART_WindowBackdrop"
                   ImageSource="{Binding (controls:WindowBackdrop.ImageSource), RelativeSource={RelativeSource TemplatedParent}}"
                   Strength="{Binding (controls:WindowBackdrop.Strength), RelativeSource={RelativeSource TemplatedParent}}"/>
+              <controls:LShapedFrostedChrome Name="PART_ShellChrome" Source="{Binding #PART_WindowBackdrop}"
+                  TitleBarHeight="{Binding #PART_TitleBarPresenter.Bounds.Height}"
+                  IsTitleBarVisible="{TemplateBinding IsTitleBarVisible}"/>
               <VisualLayerManager Name="PART_VisualLayerManager" EnableOverlayLayer="True">
                 <Grid RowDefinitions="Auto,*">
                   <Grid ZIndex="1" IsVisible="{TemplateBinding IsTitleBarVisible}">
-                    <Border Name="PART_TitleBarShadow" BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" Background="Transparent">
-                      <controls:ArcFrostedBackdrop Name="PART_TitleBarGlass" Source="{Binding #PART_WindowBackdrop}"/>
-                    </Border>
                     <ContentPresenter Name="PART_TitleBarPresenter" Content="{TemplateBinding TitleBar}"/>
                   </Grid>
                   <ContentPresenter Name="PART_ContentPresenter" Grid.Row="1" Margin="{TemplateBinding Padding}"

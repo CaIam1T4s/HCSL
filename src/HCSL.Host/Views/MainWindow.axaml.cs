@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data;
 using HCSL.UI.Shared.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -43,14 +44,11 @@ public partial class MainWindow : ArcWindow
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
         base.OnApplyTemplate(e);
-        if (SidebarGlass is not null)
+        if (MainSidebar is not null && e.NameScope.Find<LShapedFrostedChrome>("PART_ShellChrome") is { } chrome)
         {
-            SidebarGlass.Source = e.NameScope.Find<BackgroundScene>("PART_WindowBackdrop");
-            if (e.NameScope.Find<ArcFrostedBackdrop>("PART_TitleBarGlass") is { } titleGlass)
-            {
-                titleGlass.Bind(ArcFrostedBackdrop.BlurRadiusProperty, SidebarGlass.GetObservable(ArcFrostedBackdrop.BlurRadiusProperty));
-                titleGlass.Bind(ArcFrostedBackdrop.TintOpacityProperty, SidebarGlass.GetObservable(ArcFrostedBackdrop.TintOpacityProperty));
-            }
+            chrome.Bind(LShapedFrostedChrome.SidebarWidthProperty, new Binding("Bounds.Width") { Source = MainSidebar });
+            chrome.Bind(LShapedFrostedChrome.BlurRadiusProperty, new Binding("DataContext.SidebarBlurRadius") { Source = this });
+            chrome.Bind(LShapedFrostedChrome.TintOpacityProperty, new Binding("DataContext.SidebarTintOpacity") { Source = this });
         }
     }
 

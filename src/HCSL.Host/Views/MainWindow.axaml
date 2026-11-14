@@ -12,9 +12,6 @@
   <Grid>
     <Grid x:Name="ShellContent" ColumnDefinitions="216,*">
       <Grid ZIndex="1">
-        <Border x:Name="SidebarShadow" BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" Background="Transparent">
-          <controls:ArcFrostedBackdrop x:Name="SidebarGlass" BlurRadius="{Binding SidebarBlurRadius}" TintOpacity="{Binding SidebarTintOpacity}"/>
-        </Border>
           <Border Classes="sidebar">
             <arc:Sidebar x:Name="MainSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
                          IsCollapseButtonVisible="False" IsFilterVisible="False"

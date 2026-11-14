@@ -43,48 +43,65 @@ if (only is null or "background")
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
     var scene = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.BackgroundScene>()
         .Single(s => s.Name == "PART_WindowBackdrop");
-    var sidebarGlass = owner.FindControl<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>("SidebarGlass")!;
     var titlebar = owner.FindControl<TitleBar>("ShellTitleBar")!;
-    var titleGlass = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>()
-        .Single(g => g.Name == "PART_TitleBarGlass");
+    var chrome = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.LShapedFrostedChrome>().Single();
+    var material = owner.GetVisualDescendants().OfType<HCSL.UI.Shared.Controls.ArcFrostedBackdrop>().Single();
     var homeSurface = home.FindControl<Grid>("HomeSurface")!;
     Check(scene.Bounds.Height >= titlebar.Bounds.Height + owner.FindControl<Grid>("ShellContent")!.Bounds.Height &&
-          ReferenceEquals(sidebarGlass.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(sidebarGlass), scene),
-        "One window-sized scene must cover both the title bar and content, with an aligned sidebar copy.");
-    Check(ReferenceEquals(titleGlass.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(titleGlass), scene) && !titleGlass.IsHitTestVisible &&
-          titleGlass.Bounds.Height == titlebar.Bounds.Height && titleGlass.Bounds.Width == scene.Bounds.Width &&
-          titleGlass.BlurRadius == sidebarGlass.BlurRadius && titleGlass.TintOpacity == sidebarGlass.TintOpacity,
-        "The title bar must have a correctly aligned, noninteractive Arc glass layer matching the sidebar.");
+          ReferenceEquals(chrome.Source, scene) && ReferenceEquals(GlassBackdrop.GetSource(material), scene) &&
+          material.Bounds.Size == scene.Bounds.Size && !chrome.IsHitTestVisible,
+        "One continuous window-sized Arc material must sample the shared scene without intercepting input.");
+    var side = chrome.SidebarWidth;
+    var top = chrome.TitleBarHeight;
+    // Headless geometry hit-testing approximates bounds; inspect the actual polygon vertices instead.
+    Check(side == owner.FindControl<Sidebar>("MainSidebar")!.Bounds.Width && top == titlebar.Bounds.Height &&
+          material.Clip is Avalonia.Media.PolylineGeometry { IsFilled: true } outline && outline.Points.SequenceEqual(new[]
+          {
+              default(Point), new Point(scene.Bounds.Width, 0), new Point(scene.Bounds.Width, top),
+              new Point(side, top), new Point(side, scene.Bounds.Height), new Point(0, scene.Bounds.Height)
+          }),
+        "The single clip must be an L-shaped polygon matching the actual title/sidebar dimensions.");
     Check(titlebar.BorderThickness == default && owner.FindControl<Sidebar>("MainSidebar")!.BorderThickness == default &&
           owner.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("sidebar")).BorderThickness == default &&
           owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_FooterSeparator").Opacity == 0,
         $"Chrome rims must be removed: title={titlebar.BorderThickness}, sidebar={owner.FindControl<Sidebar>("MainSidebar")!.BorderThickness}, frame={owner.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("sidebar")).BorderThickness}, footerOpacity={owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_FooterSeparator").Opacity}.");
-    Check(owner.FindControl<Border>("SidebarShadow")!.BoxShadow.Count > 0 &&
-          owner.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_TitleBarShadow").BoxShadow.Count > 0,
-        "Chrome must separate from content through soft token-based shadows.");
-    foreach (var material in new[] { titleGlass, sidebarGlass })
-    {
-        Check(!GlassBackdrop.GetIsLive(material) && material.MaxTilt == 0 && material.SheenIntensity == 0 &&
-              material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.EdgeLight)]
-                  is Avalonia.Media.Color { A: 0 },
-            "Arc frost must stay static and avoid adding bright card rims.");
-    }
+    var shadowLayer = chrome.GetVisualDescendants().OfType<Canvas>().Single(c => c.Name == "ChromeShadowLayer");
+    Check(shadowLayer.Clip is Avalonia.Media.RectangleGeometry shadowClip &&
+          shadowClip.Rect == new Rect(side, top, scene.Bounds.Width - side, scene.Bounds.Height - top) &&
+          shadowLayer.Children.OfType<Border>().All(b => b.BoxShadow.Count > 0),
+        "Soft shadows must be clipped to page content, never crossing the internal title/sidebar join.");
+    var originalWindowSize = new Size(owner.Width, owner.Height);
+    owner.Width += 80; owner.Height += 60; Layout();
+    var resizedOutline = (Avalonia.Media.PolylineGeometry)material.Clip!;
+    Check(chrome.Bounds.Size == scene.Bounds.Size && material.Bounds.Size == scene.Bounds.Size &&
+          resizedOutline.Points[1] == new Point(scene.Bounds.Width, 0) &&
+          resizedOutline.Points[4] == new Point(side, scene.Bounds.Height),
+        "Resizing the window must resize the single material and its L-shaped clip together.");
+    owner.Width = originalWindowSize.Width; owner.Height = originalWindowSize.Height; Layout();
+    owner.IsTitleBarVisible = false; Layout();
+    Check(((Avalonia.Media.PolylineGeometry)material.Clip!).Points[2].Y == 0 &&
+          ((Avalonia.Media.RectangleGeometry)shadowLayer.Clip!).Rect.Y == 0,
+        "Hiding the title bar must leave only sidebar frost, without a phantom top band or seam shadow.");
+    owner.IsTitleBarVisible = true; Layout();
+    Check(((Avalonia.Media.PolylineGeometry)material.Clip!).Points[2].Y == titlebar.Bounds.Height,
+        "Restoring the title bar must restore the top arm of the same material.");
+    Check(!GlassBackdrop.GetIsLive(material) && material.MaxTilt == 0 && material.SheenIntensity == 0 &&
+          material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.EdgeLight)]
+              is Avalonia.Media.Color { A: 0 },
+        "Arc frost must stay static and avoid adding bright card rims.");
     var shellModel = (ShellViewModel)owner.DataContext!;
     var originalBlur = shellModel.SidebarBlurRadius;
     var originalTint = shellModel.SidebarTintPercent;
     shellModel.SidebarBlurRadius = 12; shellModel.SidebarTintPercent = 40; Layout();
-    Check(titleGlass.BlurRadius == 12 && Math.Abs(titleGlass.TintOpacity - 0.4) < 0.001 &&
+    Check(material.BlurRadius == 12 && Math.Abs(material.TintOpacity - 0.4) < 0.001 &&
           titlebar.Effect is null,
         "The shared glass settings must update the title backdrop without blurring title-bar controls.");
     shellModel.SidebarBlurRadius = originalBlur; shellModel.SidebarTintPercent = originalTint; Layout();
     ArcTheme.Apply(t => t.Appearance(ArcAppearance.Light)); Layout();
-    foreach (var material in new[] { titleGlass, sidebarGlass })
-    {
-        var tint = (Avalonia.Media.Color)material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.Tint)]!;
-        var neutral = ArcTokens.GetColor(material, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Surface);
-        Check(tint.R == neutral.R && tint.G == neutral.G && tint.B == neutral.B && tint.A < 255,
-            $"Arc frost must follow the neutral theme surface: tint={tint}, neutral={neutral}, opacity={material.TintOpacity}.");
-    }
+    var tint = (Avalonia.Media.Color)material.Resources[TKCode.Arc.DesignTokens.GlassPaneTokens.Key(TKCode.Arc.DesignTokens.GlassPaneTokenKind.Tint)]!;
+    var neutral = ArcTokens.GetColor(material, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Surface);
+    Check(tint.R == neutral.R && tint.G == neutral.G && tint.B == neutral.B && tint.A < 255,
+        $"Arc frost must follow the neutral theme surface: tint={tint}, neutral={neutral}, opacity={material.TintOpacity}.");
     ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark)); Layout();
     var themeButton = owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.GetVisualDescendants()
         .OfType<TKCode.Arc.Button>().Single(b => b.Name == "PART_Button");
