@@ -27,6 +27,7 @@ public partial class HomePage : UserControl
     public HomePage()
     {
         InitializeComponent();
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) Update(); };
         // Arc 1.1.0 measures the action using PART_Row.Margin, not Button.Padding.
         // Forward the dynamic Arc padding preset without imposing a minimum width.
         LaunchButton.Loaded += (_, _) =>
@@ -58,7 +59,8 @@ public partial class HomePage : UserControl
         {
             if (!updating && !editing && model is { } m)
             {
-                m.Selected = InstancePicker.SelectedItem as HostInstanceItem;
+                if (InstancePicker.SelectedItem is HostInstanceItem item && DataContext is ShellViewModel shell)
+                    shell.SelectStartupInstance(item);
                 Update();
             }
         };
@@ -86,6 +88,10 @@ public partial class HomePage : UserControl
     private void Update()
     {
         if (model is not { } m) return;
+        if (IsVisible && m.CanSelectInstance && DataContext is ShellViewModel shell &&
+            shell.StartupInstanceId is { } startup && m.Selected?.Entry.Id != startup &&
+            m.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } startupItem)
+            m.Selected = startupItem;
         var instance = m.Selected?.Entry.Definition;
         var preset = CurrentPreset;
         var hasInstance = instance is not null;
@@ -123,7 +129,7 @@ public partial class HomePage : UserControl
             Feedback.IsVisible = Feedback.Content is not null;
         }
         finally { updating = false; }
-        if (instance is not null && preset is not null && m.Server.Connected && !m.Busy && !reading && !editing)
+        if (IsVisible && instance is not null && preset is not null && m.Server.Connected && !m.Busy && !reading && !editing)
         {
             var key = (instance.Id, preset.Id, preset.Revision);
             if (loaded != key) _ = ReadPoolAsync();

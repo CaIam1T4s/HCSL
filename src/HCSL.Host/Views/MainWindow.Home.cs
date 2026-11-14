@@ -37,24 +37,15 @@ public partial class MainWindow
     }
 
     public Task StartHomeServerAsync() => InstanceManagementPage.StartSelectedAsync();
+    public void OpenSelectedInstanceLogs() => InstanceManagementPage.ShowSelectedLogs();
+    public void ShowInstanceNotification(string title, string? detail = null, ToastKind kind = ToastKind.Error) =>
+        InstanceNotifications.Show(new ToastOptions { Title = title, Description = detail, Kind = kind });
 
     private void ShellServerChanged(object? sender, PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(UpdateShellStatus);
     private void UpdateShellStatus()
     {
         var server = shellServers?.Server;
-        var next = server?.Connected != true
-            ? ("状态未知", BadgeTone.Neutral, LucideIconKind.CircleAlert)
-            : server.State switch
-            {
-                ServerState.Preparing => ("准备中", BadgeTone.Info, LucideIconKind.PackageOpen),
-                ServerState.Starting => ("启动中", BadgeTone.Info, LucideIconKind.LoaderCircle),
-                ServerState.LoadingMap => ("加载地图", BadgeTone.Info, LucideIconKind.Rocket),
-                ServerState.Running => ("运行中", BadgeTone.Success, LucideIconKind.CircleCheckBig),
-                ServerState.Stopping => ("停服中", BadgeTone.Info, LucideIconKind.Clock),
-                ServerState.Failed => ("启动失败", BadgeTone.Danger, LucideIconKind.CircleAlert),
-                ServerState.RecoveryRequired => ("需要恢复", BadgeTone.Warning, LucideIconKind.TriangleAlert),
-                _ => ("已停止", BadgeTone.Neutral, LucideIconKind.Pause)
-            };
+        var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true);
         if (badgeState == next) return;
         badgeState = next;
         ServerStatusBadge.Content = next.Item1;

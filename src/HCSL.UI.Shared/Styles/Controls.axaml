@@ -52,6 +52,10 @@
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|Popover.launch-configuration arc|PopoverSurface">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.82}"/>
   </Style>
+  <Style Selector="TextBlock.instance-subtitle">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}"/>
+  </Style>
   <Style Selector="Window">
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
   </Style>

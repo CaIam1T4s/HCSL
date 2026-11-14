@@ -172,6 +172,7 @@ public partial class InstancePage : UserControl
         if (value is not null && m.Selected?.Entry.Id == d.Id) await m.SetPasswordAsync(value);
     });
     private void OpenLogs(object? sender, RoutedEventArgs e) => ShowLogs();
+    public void ShowSelectedLogs() => ShowLogs();
     private void ShowLogs()
     {
         if (logs is not null) { logs.Activate(); return; }

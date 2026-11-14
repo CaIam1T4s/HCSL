@@ -162,6 +162,11 @@ if (only is null or "sidebar")
     Console.WriteLine("PASS gui.sidebar.arc-sections-header-footer-and-route-synchronization");
     if (only is "sidebar") return 0;
 }
+if (only is null or "instances")
+{
+    InstancesPageTests.Run(owner, daemon, model, server);
+    if (only is "instances") return 0;
+}
 if (only is "home")
 {
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
@@ -835,11 +840,12 @@ sealed class FakeDaemon : IDaemonClient
     public int PlanDeployments;
     public string DeployCode = "HCSL-SERVER-DEPLOYED";
     public bool CfgRunIdentity;
+    public Guid? ListRunInstanceId;
     public int BaselineRefreshes;
     public bool BaselineBusy;
     public BaselineResult Baseline = new("26598758", "None");
     public int CfgWrites;
-    public int PoolWrites;
+    public int PoolWrites, PoolReads;
     public bool RejectPoolWrites;
     public int PluginWrites;
     public int FrameworkInstalls;
@@ -854,17 +860,41 @@ sealed class FakeDaemon : IDaemonClient
     private string cfgText = "status\n";
     private string cfgHash = "v1";
     public InstanceCatalog Catalog = new([]);
+    public bool AllowInstanceWrites, RejectInstanceDeletes;
+    public readonly List<InstanceCommand> InstanceWrites = [];
+    public TaskCompletionSource? InstanceListGate;
     public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
     {
         if (request.Kind == RequestKind.Instances)
         {
-            if (JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson!)!.Action != InstanceAction.List)
-                throw new Exception("Cancelled/browse-only GUI unexpectedly sent a metadata write.");
-            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(Catalog)));
+            var command = JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson!)!;
+            LocalResponse CatalogResponse() => new(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(Catalog));
+            if (command.Action == InstanceAction.List)
+                return InstanceListGate is { } gate ? gate.Task.ContinueWith(_ => CatalogResponse()) : Task.FromResult(CatalogResponse());
+            if (!AllowInstanceWrites) throw new Exception("Cancelled/browse-only GUI unexpectedly sent a metadata write.");
+            InstanceWrites.Add(command);
+            if (command.Action == InstanceAction.Delete && RejectInstanceDeletes)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-INSTANCE-CONFLICT", "Synthetic conflict."));
+            var entry = Catalog.Instances.FirstOrDefault(i => i.Id == command.InstanceId);
+            if (command.Action != InstanceAction.Create && entry?.Definition?.Revision != command.Revision)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-INSTANCE-CONFLICT", "Revision changed."));
+            if (command.Action == InstanceAction.Delete)
+                Catalog = new(Catalog.Instances.Where(i => i.Id != command.InstanceId).ToArray());
+            else if (command.Action == InstanceAction.Update)
+                Catalog = new(Catalog.Instances.Select(i => i.Id != command.InstanceId ? i : i with
+                { Definition = i.Definition! with { Name = command.Name!, GamePort = command.GamePort, Network = command.Network, Revision = command.Revision + 1 } }).ToArray());
+            else if (command.Action == InstanceAction.Create)
+            {
+                var id = Guid.NewGuid(); var preset = new PresetDefinition(1, Guid.NewGuid(), 1, "Default");
+                Catalog = new([.. Catalog.Instances, new(id, new(1, id, 1, command.Name!, command.GamePort, preset.Id, LayoutVersion: InstanceRules.CurrentLayoutVersion), [preset])]);
+            }
+            else throw new Exception("Unexpected instance write in GUI fixture.");
+            return Task.FromResult(CatalogResponse());
         }
         if (request.Kind == RequestKind.MapPool)
         {
             var c = JsonSerializer.Deserialize<MapPoolCommand>(request.MapPoolJson!)!;
+            if (c.Action == MapPoolAction.Read) PoolReads++;
             if (c.Action == MapPoolAction.Read && PoolReadError)
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-MAPPOOL-READ", "Read failed."));
             if (c.Action == MapPoolAction.Save)
@@ -954,9 +984,9 @@ sealed class FakeDaemon : IDaemonClient
                 ? new ServerSnapshot(run, null, ServerState.Stopped, false, "HCSL-SERVER-DEPLOY-RECOVERED", false, true, null, LastLogSequence + 1, false, lines, Detail: "PreviousDeploymentPreserved_StagingRetained")
                 : serverCommand is { Action: ServerAction.Deploy }
                 ? new ServerSnapshot(run, null, ServerState.Stopped, false, DeployCode, false, true, null, LastLogSequence + 1, false, lines, Detail: "Deployment published (Reflink).")
-                : new ServerSnapshot(run, CfgRunIdentity ? Catalog.Instances.Single().Id : null, stopped ? ServerState.Stopped : IdleForPresetTests ? ServerState.Idle : ServerState.Running,
+                : new ServerSnapshot(run, CfgRunIdentity ? Catalog.Instances.Single(i => ListRunInstanceId is null || i.Id == ListRunInstanceId).Id : null, stopped ? ServerState.Stopped : IdleForPresetTests ? ServerState.Idle : ServerState.Running,
                     !stopped && !IdleForPresetTests, stopped ? "HCSL-SERVER-STOPPED" : "HCSL-SERVER-MAP-READY", true, stopped, null, LastLogSequence + 1, false, lines,
-                    Preset: CfgRunIdentity ? new(Catalog.Instances.Single().Presets[0].Id, 1, "Selected preset", "de_dust2") : null);
+                    Preset: CfgRunIdentity ? new(Catalog.Instances.Single(i => ListRunInstanceId is null || i.Id == ListRunInstanceId).Presets[0].Id, 1, "Selected preset", "de_dust2") : null);
         return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
             Defaults: new("/settings", "/data", "/library"), ServerSnapshotJson: JsonSerializer.Serialize(snapshot)));
     }

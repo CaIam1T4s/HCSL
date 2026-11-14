@@ -27,6 +27,20 @@ public sealed class ShellViewModel : ObservableObject
         new("settings", "设置", "调整外观与应用偏好。")
     ];
 
+    private Guid? startupInstanceId;
+    public Guid? StartupInstanceId => startupInstanceId is { } id && Servers.Instances.Any(i => i.Entry.Id == id)
+        ? id : Servers.Selected?.Entry.Id;
+    public void RememberStartupInstance() => startupInstanceId = StartupInstanceId;
+    public bool SelectStartupInstance(HostInstanceItem item)
+    {
+        if (item.Entry.Definition is null) return false;
+        Servers.Selected = item;
+        if (Servers.Selected?.Entry.Id != item.Entry.Id) return false;
+        startupInstanceId = item.Entry.Id;
+        Notify(nameof(StartupInstanceId));
+        return true;
+    }
+
     private NavigationItem _selectedPage;
     private string _selectedTheme = "跟随系统";
     private double _backgroundOpacityPercent = 100;
@@ -90,7 +104,12 @@ public sealed class ShellViewModel : ObservableObject
         NavigateCommand = new RelayCommand(value =>
         {
             if (value is string id && Pages.FirstOrDefault(page => page.Id == id) is { } page)
+            {
+                if (id == "home" && StartupInstanceId is { } startup &&
+                    Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
+                    Servers.Selected = item;
                 SelectedPage = page;
+            }
         });
         _themeService = themeService;
     }

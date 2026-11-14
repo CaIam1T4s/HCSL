@@ -42,7 +42,7 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         set
         {
             if (value == selected) return;
-            if (Busy || Server.Busy || Server.State is ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap) { Notify(); return; }
+            if (!CanSelectInstance) { Notify(); return; }
             userSelected = true; Select(value);
         }
     }
@@ -55,6 +55,8 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         Server.Attach(value?.Entry.Id ?? Guid.Empty);
         Notify();
     }
+    public bool CanSelectInstance => !Busy && !Server.Busy &&
+        Server.State is not (ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap);
     public bool Busy { get; private set; }
     public string Error { get; private set; } = "";
     public bool CanCreate => !Busy && !Server.Busy && Server.Connected && !Server.Active

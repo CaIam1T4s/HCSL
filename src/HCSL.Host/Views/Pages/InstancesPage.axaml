@@ -1,17 +1,116 @@
-<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.Pages.InstancesPage" x:DataType="vm:ShellViewModel">
-  <StackPanel Margin="32" Spacing="16">
-    <TextBlock Classes="heading" Text="实例列表"/>
-    <TextBlock Classes="muted" TextWrapping="Wrap" Text="创建、编辑或删除本机实例。运行中及待恢复时禁止修改；配置预设管理仍使用 TUI。"/>
-    <WrapPanel Orientation="Horizontal">
-      <arc:Button Content="创建实例" Click="CreateInstance" IsEnabled="{Binding Servers.CanCreate}" Variant="Primary" Margin="0,0,8,8"/>
-      <arc:Button Content="编辑实例" Click="EditInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Secondary" Margin="0,0,8,8"/>
-      <arc:Button Content="迁移布局" Click="MigrateLayout" IsEnabled="{Binding Servers.CanMigrateLayout}" IsVisible="{Binding Servers.CanMigrateLayout}" Variant="Secondary" Margin="0,0,8,8"/>
-      <arc:Button Content="删除实例" Click="DeleteInstance" IsEnabled="{Binding Servers.CanMutate}" Variant="Danger" Margin="0,0,8,8"/>
-      <arc:Button Content="刷新列表" Click="RefreshInstances" IsEnabled="{Binding !Servers.Busy}" Variant="Ghost" Margin="0,0,8,8"/>
-    </WrapPanel>
-    <arc:Select ItemsSource="{Binding Servers.Instances}" SelectedItem="{Binding Servers.Selected, Mode=TwoWay}" Placeholder="选择已有实例" IsEnabled="{Binding !Servers.Busy}"/>
-    <TextBlock Text="{Binding Servers.SelectionText}" TextWrapping="Wrap"/>
-    <TextBlock Text="{Binding Servers.Error}" TextWrapping="Wrap"/>
-    <arc:Button Content="管理选中实例 →" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="instance" HorizontalAlignment="Left"/>
-  </StackPanel>
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             xmlns:vm="using:HCSL.Host.ViewModels"
+             x:Class="HCSL.Host.Views.Pages.InstancesPage" x:DataType="vm:ShellViewModel">
+  <UserControl.Styles>
+    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Panel#PART_Mark">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
+    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Grid">
+      <Setter Property="ColumnSpacing" Value="0"/>
+    </Style>
+    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ ContentPresenter#PART_Label">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="TextBlock.instance-property-value">
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
+      <Setter Property="HorizontalAlignment" Value="Right"/>
+      <Setter Property="TextAlignment" Value="Right"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+  </UserControl.Styles>
+  <Grid Margin="32" RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
+    <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space3}">
+      <arc:Button x:Name="BackButton" Variant="Ghost" Click="GoBack" arc:Tooltip.Tip="返回"
+                  AutomationProperties.Name="返回首页">
+        <lucide:LucideIcon Kind="ArrowLeft"/>
+      </arc:Button>
+      <TextBlock Classes="heading" Text="实例列表" VerticalAlignment="Center"/>
+    </StackPanel>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+      <Grid HorizontalAlignment="Left" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthSM}">
+        <arc:SearchField x:Name="Search" Label="搜索实例" IsLabelVisible="False" Placeholder="搜索名称、预设或端口"
+                         TextChanged="SearchChanged" MinWidth="{arc:ArcDesignTokenResource MediaSizeXL}"/>
+      </Grid>
+      <arc:ExpandingButtonGroup x:Name="ToolbarActions" Grid.Column="1" Label="实例列表操作"
+                                HorizontalAlignment="Right" VerticalAlignment="Center">
+        <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新实例" Click="RefreshInstances"/>
+        <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="创建实例" Click="CreateInstance"/>
+        <arc:ExpandingButtonGroupItem x:Name="SortButton" Label="名称降序" Click="OpenSortMenu"/>
+      </arc:ExpandingButtonGroup>
+    </Grid>
+    <arc:SkeletonMorph x:Name="LoadingRegion" Grid.Row="2" LoadingLabel="读取实例列表">
+      <arc:MorphBlock SkeletonHeight="{arc:ArcDesignTokenResource MediaSizeXL}">
+        <Grid>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <arc:RadioGroup x:Name="InstanceChoices" Classes="instance-choices" AutomationProperties.Name="启动实例"
+                            SelectionChanged="StartupSelectionChanged" ContextRequested="RowContextRequested">
+              <arc:RadioGroup.ItemTemplate>
+                <DataTemplate x:DataType="vm:InstanceListRow">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+                    <StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Name}" TextAlignment="Left" TextTrimming="CharacterEllipsis"
+                                 Foreground="{arc:ArcDesignTokenResource Foreground}"/>
+                      <TextBlock Text="{Binding Subtitle}" Classes="instance-subtitle" TextAlignment="Left"
+                                 TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <arc:Badge Grid.Column="1" Content="{Binding StatusText}" Tone="{Binding StatusTone}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center">
+                      <arc:Badge.Icon><lucide:LucideIcon Kind="{Binding StatusIcon}"/></arc:Badge.Icon>
+                    </arc:Badge>
+                  </Grid>
+                </DataTemplate>
+              </arc:RadioGroup.ItemTemplate>
+              <arc:RadioGroup.Styles>
+                <Style Selector="arc|RadioGroupItem" x:DataType="vm:InstanceListRow">
+                  <Setter Property="AutomationProperties.Name" Value="{Binding StartupLabel}"/>
+                </Style>
+              </arc:RadioGroup.Styles>
+            </arc:RadioGroup>
+          </ScrollViewer>
+          <arc:EmptyState x:Name="Empty" Title="暂无实例" Description="创建一个实例以开始使用。" IsVisible="False"/>
+        </Grid>
+      </arc:MorphBlock>
+    </arc:SkeletonMorph>
+    <arc:Popover x:Name="PropertiesPopover" Placement="Bottom" Alignment="End" TriggerMode="Manual">
+      <arc:Popover.Styles>
+        <Style Selector="arc|PopoverSurface">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="BorderThickness" Value="0"/>
+          <Setter Property="Padding" Value="0"/>
+        </Style>
+      </arc:Popover.Styles>
+      <arc:GlassCard x:Name="PropertiesCard" x:DataType="vm:InstanceListRow" DataContext="{x:Null}"
+                     MinWidth="{arc:ArcDesignTokenResource MediaSizeXL}" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthSM}">
+        <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+          <TextBlock Text="实例属性" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                ColumnSpacing="{arc:ArcDesignTokenResource Space6}" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+            <TextBlock Text="名称" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Classes="instance-property-value" Text="{Binding Name}"/>
+            <TextBlock Grid.Row="1" Text="状态" VerticalAlignment="Center"/>
+            <arc:Badge Grid.Row="1" Grid.Column="1" Content="{Binding StatusText}" Tone="{Binding StatusTone}"
+                       HorizontalAlignment="Right" VerticalAlignment="Center">
+              <arc:Badge.Icon><lucide:LucideIcon Kind="{Binding StatusIcon}"/></arc:Badge.Icon>
+            </arc:Badge>
+            <TextBlock Grid.Row="2" Text="预设"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" Classes="instance-property-value" Text="{Binding PresetName}"/>
+            <TextBlock Grid.Row="3" Text="端口"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Classes="instance-property-value" Text="{Binding Port}"/>
+            <TextBlock Grid.Row="4" Text="创建时间"/>
+            <TextBlock Grid.Row="4" Grid.Column="1" Classes="instance-property-value" Text="{Binding CreatedAt}"/>
+            <TextBlock Grid.Row="5" Text="最后一次运行"/>
+            <TextBlock Grid.Row="5" Grid.Column="1" Classes="instance-property-value" Text="{Binding LastRunAt}"/>
+          </Grid>
+        </StackPanel>
+      </arc:GlassCard>
+    </arc:Popover>
+    <arc:Popover x:Name="DeletePopover" Placement="Top" Alignment="End" TriggerMode="Manual">
+      <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
+                         Tone="Danger" Confirmed="ConfirmDelete" arc:Tooltip.Tip="删除后无法恢复！"
+                         AutomationProperties.HelpText="删除后无法恢复！"/>
+    </arc:Popover>
+  </Grid>
 </UserControl>

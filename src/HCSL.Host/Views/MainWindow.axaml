@@ -63,5 +63,6 @@
         <ScrollViewer><ContentControl x:Name="DialogContent"/></ScrollViewer>
       </Border>
     </Border>
+    <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight"/>
   </Grid>
 </arc:ArcWindow>

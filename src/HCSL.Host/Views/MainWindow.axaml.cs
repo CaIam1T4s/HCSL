@@ -77,24 +77,28 @@ public partial class MainWindow : ArcWindow
         content.Children.Add(new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
         return ShowOverlayAsync(content, choices);
     }
-    public async Task<bool> EditInstanceAsync(InstanceDefinition? original, Func<HCSL.Frontend.HostInstanceDraft, Task<string?>> save)
+    public async Task<bool> EditInstanceAsync(InstanceDefinition? original, Func<HCSL.Frontend.HostInstanceDraft, Task<string?>> save, bool nameOnly = false)
     {
         var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(new TextBlock { Text = original is null ? "创建实例" : "编辑实例", FontSize = 20 });
+        content.Children.Add(new TextBlock { Text = original is null ? "创建实例" : nameOnly ? "重命名实例" : "编辑实例", FontSize = 20 });
         var name = new Input { Text = original?.Name ?? "", PlaceholderText = "实例名称（1–80 字符）" };
         var port = new Input { Text = (original?.GamePort ?? 27015).ToString(), PlaceholderText = "游戏端口" };
         var address = new Input { Text = (DataContext as ShellViewModel)?.Servers.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知，请刷新实例列表", IsReadOnly = true };
         var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
         void Field(string label, Control field) { content.Children.Add(new TextBlock { Text = label }); content.Children.Add(field); }
-        Field("实例名称", name); Field("游戏端口", port); Field("本机连接地址（自动识别，只读）", address);
-        content.Children.Add(new TextBlock { Text = "本机网卡地址仅供连接参考，不保证可达或限制访问。127.0.0.1 仅供本机客户端使用；访问控制请配置防火墙。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        Field("实例名称", name);
+        if (!nameOnly)
+        {
+            Field("游戏端口", port); Field("本机连接地址（自动识别，只读）", address);
+            content.Children.Add(new TextBlock { Text = "本机网卡地址仅供连接参考，不保证可达或限制访问。127.0.0.1 仅供本机客户端使用；访问控制请配置防火墙。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        }
         content.Children.Add(error);
         while (await ShowOverlayAsync(content, ["取消", "保存"]) == 1)
         {
             try
             {
                 if (!int.TryParse(port.Text, out var number)) throw new InstanceException("HCSL-INSTANCE-PORT", "端口必须为 1–65535 的整数。");
-                var draft = new HCSL.Frontend.HostInstanceDraft(name.Text ?? "", number);
+                var draft = new HCSL.Frontend.HostInstanceDraft(name.Text ?? "", number, nameOnly ? original?.Network : null);
                 HCSL.Frontend.HostServerController.ValidateDraft(draft);
                 var failure = await save(draft);
                 if (failure is null) return true;
