@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Automation;
@@ -6,22 +7,30 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
+using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
+using TKCode.Arc.DesignTokens;
+using TKCode.Arc.Motion;
+using TKCode.Arc.Primitives;
 
 namespace HCSL.Host.Views.Pages;
 
 public partial class InstancesPage : UserControl
 {
+    private static readonly StyledProperty<BoxShadows> SubtleShadowProperty =
+        AvaloniaProperty.Register<InstancesPage, BoxShadows>("SubtleShadow");
     private ShellViewModel? shell;
     private bool operating, refreshing, updating;
     private readonly Dictionary<Guid, InstanceListRow> rows = [];
-    private InstanceListRow[] visibleRows = [];
+    private readonly ObservableCollection<InstanceListRow> visibleRows = [];
+    private readonly AnimatedItemReorder reorder;
     private InstanceDefinition? pendingDelete;
     private Guid? propertiesId;
     private GlassMenu? rowMenu, sortMenu;
@@ -32,22 +41,42 @@ public partial class InstancesPage : UserControl
     public InstancesPage()
     {
         InitializeComponent();
+        reorder = new AnimatedItemReorder(InstanceChoices);
+        InstanceChoices.ItemsSource = visibleRows;
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         CreateButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
         SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowDown);
         ToolbarActions.DefaultExpandedItem = SortButton;
+        ToolbarActions.SizeChanged += (_, _) =>
+        {
+            // Arc recommends a stable start edge. Reserve the widest measured expansion so a shorter label
+            // cannot shift a right-aligned group out from under the pointer and bounce its hover intent.
+            if (ToolbarActions.IsVisible && ToolbarActions.Bounds.Width > ToolbarSlot.MinWidth)
+                ToolbarSlot.MinWidth = ToolbarActions.Bounds.Width;
+        };
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         DeletePopover.Closed += (_, _) => { if (!operating) { pendingDelete = null; DeleteConfirm.IsConfirmed = false; } };
         PropertiesPopover.Closed += (_, _) => propertiesId = null;
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => { Unsubscribe(); CloseOverlays(); };
-        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays(); };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays();
+            if (e.Property == SubtleShadowProperty)
+            {
+                // Use Arc's quietest elevation throughout this page, including its native glass overlays.
+                Resources[ArcDesignTokens.Key(ArcDesignTokenKind.ShadowRaised)] = GetValue(SubtleShadowProperty);
+                Resources[ArcDesignTokens.Key(ArcDesignTokenKind.ShadowFloating)] = GetValue(SubtleShadowProperty);
+            }
+        };
+        ArcTokens.Bind(this, SubtleShadowProperty, ArcDesignTokenKind.ShadowResting);
     }
 
     private void CloseOverlays()
     {
         rowMenu?.Close(); sortMenu?.Close();
+        reorder.Reset();
         DeletePopover.IsOpen = PropertiesPopover.IsOpen = false;
     }
     private void Unsubscribe()
@@ -81,18 +110,24 @@ public partial class InstancesPage : UserControl
         updating = true;
         try
         {
-            CreateButton.IsVisible = !operating && model.CanCreate;
-            RefreshButton.IsVisible = !operating && !refreshing && !model.Busy;
-            SortButton.IsVisible = !operating && !refreshing && !model.Busy && model.Instances.Count > 0;
-            ToolbarActions.IsVisible = RefreshButton.IsVisible || CreateButton.IsVisible || SortButton.IsVisible;
-            ToolbarActions.DefaultExpandedItem = SortButton.IsVisible ? SortButton : CreateButton.IsVisible ? CreateButton : RefreshButton;
+            // Keep the toolbar's containers, focus and current expansion while its own list request is pending.
+            if (!refreshing)
+            {
+                CreateButton.IsVisible = !operating && model.CanCreate;
+                RefreshButton.IsVisible = !operating && !model.Busy;
+                SortButton.IsVisible = !operating && !model.Busy && model.Instances.Count > 0;
+                ToolbarActions.IsVisible = RefreshButton.IsVisible || CreateButton.IsVisible || SortButton.IsVisible;
+                ToolbarActions.DefaultExpandedItem = SortButton.IsVisible ? SortButton : CreateButton.IsVisible ? CreateButton : RefreshButton;
+            }
+            // IsDisabled blocks duplicate activation but, unlike IsEnabled/IsVisible, does not discard focus.
+            RefreshButton.IsDisabled = CreateButton.IsDisabled = SortButton.IsDisabled = refreshing;
             LoadingRegion.IsLoading = refreshing;
             foreach (var item in model.Instances)
             {
                 if (!rows.TryGetValue(item.Entry.Id, out var row)) rows[item.Entry.Id] = row = new(item);
                 row.Update(item, model, shell.StartupInstanceId, operating);
             }
-            foreach (var id in rows.Keys.Where(id => model.Instances.All(i => i.Entry.Id != id)).ToArray()) rows.Remove(id);
+            foreach (var id in rows.Keys.Where(id => model.Instances.All(i => i.Entry.Id != id) && visibleRows.All(r => r.Id != id)).ToArray()) rows.Remove(id);
             var query = (Search.Text ?? "").Trim();
             var filtered = model.Instances.Select(i => rows[i.Entry.Id])
                 .Where(r => (r.Name + " " + r.Subtitle).Contains(query, StringComparison.CurrentCultureIgnoreCase));
@@ -104,14 +139,39 @@ public partial class InstancesPage : UserControl
                 _ => filtered.OrderByDescending(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
             };
             var next = ordered.ThenBy(r => r.Id).ToArray();
-            if (!next.SequenceEqual(visibleRows))
+            // Cancelled exits (filter cleared / refresh returned the row) reuse the same row and container.
+            foreach (var row in next) row.SetPresent(true);
+            var desired = next.ToList();
+            foreach (var row in visibleRows.Where(r => !next.Contains(r)).ToArray())
             {
-                visibleRows = next;
-                InstanceChoices.ItemsSource = visibleRows;
+                var container = InstanceChoices.ContainerFromItem(row) as Control;
+                var presence = container?.GetVisualDescendants()
+                    .OfType<PresenceHost>().FirstOrDefault(p => p.Name == "RowPresence");
+                if (!refreshing && IsEffectivelyVisible && presence is { IsLoaded: true } &&
+                    ArcMotion.GetEffectiveLevel(presence) == ArcMotionLevel.Full)
+                {
+                    // PresenceHost's default Collapse=None fades in place, so remaining rows keep their geometry
+                    // until the exit completes; the container is never given a sticky local height.
+                    row.SetPresent(false);
+                    if (presence.Progress > 0)
+                        desired.Insert(Math.Min(visibleRows.IndexOf(row), desired.Count), row);
+                }
+                else row.SetPresent(false);
             }
-            InstanceChoices.SelectedItem = visibleRows.FirstOrDefault(r => r.Id == shell.StartupInstanceId);
-            InstanceChoices.IsVisible = visibleRows.Length > 0;
-            Empty.IsVisible = visibleRows.Length == 0;
+            if (!desired.SequenceEqual(visibleRows))
+            {
+                reorder.Capture();
+                foreach (var row in visibleRows.Where(r => !desired.Contains(r)).ToArray()) visibleRows.Remove(row);
+                for (var i = 0; i < desired.Count; i++)
+                {
+                    var previous = visibleRows.IndexOf(desired[i]);
+                    if (previous < 0) visibleRows.Insert(i, desired[i]);
+                    else if (previous != i) visibleRows.Move(previous, i);
+                }
+            }
+            InstanceChoices.SelectedItem = visibleRows.FirstOrDefault(r => r.IsPresent && r.Id == shell.StartupInstanceId);
+            InstanceChoices.IsVisible = visibleRows.Count > 0;
+            Empty.IsVisible = visibleRows.Count == 0;
             Empty.Title = model.Instances.Count == 0 ? "暂无实例" : "没有匹配的实例";
             Empty.Description = model.Instances.Count == 0 ? "创建一个实例以开始使用。" : "尝试其他名称、预设或端口，或清除搜索。";
             if (pendingDelete is { } target && Current(target.Id)?.Revision != target.Revision)
@@ -119,9 +179,21 @@ public partial class InstancesPage : UserControl
                 DeletePopover.IsOpen = false;
                 pendingDelete = null;
             }
-            if (propertiesId is { } propertyTarget && !rows.ContainsKey(propertyTarget)) PropertiesPopover.IsOpen = false;
+            if (propertiesId is { } propertyTarget && model.Instances.All(i => i.Entry.Id != propertyTarget)) PropertiesPopover.IsOpen = false;
         }
         finally { updating = false; }
+    }
+
+    private void RowExited(object? sender, EventArgs e)
+    {
+        if (sender is not PresenceHost { DataContext: InstanceListRow row }) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (row.IsPresent || !visibleRows.Contains(row)) return;
+            reorder.Capture();
+            visibleRows.Remove(row);
+            Update();
+        });
     }
 
     private void StartupSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -145,7 +217,8 @@ public partial class InstancesPage : UserControl
             {
                 Content = labels[i] + (sortMode == i ? "（当前）" : ""),
                 Icon = Lucide.Geometry(i is 1 or 2 ? LucideIconKind.ArrowUp : LucideIconKind.ArrowDown),
-                IsEnabled = rows.Count > 0 && (i < 2 || rows.Values.Any(r => r.StatusOrder != int.MaxValue))
+                // Rows still fading out are no longer part of the list and must not enable a sort choice.
+                IsEnabled = visibleRows.Any(r => r.IsPresent) && (i < 2 || visibleRows.Any(r => r.IsPresent && r.StatusOrder != int.MaxValue))
             };
             item.Click += (_, _) =>
             {
@@ -174,6 +247,13 @@ public partial class InstancesPage : UserControl
             Placement = e.TryGetPosition(container, out _) ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedRight
         };
         AutomationProperties.SetName(menu, row.OperationsLabel);
+        Point? menuOrigin = null;
+        void CaptureMenuOrigin()
+        {
+            if (menu.IsAttachedToVisualTree())
+                menuOrigin = PropertyAnchorLayer.PointToClient(menu.PointToScreen(default));
+        }
+        menu.LayoutUpdated += (_, _) => { if (menu.IsOpen) CaptureMenuOrigin(); };
         void Entry(string title, LucideIconKind icon, string? enabled, Action action, bool separator = false, bool danger = false)
         {
             if (separator) menu.Items.Add(new GlassMenuSeparator());
@@ -182,6 +262,7 @@ public partial class InstancesPage : UserControl
             entry.Click += (_, _) =>
             {
                 if (!entry.IsEnabled) return;
+                CaptureMenuOrigin();
                 menu.Close();
                 action();
             };
@@ -201,7 +282,11 @@ public partial class InstancesPage : UserControl
             if (!IsVisible || !rows.TryGetValue(row.Id, out var current) || !container.IsAttachedToVisualTree()) return;
             propertiesId = row.Id;
             PropertiesCard.DataContext = current;
-            PropertiesPopover.ShowAt(container);
+            var origin = menuOrigin ?? container.TranslatePoint(default, PropertyAnchorLayer) ?? default;
+            Canvas.SetLeft(PropertiesAnchor, origin.X);
+            Canvas.SetTop(PropertiesAnchor, origin.Y - PropertiesAnchor.Height);
+            PropertyAnchorLayer.UpdateLayout();
+            PropertiesPopover.ShowAt(PropertiesAnchor);
         }), true);
         Entry("删除实例", LucideIconKind.Trash, nameof(row.CanEdit), () => Dispatcher.UIThread.Post(() =>
         {
@@ -258,7 +343,14 @@ public partial class InstancesPage : UserControl
             if (!model.Server.Connected) await model.InitializeAsync(); else await model.RefreshInstancesAsync();
             if (model.Error.Length > 0) Error("读取实例失败", model.Error);
         }
-        finally { refreshing = false; Update(); }
+        finally
+        {
+            // Mount/register all per-field MorphBlocks before starting Arc's ordered resolve sequence.
+            Update();
+            InstanceChoices.UpdateLayout();
+            refreshing = false;
+            Update();
+        }
     }
     private async Task StartAsync(InstanceListRow row)
     {

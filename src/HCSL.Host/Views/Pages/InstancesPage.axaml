@@ -3,16 +3,52 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              xmlns:vm="using:HCSL.Host.ViewModels"
-             x:Class="HCSL.Host.Views.Pages.InstancesPage" x:DataType="vm:ShellViewModel">
+             xmlns:ui="using:HCSL.UI.Shared.Services"
+             x:Class="HCSL.Host.Views.Pages.InstancesPage" x:DataType="vm:ShellViewModel" Classes="instance-list-page">
+  <UserControl.Resources>
+    <ControlTheme x:Key="InstanceRowTheme" TargetType="arc:RadioGroupItem"
+                  BasedOn="{StaticResource {x:Type arc:RadioGroupItem}}">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Panel>
+            <arc:PresenceHost x:Name="RowPresence" Mode="Fade" IsPresent="{ReflectionBinding IsPresent}" Exited="RowExited">
+              <Border Name="PART_Row" Background="{TemplateBinding Background}"
+                      BorderBrush="{arc:ArcDesignTokenResource Border}" BorderThickness="{arc:ArcDesignTokenResource EdgeThickness}"
+                      CornerRadius="{arc:ArcDesignTokenResource RadiusControl}" Padding="{arc:RadioGroupTokenResource RowInset}">
+                <StackPanel VerticalAlignment="Center">
+                  <ContentPresenter Name="PART_Label" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                    HorizontalContentAlignment="Stretch" FontWeight="{arc:ArcDesignTokenResource WeightMedium}"
+                                    LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}"/>
+                </StackPanel>
+              </Border>
+            </arc:PresenceHost>
+          </Panel>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+  </UserControl.Resources>
   <UserControl.Styles>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Panel#PART_Mark">
-      <Setter Property="IsVisible" Value="False"/>
+    <!-- Surface-only transparency: glass menus/cards and foreground content keep their native material/opacity. -->
+    <Style Selector=".instance-list-page arc|Button">
+      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
     </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Grid">
-      <Setter Property="ColumnSpacing" Value="0"/>
+    <Style Selector=".instance-list-page arc|SearchField /template/ arc|FieldFrame#PART_Frame">
+      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
     </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ ContentPresenter#PART_Label">
-      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Border#PART_Row">
+      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.78}"/>
+      <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowResting}"/>
+    </Style>
+    <Style Selector="arc|RadioGroup.instance-choices arc|Badge /template/ Border#PART_Frame">
+      <Setter Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
+      <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowResting}"/>
+    </Style>
+    <Style Selector=".instance-list-page arc|HoldToConfirm /template/ Border#PART_Surface">
+      <Setter Property="Opacity" Value="0.75"/>
+    </Style>
+    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:disabled">
+      <!-- Exiting rows are non-interactive; PresenceHost owns their fade rather than the disabled-opacity state. -->
+      <Setter Property="Opacity" Value="1"/>
     </Style>
     <Style Selector="TextBlock.instance-property-value">
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
@@ -23,58 +59,81 @@
   </UserControl.Styles>
   <Grid Margin="32" RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
     <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space3}">
-      <arc:Button x:Name="BackButton" Variant="Ghost" Click="GoBack" arc:Tooltip.Tip="返回"
-                  AutomationProperties.Name="返回首页">
-        <lucide:LucideIcon Kind="ArrowLeft"/>
-      </arc:Button>
+      <Grid>
+        <Border BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                Background="Transparent" IsHitTestVisible="False"/>
+        <arc:Button x:Name="BackButton" Variant="Ghost" Click="GoBack" arc:Tooltip.Tip="返回"
+                    AutomationProperties.Name="返回首页">
+          <lucide:LucideIcon Kind="ArrowLeft"/>
+        </arc:Button>
+      </Grid>
       <TextBlock Classes="heading" Text="实例列表" VerticalAlignment="Center"/>
     </StackPanel>
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
       <Grid HorizontalAlignment="Left" MaxWidth="{arc:ArcDesignTokenResource ContentMaxWidthSM}">
+        <Border BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                Background="Transparent" IsHitTestVisible="False"/>
         <arc:SearchField x:Name="Search" Label="搜索实例" IsLabelVisible="False" Placeholder="搜索名称、预设或端口"
                          TextChanged="SearchChanged" MinWidth="{arc:ArcDesignTokenResource MediaSizeXL}"/>
       </Grid>
-      <arc:ExpandingButtonGroup x:Name="ToolbarActions" Grid.Column="1" Label="实例列表操作"
-                                HorizontalAlignment="Right" VerticalAlignment="Center">
-        <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新实例" Click="RefreshInstances"/>
-        <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="创建实例" Click="CreateInstance"/>
-        <arc:ExpandingButtonGroupItem x:Name="SortButton" Label="名称降序" Click="OpenSortMenu"/>
-      </arc:ExpandingButtonGroup>
+      <Grid x:Name="ToolbarSlot" Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+        <Border BoxShadow="{arc:ArcDesignTokenResource ShadowResting}" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                Background="Transparent" IsHitTestVisible="False" HorizontalAlignment="Left"
+                Width="{Binding #ToolbarActions.Bounds.Width}" Height="{Binding #ToolbarActions.Bounds.Height}"
+                IsVisible="{Binding #ToolbarActions.IsVisible}"/>
+        <arc:ExpandingButtonGroup x:Name="ToolbarActions" Classes="launch-actions" Label="实例列表操作"
+                                  HorizontalAlignment="Left">
+          <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新实例" Click="RefreshInstances"/>
+          <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="创建实例" Click="CreateInstance"/>
+          <arc:ExpandingButtonGroupItem x:Name="SortButton" Label="名称降序" Click="OpenSortMenu"/>
+        </arc:ExpandingButtonGroup>
+      </Grid>
     </Grid>
-    <arc:SkeletonMorph x:Name="LoadingRegion" Grid.Row="2" LoadingLabel="读取实例列表">
-      <arc:MorphBlock SkeletonHeight="{arc:ArcDesignTokenResource MediaSizeXL}">
+    <arc:SkeletonMorph x:Name="LoadingRegion" Grid.Row="2" LoadingLabel="读取实例列表" Background="Transparent">
         <Grid>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <arc:RadioGroup x:Name="InstanceChoices" Classes="instance-choices" AutomationProperties.Name="启动实例"
+                            ItemContainerTheme="{StaticResource InstanceRowTheme}"
                             SelectionChanged="StartupSelectionChanged" ContextRequested="RowContextRequested">
               <arc:RadioGroup.ItemTemplate>
                 <DataTemplate x:DataType="vm:InstanceListRow">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
                     <StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Name}" TextAlignment="Left" TextTrimming="CharacterEllipsis"
-                                 Foreground="{arc:ArcDesignTokenResource Foreground}"/>
-                      <TextBlock Text="{Binding Subtitle}" Classes="instance-subtitle" TextAlignment="Left"
-                                 TextTrimming="CharacterEllipsis"/>
+                      <arc:MorphBlock Lines="1" SkeletonWidthRatio="0.6" LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}">
+                        <TextBlock Text="{Binding Name}" TextAlignment="Left" TextTrimming="CharacterEllipsis"
+                                   LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
+                      </arc:MorphBlock>
+                      <arc:MorphBlock Lines="1" SkeletonWidthRatio="0.45" LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}">
+                        <TextBlock Text="{Binding Subtitle}" Classes="instance-subtitle" TextAlignment="Left"
+                                   LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}" TextTrimming="CharacterEllipsis"/>
+                      </arc:MorphBlock>
                     </StackPanel>
-                    <arc:Badge Grid.Column="1" Content="{Binding StatusText}" Tone="{Binding StatusTone}"
-                               HorizontalAlignment="Right" VerticalAlignment="Center">
-                      <arc:Badge.Icon><lucide:LucideIcon Kind="{Binding StatusIcon}"/></arc:Badge.Icon>
-                    </arc:Badge>
+                    <arc:MorphBlock Grid.Column="1" SkeletonWidth="{arc:ArcDesignTokenResource ControlSizeLG}"
+                                    SkeletonHeight="{arc:RadioGroupTokenResource RingDiameter}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center">
+                      <arc:Badge Content="{Binding StatusText}" Tone="{Binding StatusTone}"
+                                 HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <arc:Badge.Icon><lucide:LucideIcon Kind="{Binding StatusIcon}"/></arc:Badge.Icon>
+                      </arc:Badge>
+                    </arc:MorphBlock>
                   </Grid>
                 </DataTemplate>
               </arc:RadioGroup.ItemTemplate>
               <arc:RadioGroup.Styles>
                 <Style Selector="arc|RadioGroupItem" x:DataType="vm:InstanceListRow">
                   <Setter Property="AutomationProperties.Name" Value="{Binding StartupLabel}"/>
+                  <Setter Property="IsEnabled" Value="{Binding IsPresent}"/>
                 </Style>
               </arc:RadioGroup.Styles>
             </arc:RadioGroup>
           </ScrollViewer>
           <arc:EmptyState x:Name="Empty" Title="暂无实例" Description="创建一个实例以开始使用。" IsVisible="False"/>
         </Grid>
-      </arc:MorphBlock>
     </arc:SkeletonMorph>
-    <arc:Popover x:Name="PropertiesPopover" Placement="Bottom" Alignment="End" TriggerMode="Manual">
+    <Canvas x:Name="PropertyAnchorLayer" Grid.RowSpan="3" IsHitTestVisible="False">
+      <Border x:Name="PropertiesAnchor" Width="{arc:ArcDesignTokenResource Space1}" Height="{arc:ArcDesignTokenResource Space1}"/>
+    </Canvas>
+    <arc:Popover x:Name="PropertiesPopover" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>
         <Style Selector="arc|PopoverSurface">
           <Setter Property="Background" Value="Transparent"/>
@@ -108,6 +167,11 @@
       </arc:GlassCard>
     </arc:Popover>
     <arc:Popover x:Name="DeletePopover" Placement="Top" Alignment="End" TriggerMode="Manual">
+      <arc:Popover.Styles>
+        <Style Selector="arc|PopoverSurface">
+          <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.82}"/>
+        </Style>
+      </arc:Popover.Styles>
       <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
                          Tone="Danger" Confirmed="ConfirmDelete" arc:Tooltip.Tip="删除后无法恢复！"
                          AutomationProperties.HelpText="删除后无法恢复！"/>

@@ -19,23 +19,32 @@ public sealed class InstanceListRow(HostInstanceItem item) : ObservableObject
     public string CreatedAt => "暂无记录";
     public string LastRunAt => "暂无记录";
     public bool IsStartupSelected { get; private set; }
-    public bool CanSelect { get; private set; }
-    public bool CanStart { get; private set; }
-    public bool CanEdit { get; private set; }
-    public bool CanViewLogs { get; private set; }
+    private bool canSelect, canStart, canEdit, canViewLogs;
+    public bool IsPresent { get; private set; } = true;
+    public bool CanSelect => IsPresent && canSelect;
+    public bool CanStart => IsPresent && canStart;
+    public bool CanEdit => IsPresent && canEdit;
+    public bool CanViewLogs => IsPresent && canViewLogs;
     public bool CanMigrate => CanEdit && Item.Entry.Definition?.LayoutVersion < InstanceRules.CurrentLayoutVersion;
     public int StatusOrder { get; private set; } = int.MaxValue;
     public string StatusText { get; private set; } = "状态未知";
     public BadgeTone StatusTone { get; private set; }
     public LucideIconKind StatusIcon { get; private set; } = LucideIconKind.CircleAlert;
 
+    public void SetPresent(bool present)
+    {
+        if (IsPresent == present) return;
+        IsPresent = present;
+        Notify(null);
+    }
+
     public void Update(HostInstanceItem item, HostServerController model, Guid? startup, bool operating)
     {
         Item = item;
         IsStartupSelected = Id == startup;
-        CanSelect = !operating && model.CanSelectInstance && Item.Entry.Definition is not null;
-        CanStart = CanEdit = !operating && model.CanCreate && Item.Entry.Definition is not null;
-        CanViewLogs = !operating && model.Server.Connected && model.Server.Snapshot?.InstanceId == Id && model.Server.RunId is not null;
+        canSelect = !operating && model.CanSelectInstance && Item.Entry.Definition is not null;
+        canStart = canEdit = !operating && model.CanCreate && Item.Entry.Definition is not null;
+        canViewLogs = !operating && model.Server.Connected && model.Server.Snapshot?.InstanceId == Id && model.Server.RunId is not null;
         var snapshot = model.Server.Snapshot;
         var known = model.Server.Connected && snapshot is not null && Item.Entry.Definition is not null &&
             !(snapshot is { Active: true, InstanceId: null } || snapshot is { State: ServerState.RecoveryRequired, InstanceId: null });
