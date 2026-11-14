@@ -38,6 +38,54 @@ var owner = new MainWindow
 };
 owner.Show();
 Layout();
+if (only is "home")
+{
+    var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
+    var create = home.FindControl<TKCode.Arc.Button>("CreateButton")!;
+    var launch = home.FindControl<TKCode.Arc.Button>("LaunchButton")!;
+    var instances = home.FindControl<MorphSelect>("InstancePicker")!;
+    var presets = home.FindControl<MorphSelect>("PresetPicker")!;
+    var maps = home.FindControl<MorphSelect>("MapPicker")!;
+    Check(create.IsVisible && !launch.IsVisible && !instances.IsVisible, "Empty home must offer only creation.");
+    var p = new PresetDefinition(1, Guid.NewGuid(), 1, "Home preset");
+    var id = Guid.NewGuid();
+    daemon.IdleForPresetTests = true;
+    daemon.Catalog = new([new(id, new(1, id, 1, "Home instance", 27015, p.Id), [p])]);
+    PumpUntil(server.RefreshAsync());
+    PumpUntil(model.RefreshInstancesAsync());
+    WaitUntil(() => maps.ItemsSource is ServerMapTarget[] { Length: 2 } && !model.Busy);
+    Check(!create.IsVisible && launch.IsVisible && Equals(instances.SelectedItem, model.Selected),
+        "Selected instance must be reflected by home.");
+    Check(maps.SelectedItem is ServerMapTarget { Value: "de_dust2" } && launch.IsEnabled,
+        "Startup map must come from the preset pool.");
+    Check(instances.IsLabelVisible == false && presets.IsLabelVisible == false && maps.IsLabelVisible == false,
+        "Home pickers must not display separate labels.");
+    Check(Math.Abs(launch.Bounds.Width - 240) < 1 && Math.Abs(maps.Bounds.Width - 160) < 1,
+        "Home layout must reserve fixed widths.");
+    var right = launch.TranslatePoint(new Point(launch.Bounds.Width, 0), home)!.Value.X;
+    foreach (var picker in new[] { instances, presets, maps })
+        Check(Math.Abs(picker.TranslatePoint(new Point(picker.Bounds.Width, 0), home)!.Value.X - right) < 1.5,
+            "Home controls must align at their right edge.");
+    var badge = owner.FindControl<Badge>("ServerStatusBadge")!;
+    var icon = badge.Icon;
+    PumpUntil(server.RefreshAsync()); Layout();
+    Check(ReferenceEquals(icon, badge.Icon), "Polling must not recreate unchanged status icons.");
+    maps.SelectedItem = ((ServerMapTarget[])maps.ItemsSource!)[1]; Layout();
+    Click(owner, "取消");
+    WaitUntil(() => maps.SelectedItem is ServerMapTarget { Value: "de_dust2" });
+    Check(model.Selected!.Entry.Presets[0].Map == "de_dust2", "Cancelling map selection must preserve startup configuration.");
+    daemon.PoolReadError = true;
+    home.FindControl<TKCode.Arc.Button>("RetryButton")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    WaitUntil(() => home.FindControl<TKCode.Arc.Button>("RetryButton")!.IsVisible && !model.Busy);
+    Check(!home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible && !launch.IsEnabled,
+        "A pool read failure must not look like an empty pool or permit startup.");
+    daemon.PoolReadError = false;
+    daemon.Pool = new(new(1, 1, []), "empty");
+    home.FindControl<TKCode.Arc.Button>("RetryButton")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    WaitUntil(() => home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible);
+    Console.WriteLine("PASS gui.home.pool-selection-layout-and-stable-status");
+    return 0;
+}
 if (only is null or "logs")
 {
 for (var attempt = 0; attempt < 2; attempt++)
@@ -594,6 +642,7 @@ sealed class FakeDaemon : IDaemonClient
         new("source2mod", "Source2Mod", false, true, null, "1.0.46", "source2mod_v1.0.46-linux.tar.gz", false, "metamod", null)
     ]);
     public PluginResult Plugins = new([new("metamod", "Metamod", "1.0.0", "hash", 1024, 2)], [new("metamod", "Metamod", "1.0.0", true, true)], 1, "plugin-1");
+    public bool PoolReadError;
     public MapPoolResult Pool = new(new(1, 1, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_mirage")]), "pool-1");
     private string cfgText = "status\n";
     private string cfgHash = "v1";
@@ -609,6 +658,8 @@ sealed class FakeDaemon : IDaemonClient
         if (request.Kind == RequestKind.MapPool)
         {
             var c = JsonSerializer.Deserialize<MapPoolCommand>(request.MapPoolJson!)!;
+            if (c.Action == MapPoolAction.Read && PoolReadError)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-MAPPOOL-READ", "Read failed."));
             if (c.Action == MapPoolAction.Save)
             {
                 if (RejectPoolWrites) return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-MAPPOOL-CONFLICT", "External edit; reload."));

@@ -1,6 +1,9 @@
 <arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:DataType="vm:ShellViewModel" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
-    <arc:TitleBar Height="44" Title="{Binding Servers.Header}" CaptionButtons="Auto">
+    <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto">
+      <arc:TitleBar.LeftContent>
+        <arc:Badge x:Name="ServerStatusBadge" Size="Medium"/>
+      </arc:TitleBar.LeftContent>
       <arc:TitleBar.Icon>
         <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Server}" Size="16"/>
       </arc:TitleBar.Icon>
@@ -61,33 +64,18 @@
                   </arc:Button>
                 </StackPanel>
               </ScrollViewer>
-              <TextBlock Grid.Row="2" Text="● 开发预览" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Margin="12,16,0,0" ToolTip.Tip="服务器控制已接入本机宿主；公网/VAC/参赛授权尚未接入。"/>
+              <StackPanel Grid.Row="2" Spacing="8" Margin="0,16,0,0">
+                <arc:ThemeSwitcher x:Name="SidebarThemeSwitcher" Variant="Reveal"
+                                   Text="切换到深色模式" ThemeChangeRequested="SidebarThemeRequested"/>
+                <TextBlock Text="● 开发预览" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Margin="12,0,0,0"/>
+              </StackPanel>
             </Grid>
           </Border>
         </Grid>
         <Grid Grid.Column="1">
-          <Grid IsVisible="{Binding IsHome}" Margin="32" RowDefinitions="*,Auto">
-            <Border Grid.Row="1" HorizontalAlignment="Right" Width="290">
-              <StackPanel Spacing="10">
-                <arc:Button IsEnabled="False" Variant="Secondary" HorizontalAlignment="Right">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Path Data="{x:Static arc:ArcIcons.Shield}" Classes="glyph"/>
-                    <TextBlock Text="VAC · 待配置"/>
-                  </StackPanel>
-                </arc:Button>
-                <Border Classes="launch-shadow">
-                  <arc:Button Classes="empty-launch" Variant="Secondary" Command="{Binding NavigateCommand}" CommandParameter="instances" ToolTip.Tip="前往实例列表选择已有实例；GUI 创建仍未接入。" AutomationProperties.Name="前往实例列表">
-                    <StackPanel Spacing="4" HorizontalAlignment="Center">
-                      <TextBlock Text="选择 / 管理服务器" FontSize="{arc:ArcDesignTokenResource TypeBase}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                      <TextBlock Text="前往实例列表" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                  </arc:Button>
-                </Border>
-              </StackPanel>
-            </Border>
-          </Grid>
+          <pages:HomePage IsVisible="{Binding IsHome}"/>
           <Border IsVisible="{Binding !IsHome}" Background="{DynamicResource ShellBackground}"/>
-          <pages:InstancePage IsVisible="{Binding IsInstance}"/>
+          <pages:InstancePage x:Name="InstanceManagementPage" IsVisible="{Binding IsInstance}"/>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>
           <pages:SettingsPage IsVisible="{Binding IsSettings}"/>

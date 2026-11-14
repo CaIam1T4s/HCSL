@@ -57,7 +57,7 @@ GUI/TUI 启动时会自动连接或拉起随附的 Daemon；下载中心可以�
 bash build/test-fast.sh full
 ```
 
-当前使用 Avalonia 12.1.4 与 TKCode.Arc 1.0.0（最新稳定版）。Arc 已不再使用预览依赖，后续升级仍需验证 API 与主题兼容性。
+当前使用 Avalonia 12.1.5 与 TKCode.Arc 1.1.0（最新稳定版）。Arc 已不再使用预览依赖，后续升级仍需验证 API 与主题兼容性。
 
 ### 数据位置
 
@@ -74,10 +74,6 @@ bash build/test-fast.sh full
 - **服务器管理**：在线玩家名单、踢人、管理员名单读写与按框架热重载。
 - **玩家客户端**：服务器列表、IP/域名与端口格式校验、系统密码存储、Steam 连接请求与手动命令后备。
 - **架构**：Core / Application / Infrastructure / Frontend / Contracts 分层，UI 不直接运行 SteamCMD 或 CS2；本机 IPC 由 Daemon 串行执行写操作。
-
-## 下一步
-
-优化项目 GUI，包括界面布局、交互一致性与真实渲染效果。
 
 ## 当前功能的缺陷
 

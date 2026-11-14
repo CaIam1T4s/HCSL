@@ -102,7 +102,7 @@ public partial class InstancePage : UserControl
         var done = m.Server.Code == "HCSL-SERVER-DEPLOY-RECOVERED";
         await owner.ChooseAsync(done ? "恢复完成" : "恢复未完成", m.Server.DetailText, "返回");
     });
-    private async void StartServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    public Task StartSelectedAsync() => RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
         var text = m.SelectionText + "\n\n" + m.ConnectionEndpoints(d.GamePort) +
@@ -115,6 +115,8 @@ public partial class InstancePage : UserControl
         if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory)) ShowLogs();
         else { watchingStart = false; await owner.ChooseAsync("启动未提交", m.Server.DetailText, "返回"); }
     });
+    private async void StartServer(object? sender, RoutedEventArgs e) => await StartSelectedAsync();
+
     private async Task CheckStartOutcomeAsync()
     {
         if (!watchingStart || handlingOutcome || operating || Model is not { } m || Owner is not { } owner || m.Server.Busy) return;

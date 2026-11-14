@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="HCSL.Host.Views.Pages.HomePage">
+  <Grid Margin="32" RowDefinitions="Auto,*,Auto">
+    <arc:Switch x:Name="VacSwitch" Content="VAC · 尚未接入" IsEnabled="False"
+                HorizontalAlignment="Right"/>
+    <StackPanel Grid.Row="2" Width="240" Spacing="8" HorizontalAlignment="Right">
+      <arc:Alert x:Name="Feedback" IsVisible="False" Tone="Danger" Title="操作未完成"/>
+      <arc:Alert x:Name="PoolNotice" IsVisible="False" Tone="Info" Title="地图池包含工坊合集"
+                 Content="合集不是单张启动地图；请在实例管理中配置合集启动。"/>
+      <arc:MorphSelect x:Name="InstancePicker" Label="选择实例" IsLabelVisible="False"
+                       Placeholder="选择实例" PanelAlignment="End" HorizontalAlignment="Right"/>
+      <arc:MorphSelect x:Name="PresetPicker" Label="选择预设" IsLabelVisible="False"
+                       Placeholder="选择预设" PanelAlignment="End" HorizontalAlignment="Right"/>
+      <arc:MorphSelect x:Name="MapPicker" Label="启动地图" IsLabelVisible="False"
+                       Placeholder="启动地图" PanelAlignment="End" HorizontalAlignment="Right"/>
+      <arc:Button x:Name="PoolButton" Width="160" Variant="Secondary" HorizontalAlignment="Right"
+                  IsVisible="False" Click="ManagePool">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="图池管理"/>
+          <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowRight}" Size="16"/>
+        </StackPanel>
+      </arc:Button>
+      <arc:Button x:Name="RetryButton" Content="重新读取地图池" Width="160" Variant="Secondary"
+                  HorizontalAlignment="Right" IsVisible="False" Click="RetryPool"/>
+      <arc:Button x:Name="LaunchButton" Content="启动服务器" Width="240" Click="Launch"/>
+      <arc:Button x:Name="CreateButton" Width="160" HorizontalAlignment="Right" Click="CreateInstance">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="创建实例"/>
+          <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowRight}" Size="16"/>
+        </StackPanel>
+      </arc:Button>
+    </StackPanel>
+  </Grid>
+</UserControl>

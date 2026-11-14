@@ -20,6 +20,7 @@ public partial class MainWindow : ArcWindow
     public MainWindow()
     {
         InitializeComponent();
+        InitializeHomeShell();
         Closed += (_, _) => { windowClosed = true; prompt?.TrySetResult(-1); ResetBackground(); };
         Closing += OnClosing;
         KeyDown += (_, e) =>

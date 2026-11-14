@@ -7,10 +7,14 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
-    <PackageReference Include="TKCode.Arc" Version="1.0.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.5" />
+    <PackageReference Include="TKCode.Arc" Version="1.1.0" />
+    <PackageReference Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../HCSL.Infrastructure/HCSL.Infrastructure.csproj" /><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /><ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" /></ItemGroup>
+  <ItemGroup>
+    <LucideIcon Include="PackageOpen;LoaderCircle;Rocket;CircleCheckBig;Clock;CircleAlert;TriangleAlert;Pause" />
+  </ItemGroup>
   <Import Project="../../build/DaemonPayload.targets" />
 </Project>
