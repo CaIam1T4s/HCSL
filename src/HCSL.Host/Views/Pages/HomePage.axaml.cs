@@ -1,5 +1,8 @@
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.VisualTree;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using HCSL.Core;
@@ -15,7 +18,7 @@ public partial class HomePage : UserControl
     private bool updating, editing, reading, hasCollection;
     private (Guid Instance, Guid Preset, long Revision)? loaded;
     private ServerMapTarget[] maps = [];
-    private string? failure;
+    private string? failure, configurationFailure;
     private int generation;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private PresetDefinition? CurrentPreset => model?.Selected?.Entry.Presets
@@ -24,6 +27,22 @@ public partial class HomePage : UserControl
     public HomePage()
     {
         InitializeComponent();
+        // Arc 1.1.0 measures the action using PART_Row.Margin, not Button.Padding.
+        // Forward the dynamic Arc padding preset without imposing a minimum width.
+        LaunchButton.Loaded += (_, _) =>
+        {
+            var row = LaunchButton.GetVisualDescendants().OfType<StackPanel>().Single(p => p.Name == "PART_Row");
+            row.Bind(MarginProperty, LaunchButton.GetObservable(PaddingProperty));
+            row.HorizontalAlignment = LaunchButton.IsExpanded ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        };
+        LaunchButton.PropertyChanged += (_, e) =>
+        {
+            if (e.Property.Name == "IsExpanded" &&
+                LaunchButton.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(p => p.Name == "PART_Row") is { } row)
+                row.HorizontalAlignment = LaunchButton.IsExpanded ? HorizontalAlignment.Center : HorizontalAlignment.Left;
+        };
+        ConfigurationPopover.Closed += (_, _) =>
+            InstancePicker.IsOpen = PresetPicker.IsOpen = MapPicker.IsOpen = false;
         InstancePicker.TextSelector = value => (value as HostInstanceItem)?.Entry.Definition?.Name ?? value?.ToString();
         PresetPicker.TextSelector = value => (value as PresetDefinition)?.Name;
         MapPicker.TextSelector = value => value is ServerMapTarget map ? ServerMapRules.Label(map) : null;
@@ -32,6 +51,7 @@ public partial class HomePage : UserControl
         DetachedFromVisualTree += (_, _) =>
         {
             if (model is not null) model.PropertyChanged -= Changed;
+            ConfigurationPopover.IsOpen = false;
             model = null; generation++; loaded = null;
         };
         InstancePicker.SelectionChanged += (_, _) =>
@@ -69,7 +89,8 @@ public partial class HomePage : UserControl
         var instance = m.Selected?.Entry.Definition;
         var preset = CurrentPreset;
         var hasInstance = instance is not null;
-        var writable = m.CanMutate && !editing && !reading;
+        var selectable = !editing && !reading && !m.Busy && !m.Server.Busy;
+        var writable = m.CanMutate && selectable;
         updating = true;
         try
         {
@@ -79,19 +100,25 @@ public partial class HomePage : UserControl
             PresetPicker.SelectedItem = preset;
             MapPicker.ItemsSource = maps;
             MapPicker.SelectedItem = maps.FirstOrDefault(x => x.Kind == preset?.MapKind && x.Value == preset.Map);
-            InstancePicker.IsVisible = PresetPicker.IsVisible = VacSwitch.IsVisible = LaunchButton.IsVisible = hasInstance;
+            InstancePicker.IsVisible = PresetPicker.IsVisible = VacSwitch.IsVisible = LaunchActions.IsVisible = LaunchButton.IsVisible = hasInstance;
+            ConfigurationButton.IsEnabled = hasInstance;
+            if (!hasInstance) ConfigurationPopover.IsOpen = false;
             CreateButton.IsVisible = !hasInstance;
-            InstancePicker.IsEnabled = PresetPicker.IsEnabled = writable;
-            MapPicker.IsVisible = hasInstance && maps.Length > 0;
-            MapPicker.IsEnabled = writable && failure is null;
-            PoolButton.IsVisible = hasInstance && preset is not null && !reading && failure is null && maps.Length == 0;
+            InstanceRow.IsVisible = PresetRow.IsVisible = hasInstance;
+            InstancePicker.IsEnabled = PresetPicker.IsEnabled = selectable;
+            MapRow.IsVisible = MapPicker.IsVisible = hasInstance && maps.Length > 0;
+            MapPicker.IsEnabled = selectable && failure is null;
+            PoolButton.IsVisible = hasInstance && preset is not null && instance is not null && !reading
+                && loaded == (instance.Id, preset.Id, preset.Revision)
+                && failure is null && maps.Length == 0 && !hasCollection;
+            PoolButton.IsEnabled = selectable && PoolButton.IsVisible;
             RetryButton.IsVisible = hasInstance && failure is not null;
             PoolNotice.IsVisible = hasInstance && hasCollection;
             RetryButton.IsEnabled = !m.Busy && !reading;
-            LaunchButton.IsEnabled = writable && preset is not null && maps.Any(x => x.Kind == preset.MapKind && x.Value == preset.Map)
-                && m.Server.CanStart;
-            LaunchButton.Content = m.Server.Active ? "服务器运行中" : reading ? "读取地图池…" : "启动服务器";
-            Feedback.Content = failure ?? (m.Error.Length > 0 ? m.Error : null);
+            LaunchButton.IsDisabled = !(writable && preset is not null && maps.Any(x => x.Kind == preset.MapKind && x.Value == preset.Map)
+                && m.Server.CanStart);
+            LaunchButton.Label = m.Server.Active ? "服务器运行中" : reading ? "读取地图池…" : "启动服务器";
+            Feedback.Content = failure ?? configurationFailure ?? (m.Error.Length > 0 ? m.Error : null);
             Feedback.IsVisible = Feedback.Content is not null;
         }
         finally { updating = false; }
@@ -124,8 +151,10 @@ public partial class HomePage : UserControl
 
     private async Task SelectPresetAsync(PresetDefinition preset)
     {
-        if (editing || model is not { } m || !m.CanMutate || Owner is not { } owner ||
+        if (editing || model is not { } m || Owner is not { } owner ||
             m.Selected?.Entry.Definition is not { } instance || preset.Id == instance.SelectedPresetId) return;
+        if (!CanChangeConfiguration(m)) return;
+        ConfigurationPopover.IsOpen = false;
         editing = true; Update();
         try
         {
@@ -140,9 +169,11 @@ public partial class HomePage : UserControl
     }
     private async Task SelectMapAsync(ServerMapTarget map)
     {
-        if (editing || model is not { } m || !m.CanMutate || Owner is not { } owner ||
+        if (editing || model is not { } m || Owner is not { } owner ||
             m.Selected?.Entry.Definition is not { } instance || CurrentPreset is not { } preset ||
             (preset.MapKind == map.Kind && preset.Map == map.Value)) return;
+        if (!CanChangeConfiguration(m)) return;
+        ConfigurationPopover.IsOpen = false;
         editing = true; Update();
         try
         {
@@ -155,11 +186,33 @@ public partial class HomePage : UserControl
         }
         finally { editing = false; Update(); }
     }
+    private bool CanChangeConfiguration(HostServerController controller)
+    {
+        configurationFailure = null;
+        if (controller.CanMutate) return true;
+        configurationFailure = "当前无法保存启动配置；请连接宿主、停止服务器并完成正在进行的操作或恢复。";
+        Update();
+        return false;
+    }
+    private void ToggleConfiguration(object? sender, RoutedEventArgs e)
+    {
+        if (ConfigurationPopover.IsOpen) ConfigurationPopover.IsOpen = false;
+        else ConfigurationPopover.ShowAt(LaunchAnchor);
+    }
     private async void Launch(object? sender, RoutedEventArgs e)
     {
-        if (LaunchButton.IsEnabled && Owner is { } owner) await owner.StartHomeServerAsync();
+        if (!LaunchButton.IsDisabled && Owner is { } owner)
+        {
+            ConfigurationPopover.IsOpen = false;
+            await owner.StartHomeServerAsync();
+        }
     }
-    private void ManagePool(object? sender, RoutedEventArgs e) => (DataContext as ShellViewModel)?.NavigateCommand.Execute("instance");
+    private void ManagePool(object? sender, RoutedEventArgs e)
+    {
+        if (!PoolButton.IsEnabled) return;
+        ConfigurationPopover.IsOpen = false;
+        (DataContext as ShellViewModel)?.NavigateCommand.Execute("instance");
+    }
     private void CreateInstance(object? sender, RoutedEventArgs e) => (DataContext as ShellViewModel)?.NavigateCommand.Execute("instances");
     private async void RetryPool(object? sender, RoutedEventArgs e) => await ReadPoolAsync();
 }

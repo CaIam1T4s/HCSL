@@ -5,26 +5,59 @@
   <Grid Margin="32" RowDefinitions="Auto,*,Auto">
     <arc:Switch x:Name="VacSwitch" Content="VAC · 尚未接入" IsEnabled="False"
                 HorizontalAlignment="Right"/>
-    <StackPanel Grid.Row="2" Width="240" Spacing="8" HorizontalAlignment="Right">
+    <StackPanel Grid.Row="2" MinWidth="{arc:ArcDesignTokenResource MediaSizeXL}"
+                Spacing="{arc:ArcDesignTokenResource Space2}" HorizontalAlignment="Right">
       <arc:Alert x:Name="Feedback" IsVisible="False" Tone="Danger" Title="操作未完成"/>
       <arc:Alert x:Name="PoolNotice" IsVisible="False" Tone="Info" Title="地图池包含工坊合集"
                  Content="合集不是单张启动地图；请在实例管理中配置合集启动。"/>
-      <arc:MorphSelect x:Name="InstancePicker" Label="选择实例" IsLabelVisible="False"
-                       Placeholder="选择实例" PanelAlignment="End" HorizontalAlignment="Right"/>
-      <arc:MorphSelect x:Name="PresetPicker" Label="选择预设" IsLabelVisible="False"
-                       Placeholder="选择预设" PanelAlignment="End" HorizontalAlignment="Right"/>
-      <arc:MorphSelect x:Name="MapPicker" Label="启动地图" IsLabelVisible="False"
-                       Placeholder="启动地图" PanelAlignment="End" HorizontalAlignment="Right"/>
-      <arc:Button x:Name="PoolButton" Width="160" Variant="Secondary" HorizontalAlignment="Right"
-                  IsVisible="False" Click="ManagePool">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <TextBlock Text="图池管理"/>
-          <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowRight}" Size="16"/>
+      <arc:Popover x:Name="ConfigurationPopover" Placement="Top" Alignment="End" TriggerMode="Manual">
+        <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}"
+                    TextElement.Foreground="{arc:ArcDesignTokenResource Foreground}">
+          <Grid x:Name="InstanceRow" ColumnDefinitions="Auto,*" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+            <TextBlock Text="选择实例" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+            <arc:MorphSelect x:Name="InstancePicker" Grid.Column="1" Label="选择实例" IsLabelVisible="False"
+                             Placeholder="选择实例" PanelAlignment="End" HorizontalAlignment="Right"/>
+          </Grid>
+          <Grid x:Name="PresetRow" ColumnDefinitions="Auto,*" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+            <TextBlock Text="配置预设" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+            <arc:MorphSelect x:Name="PresetPicker" Grid.Column="1" Label="配置预设" IsLabelVisible="False"
+                             Placeholder="选择预设" PanelAlignment="End" HorizontalAlignment="Right"/>
+          </Grid>
+          <Grid x:Name="MapRow" ColumnDefinitions="Auto,*" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+            <TextBlock Text="启动地图" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+            <arc:MorphSelect x:Name="MapPicker" Grid.Column="1" Label="启动地图" IsLabelVisible="False"
+                             Placeholder="启动地图" PanelAlignment="End" HorizontalAlignment="Right"/>
+          </Grid>
+          <arc:Button x:Name="PoolButton" Variant="Secondary" HorizontalAlignment="Stretch" Click="ManagePool">
+            <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+              <TextBlock Text="图池管理"/>
+              <arc:ArcGlyph Data="{x:Static arc:ArcIcons.ArrowRight}"/>
+            </StackPanel>
+          </arc:Button>
+          <arc:Button x:Name="RetryButton" Content="重新读取地图池" Variant="Secondary"
+                      HorizontalAlignment="Stretch" IsVisible="False" Click="RetryPool"/>
         </StackPanel>
-      </arc:Button>
-      <arc:Button x:Name="RetryButton" Content="重新读取地图池" Width="160" Variant="Secondary"
-                  HorizontalAlignment="Right" IsVisible="False" Click="RetryPool"/>
-      <arc:Button x:Name="LaunchButton" Content="启动服务器" Width="240" Click="Launch"/>
+      </arc:Popover>
+      <Grid x:Name="LaunchAnchor" Width="{arc:ArcDesignTokenResource MediaSizeXL}"
+            Height="{arc:ArcDesignTokenResource Space16}" HorizontalAlignment="Right">
+      <arc:ExpandingButtonGroup x:Name="LaunchActions" Label="服务器启动操作" HorizontalAlignment="Right"
+                                DefaultExpandedItem="{Binding #LaunchButton}">
+        <arc:ExpandingButtonGroup.Styles>
+          <Style Selector="arc|ExpandingButtonGroupItem">
+            <Setter Property="Height" Value="{arc:ArcDesignTokenResource ControlSizeLG}"/>
+            <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeBase}"/>
+            <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
+          </Style>
+        </arc:ExpandingButtonGroup.Styles>
+        <arc:ExpandingButtonGroupItem x:Name="LaunchButton" Label="启动服务器"
+                                      Padding="{arc:ButtonTokenResource InlinePaddingMD}"
+                                      Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                      Icon="{x:Static arc:ArcIcons.Play}" Click="Launch"/>
+        <arc:ExpandingButtonGroupItem x:Name="ConfigurationButton" Label="启动配置"
+                                      Foreground="{arc:ArcDesignTokenResource Foreground}"
+                                      Icon="{x:Static arc:ArcIcons.Settings}" Click="ToggleConfiguration"/>
+      </arc:ExpandingButtonGroup>
+      </Grid>
       <arc:Button x:Name="CreateButton" Width="160" HorizontalAlignment="Right" Click="CreateInstance">
         <StackPanel Orientation="Horizontal" Spacing="8">
           <TextBlock Text="创建实例"/>

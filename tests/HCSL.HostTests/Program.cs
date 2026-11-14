@@ -42,7 +42,10 @@ if (only is "home")
 {
     var home = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.HomePage>().Single();
     var create = home.FindControl<TKCode.Arc.Button>("CreateButton")!;
-    var launch = home.FindControl<TKCode.Arc.Button>("LaunchButton")!;
+    var launch = home.FindControl<ExpandingButtonGroupItem>("LaunchButton")!;
+    var actions = home.FindControl<ExpandingButtonGroup>("LaunchActions")!;
+    var configuration = home.FindControl<ExpandingButtonGroupItem>("ConfigurationButton")!;
+    var popover = home.FindControl<Popover>("ConfigurationPopover")!;
     var instances = home.FindControl<MorphSelect>("InstancePicker")!;
     var presets = home.FindControl<MorphSelect>("PresetPicker")!;
     var maps = home.FindControl<MorphSelect>("MapPicker")!;
@@ -56,16 +59,60 @@ if (only is "home")
     WaitUntil(() => maps.ItemsSource is ServerMapTarget[] { Length: 2 } && !model.Busy);
     Check(!create.IsVisible && launch.IsVisible && Equals(instances.SelectedItem, model.Selected),
         "Selected instance must be reflected by home.");
-    Check(maps.SelectedItem is ServerMapTarget { Value: "de_dust2" } && launch.IsEnabled,
+    Check(maps.SelectedItem is ServerMapTarget { Value: "de_dust2" } && !launch.IsDisabled,
         "Startup map must come from the preset pool.");
-    Check(instances.IsLabelVisible == false && presets.IsLabelVisible == false && maps.IsLabelVisible == false,
-        "Home pickers must not display separate labels.");
-    Check(Math.Abs(launch.Bounds.Width - 240) < 1 && Math.Abs(maps.Bounds.Width - 160) < 1,
-        "Home layout must reserve fixed widths.");
-    var right = launch.TranslatePoint(new Point(launch.Bounds.Width, 0), home)!.Value.X;
+    Check(actions.IsVisible && !popover.IsOpen && actions.Items.Count == 2,
+        "Startup actions must share one group with configuration initially closed.");
+    Check(!instances.IsLabelVisible && !presets.IsLabelVisible && !maps.IsLabelVisible,
+        "Configuration pickers must use their separate left-hand labels.");
+    Check(ReferenceEquals(actions.DefaultExpandedItem, launch) && ReferenceEquals(actions.ExpandedItem, launch),
+        "Startup must be the resting action.");
+    Check(launch.Height > 36 && launch.Height == configuration.Height,
+        "Startup actions must share a height larger than the default compact preset.");
+    Check(launch.MinWidth == 0,
+        "The launch action must size to padded content rather than a fixed minimum width.");
+    var actionRow = launch.GetVisualDescendants().OfType<StackPanel>().Single(p => p.Name == "PART_Row");
+    Check(actionRow.Margin.Left > 10 && actionRow.HorizontalAlignment == Avalonia.Layout.HorizontalAlignment.Center,
+        "The launch action must use a larger preset inset and center its content.");
+    Check(((StackPanel)popover.Content!).Children.OfType<TextBlock>().Count() == 0,
+        "The configuration menu must not have a redundant title.");
+    Check(!home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible,
+        "A populated map pool must hide the map pool shortcut.");
+    Check(popover.Placement == PopoverPlacement.Top && popover.Alignment == PopoverAlignment.End &&
+          popover.TriggerMode == PopoverTriggerMode.Manual,
+        "Configuration must open above the action area on click, not hover.");
+    Check(((StackPanel)popover.Content!).Spacing < 8,
+        "Configuration fields must use compact Arc spacing.");
+    configuration.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+    Check(popover.IsOpen && instances.IsVisible && presets.IsVisible && maps.IsVisible,
+        "Configuration action must reveal all three MorphSelect pickers.");
+    Check(instances.IsEffectivelyEnabled && presets.IsEffectivelyEnabled && maps.IsEffectivelyEnabled,
+        "Idle configuration pickers must be interactive.");
     foreach (var picker in new[] { instances, presets, maps })
-        Check(Math.Abs(picker.TranslatePoint(new Point(picker.Bounds.Width, 0), home)!.Value.X - right) < 1.5,
-            "Home controls must align at their right edge.");
+    {
+        var row = (Grid)picker.Parent!;
+        var label = row.Children.OfType<TextBlock>().Single();
+        Check(label.HorizontalAlignment == Avalonia.Layout.HorizontalAlignment.Left &&
+              picker.HorizontalAlignment == Avalonia.Layout.HorizontalAlignment.Right &&
+              label.Bounds.Right <= picker.Bounds.Left,
+            "Field labels must sit on the left and pickers on the right.");
+    }
+    Check(ReferenceEquals(home.FindControl<TKCode.Arc.Button>("PoolButton")!.Parent, popover.Content),
+        "Map pool management must be inside the configuration menu.");
+    var anchor = home.FindControl<Grid>("LaunchAnchor")!;
+    Check(ReferenceEquals(popover.Anchor, anchor), "The popover must use the fixed action-area anchor.");
+    var anchorBounds = anchor.Bounds;
+    actions.DefaultExpandedItem = configuration; Layout();
+    Check(anchor.Bounds == anchorBounds && ReferenceEquals(popover.Anchor, anchor),
+        "Changing the expanded action must not move or resize the popover anchor.");
+    actions.DefaultExpandedItem = launch; Layout();
+    maps.IsOpen = true; Layout();
+    Check(maps.IsOpen && popover.IsOpen, "Opening a MorphSelect must preserve the configuration popover.");
+    maps.IsOpen = false; Layout();
+    Check(popover.IsOpen, "Closing a MorphSelect must not dismiss the configuration panel.");
+    configuration.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+    Check(!popover.IsOpen, "Configuration action must toggle the panel closed.");
+    configuration.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
     var badge = owner.FindControl<Badge>("ServerStatusBadge")!;
     var icon = badge.Icon;
     PumpUntil(server.RefreshAsync()); Layout();
@@ -74,15 +121,25 @@ if (only is "home")
     Click(owner, "取消");
     WaitUntil(() => maps.SelectedItem is ServerMapTarget { Value: "de_dust2" });
     Check(model.Selected!.Entry.Presets[0].Map == "de_dust2", "Cancelling map selection must preserve startup configuration.");
+    daemon.IdleForPresetTests = false;
+    PumpUntil(server.RefreshAsync()); Layout();
+    Check(!model.CanMutate && instances.IsEffectivelyEnabled && presets.IsEffectivelyEnabled && maps.IsEffectivelyEnabled,
+        "A runtime write lock must not disable browsing configuration choices.");
+    maps.SelectedItem = ((ServerMapTarget[])maps.ItemsSource!)[1]; Layout();
+    Check(model.Selected.Entry.Presets[0].Map == "de_dust2" && maps.SelectedItem is ServerMapTarget { Value: "de_dust2" }
+          && home.FindControl<Alert>("Feedback")!.IsVisible && launch.IsDisabled,
+        "A runtime write lock must explain refused changes, preserve the map and prevent startup.");
+    daemon.IdleForPresetTests = true;
+    PumpUntil(server.RefreshAsync()); Layout();
     daemon.PoolReadError = true;
     home.FindControl<TKCode.Arc.Button>("RetryButton")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
     WaitUntil(() => home.FindControl<TKCode.Arc.Button>("RetryButton")!.IsVisible && !model.Busy);
-    Check(!home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible && !launch.IsEnabled,
-        "A pool read failure must not look like an empty pool or permit startup.");
+    Check(!home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible && launch.IsDisabled,
+        "A pool read failure must hide the empty-pool shortcut and prevent startup.");
     daemon.PoolReadError = false;
     daemon.Pool = new(new(1, 1, []), "empty");
     home.FindControl<TKCode.Arc.Button>("RetryButton")!.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
-    WaitUntil(() => home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsVisible);
+    WaitUntil(() => home.FindControl<TKCode.Arc.Button>("PoolButton")!.IsEnabled);
     Console.WriteLine("PASS gui.home.pool-selection-layout-and-stable-status");
     return 0;
 }
