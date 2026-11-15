@@ -13,6 +13,7 @@ using HCSL.Host.ViewModels;
 using HCSL.Host.Views;
 using HCSL.Host.Views.Pages;
 using HCSL.UI.Shared.Controls;
+using HCSL.UI.Shared.Services;
 using Avalonia.Media;
 using TKCode.Arc.Motion;
 using TKCode.Arc;
@@ -64,10 +65,22 @@ internal static class InstancesPageTests
             Check(menu.IsOpen, "The row context request must open GlassMenu.");
             return menu;
         }
-        void OpenDelete(Guid id)
+        void OpenDelete(Guid id, bool pointerMenu = false)
         {
-            Invoke(OpenMenu(id), "删除实例"); Layout();
-            Check(popover.IsOpen, "Delete must open a hold popover without sending a request.");
+            GlassMenu deleteMenu;
+            if (pointerMenu)
+            {
+                var at = Container(id).TranslatePoint(new Point(24, Container(id).Bounds.Height / 2), owner)!.Value;
+                owner.MouseMove(at); owner.MouseDown(at, MouseButton.Right); owner.MouseUp(at, MouseButton.Right); Layout();
+                deleteMenu = Menu("rowMenu");
+                Check(deleteMenu.IsOpen, "Physical right-click must open deletion's source menu.");
+            }
+            else deleteMenu = OpenMenu(id);
+            var origin = deleteMenu.PointToScreen(default);
+            Invoke(deleteMenu, "删除实例"); Layout();
+            Check(popover.IsOpen && popover.Anchor == page.FindControl<Border>("DeleteAnchor"),
+                "Delete must use the captured menu-position anchor, not the instance row.");
+            Wait(() => Math.Abs(hold.PointToScreen(default).X - origin.X) <= 2 && Math.Abs(hold.PointToScreen(default).Y - origin.Y) <= 2);
         }
         void Toolbar(string name) { Pump(actions.ActivateAsync(page.FindControl<ExpandingButtonGroupItem>(name)!)); Layout(); }
         try
@@ -89,9 +102,12 @@ internal static class InstancesPageTests
                 "Rows must have a solid-color translucent fill, not a glass material or a faded foreground.");
             Check(badge.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Frame").Background is ISolidColorBrush { Opacity: < 1 } &&
                   actions.Background is ISolidColorBrush { Opacity: < 1 }, "Non-glass badge and toolbar backgrounds must be translucent.");
-            Check(!row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row").BoxShadow.Equals(default(BoxShadows)) &&
+            Check(!row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Shadow").BoxShadow.Equals(default(BoxShadows)) &&
                   !badge.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Frame").BoxShadow.Equals(default(BoxShadows)),
-                "Row and badge surfaces must have Arc shadows.");
+                "Rows must have separate decorative shadow layers; badges retain their own lighter elevation.");
+            Check(choices.Margin.Left > 0 && loading.Margin.Left == -choices.Margin.Left &&
+                  row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row").BoxShadow.Count == 0,
+                "The clipping shell must reserve shadow gutters without applying shadow transforms to row content.");
             var badgeOrigin = badge.TranslatePoint(default, row)!.Value;
             Check(badge.HorizontalAlignment == HorizontalAlignment.Right && badge.VerticalAlignment == VerticalAlignment.Center &&
                   Math.Abs(badgeOrigin.Y + badge.Bounds.Height / 2 - row.Bounds.Height / 2) < 2 &&
@@ -107,14 +123,48 @@ internal static class InstancesPageTests
             Check(page.FindControl<ExpandingButtonGroupItem>("CreateButton")!.Icon!.ToString() == Lucide.Geometry(LucideIconKind.Plus).ToString(), "Create must use Lucide plus.");
 
             // Native keyboard selection, not a synthetic SelectionChanged event.
-            row.Focus(); SendKey(owner, Key.Space);
+            ArcMotion.SetLevel(page, ArcMotionLevel.Off);
+            row.Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
             Check(shell.StartupInstanceId == first && model.Selected?.Entry.Id == first && shell.IsInstances, "Selecting a row must choose startup without navigating to management.");
-            var secondRow = Container(second); secondRow.Focus(); SendKey(owner, Key.Space);
-            Border Surface(RadioGroupItem item) => item.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row");
-            Check(Surface(secondRow).BoxShadow.Equals(ArcTokens.Get<BoxShadows>(secondRow, ArcDesignTokenKind.ShadowFloating)) &&
-                  Surface(Container(first)).BoxShadow.Equals(ArcTokens.Get<BoxShadows>(Container(first), ArcDesignTokenKind.ShadowRaised)) &&
-                  !Surface(secondRow).BoxShadow.Equals(Surface(Container(first)).BoxShadow),
-                "The selected row must carry a deeper floating shadow while other rows use the raised shadow.");
+            var secondRow = Container(second); secondRow.Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
+            Border Layer(RadioGroupItem item, string name) => item.GetVisualDescendants().OfType<Border>().Single(b => b.Name == name);
+            Border Surface(RadioGroupItem item) => Layer(item, "PART_Row");
+            Check(Layer(secondRow, "PART_SelectedShadow").BoxShadow.Equals(CenteredShadow.Center(ArcTokens.Get<BoxShadows>(secondRow, ArcDesignTokenKind.ShadowFloating))) &&
+                  Layer(Container(first), "PART_Shadow").BoxShadow.Equals(CenteredShadow.Center(ArcTokens.Get<BoxShadows>(Container(first), ArcDesignTokenKind.ShadowRaised))) &&
+                  Layer(secondRow, "PART_SelectedShadow").Opacity == 1 && Layer(Container(first), "PART_SelectedShadow").Opacity == 0 &&
+                  Layer(secondRow, "PART_Shadow").Opacity == 0 && Layer(Container(first), "PART_Shadow").Opacity == 1 &&
+                  Layer(secondRow, "PART_SelectedFill").Opacity > 0 &&
+                  secondRow.ZIndex > Container(first).ZIndex &&
+                  secondRow.GetVisualDescendants().OfType<Border>().Any(b => b.Name == "PART_FocusRing"),
+                "Selection must have a deeper centered shadow above its siblings, without removing the keyboard focus ring.");
+            var normalFill = (ISolidColorBrush)Surface(Container(first)).Background!;
+            var hoverPoint = Container(first).TranslatePoint(new Point(24, Container(first).Bounds.Height / 2), owner)!.Value;
+            owner.MouseMove(hoverPoint); Layout();
+            var hoverFill = (ISolidColorBrush)Surface(Container(first)).Background!;
+            Check(Container(first).IsPointerOver && Layer(Container(first), "PART_HoverFill").Opacity > 0 &&
+                  normalFill.Color == hoverFill.Color && normalFill.Opacity == hoverFill.Opacity &&
+                  Container(first).Opacity == 1 && shell.StartupInstanceId == second,
+                "Hover must reveal its own stable fill layer without sampling animated parent transparency or changing selection.");
+            ArcMotion.SetLevel(choices, ArcMotionLevel.Full);
+            owner.MouseDown(hoverPoint, MouseButton.Left); Layout();
+            owner.MouseUp(hoverPoint, MouseButton.Left); Layout();
+            Wait(() => Layer(Container(first), "PART_SelectedShadow").Opacity is > 0 and < 1);
+            Check(Layer(Container(first), "PART_SelectedFill").Opacity is > 0 and < 0.6 && shell.StartupInstanceId == first,
+                "A physical click must cross-fade both selected elevation and the subtle selected background.");
+            for (var frame = 0; frame < 12; frame++)
+            {
+                Layout(); Thread.Sleep(8);
+                Check(Surface(Container(first)).Background is ISolidColorBrush steady && steady.Color == normalFill.Color &&
+                      steady.Opacity == normalFill.Opacity && Container(first).Opacity == 1,
+                    "Press/release and selection must never fade the base card to a transparent blank frame.");
+            }
+            Wait(() => Layer(Container(first), "PART_SelectedShadow").Opacity == 1);
+            ArcMotion.SetLevel(choices, ArcMotionLevel.Off);
+            Container(second).Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
+            choices.ClearValue(ArcMotion.LevelProperty);
+            owner.MouseMove(new Point(1, 1)); Layout();
+            Check(Surface(Container(first)).Background is ISolidColorBrush restored && restored.Color == normalFill.Color && restored.Opacity == normalFill.Opacity,
+                "Leaving a row must restore its normal translucent surface.");
             ArcMotion.SetLevel(page, ArcMotionLevel.Off);
             var menu = OpenMenu(first);
             Check(shell.StartupInstanceId == second && choices.SelectedItem is InstanceListRow { Id: var selected } && selected == second,
@@ -165,12 +215,22 @@ internal static class InstancesPageTests
             var leavingPresence = choices.ContainerFromItem(leaving)!.GetVisualDescendants().OfType<TKCode.Arc.Primitives.PresenceHost>().Single(p => p.Name == "RowPresence");
             Check(!leaving.IsPresent && !leaving.CanSelect && choices.Items.Count == 2 && !leavingPresence.IsPresent && leavingPresence.Progress > 0,
                 "A filtered row must remain non-interactive until Arc's exit fade completes.");
+            Wait(() => leavingPresence.Opacity is > 0 and < 1);
+            Check(ReferenceEquals(choices.ContainerFromItem(leaving)?.GetVisualDescendants().OfType<TKCode.Arc.Primitives.PresenceHost>().Single(p => p.Name == "RowPresence"), leavingPresence),
+                "The actual fading host must remain mounted, not just the row's data object.");
             Check(Rows().Length == 1 && Rows()[0].Id == second, "Search must match port.");
             search.Text = "Practice"; Layout();
             Check(Rows().Length == 2 && leaving.IsPresent, "Clearing the filter before exit ends must cancel removal and restore the same row.");
             search.Text = "missing"; Layout();
             Wait(() => page.FindControl<EmptyState>("Empty")!.IsVisible);
             Check(Rows().Length == 0 && page.FindControl<EmptyState>("Empty")!.IsVisible && shell.StartupInstanceId == second, "Filtering must not clear startup identity.");
+            search.Text = ""; Layout();
+            ArcMotion.SetLevel(choices, ArcMotionLevel.Reduced);
+            search.Text = "27016"; Layout();
+            var reducedExit = choices.ContainerFromItem(leaving)!.GetVisualDescendants().OfType<TKCode.Arc.Primitives.PresenceHost>().Single(p => p.Name == "RowPresence");
+            Check(choices.Items.Count == 2 && !reducedExit.IsPresent, "Reduced motion must retain the outgoing card for its short fade.");
+            Wait(() => reducedExit.Opacity is > 0 and < 1);
+            Wait(() => choices.Items.Count == 1);
             search.Text = ""; Layout();
             var retainedSource = choices.ItemsSource;
             var reorder = (AnimatedItemReorder)typeof(InstancesPage).GetField("reorder", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(page)!;
@@ -207,16 +267,35 @@ internal static class InstancesPageTests
             var pill = actions.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Pill");
             var rightEdge = page.FindControl<Grid>("ToolbarSlot")!.TranslatePoint(default, page)!.Value.X +
                             page.FindControl<Grid>("ToolbarSlot")!.Bounds.Width;
-            foreach (var name in new[] { "RefreshButton", "CreateButton", "SortButton" })
+            Check(!actions.ClipToBounds && Enumerable.Range(0, pill.BoxShadow.Count).All(i => pill.BoxShadow[i].OffsetX == 0 && pill.BoxShadow[i].OffsetY == 0),
+                "The pill shadow must be centered and allowed outside the toolbar's stable hit bounds.");
+            foreach (var label in new[] { "名称升序", "名称降序", "运行状态升序", "运行状态降序" })
             {
-                var item = page.FindControl<ExpandingButtonGroupItem>(name)!;
-                var point = item.TranslatePoint(new Point(item.Bounds.Width / 2, item.Bounds.Height / 2), owner)!.Value;
-                owner.MouseMove(point); Layout();
-                Pump(server.RefreshAsync());
-                for (var tick = 0; tick < 4; tick++) { Layout(); Thread.Sleep(5); }
-                Check(actions.ExpandedItem == item && Math.Abs(pill.TranslatePoint(default, page)!.Value.X + pill.Bounds.Width - rightEdge) < 1 &&
-                      pill.Bounds.Width <= actions.Bounds.Width + 1,
-                    "The pill must stay right-aligned and retain its hovered item without width feedback or polling resets.");
+                // Actual menu mapping/order was verified above; isolate label geometry from popup dismissal/focus animations here.
+                page.FindControl<ExpandingButtonGroupItem>("SortButton")!.Label = label;
+                Layout();
+                foreach (var level in new[] { ArcMotionLevel.Off, ArcMotionLevel.Reduced, ArcMotionLevel.Full })
+                {
+                    ArcMotion.SetLevel(actions, level);
+                    search.Focus(); owner.MouseMove(new Point(1, 1)); Layout();
+                    foreach (var name in new[] { "RefreshButton", "CreateButton", "SortButton" })
+                    {
+                        var item = page.FindControl<ExpandingButtonGroupItem>(name)!;
+                        var icon = item.GetVisualDescendants().OfType<Panel>().Single(p => p.Name == "PART_IconBox");
+                        var point = icon.TranslatePoint(new Point(icon.Bounds.Width / 2, icon.Bounds.Height / 2), owner)!.Value;
+                        owner.MouseMove(point); Layout();
+                        Pump(server.RefreshAsync());
+                        for (var tick = 0; tick < (level == ArcMotionLevel.Full ? 40 : 4); tick++)
+                        {
+                            Layout(); Thread.Sleep(8);
+                            Check(actions.ExpandedItem == item && Math.Abs(pill.TranslatePoint(default, page)!.Value.X + pill.Bounds.Width - rightEdge) < 1 &&
+                                  pill.Bounds.Width <= actions.Bounds.Width + 1,
+                                $"Toolbar drift: sort={label}, motion={level}, target={name}, expanded={actions.ExpandedItem?.Name}, tick={tick}, " +
+                                $"right={pill.TranslatePoint(default, page)!.Value.X + pill.Bounds.Width}/{rightEdge}, width={pill.Bounds.Width}/{actions.Bounds.Width}, over={actions.IsPointerOver}, " +
+                                $"pointer={point}, groupAt={actions.TranslatePoint(default, owner)}, groupSize={actions.Bounds.Size}, item={item.Bounds}, hit={owner.GetVisualAt(point)?.GetType().Name}.");
+                        }
+                    }
+                }
             }
             owner.MouseMove(new Point(1, 1)); Layout();
             Check(actions.ExpandedItem == page.FindControl<ExpandingButtonGroupItem>("SortButton"), "Leaving the fixed hit area must restore the current sort label.");
@@ -262,11 +341,35 @@ internal static class InstancesPageTests
             Wait(() => Rows().Length == 3 && Rows().All(r => r.CanEdit));
             Check(shell.StartupInstanceId == second, "Creating another instance must preserve explicit startup selection.");
             var created = Rows().Single(r => r.Name == "Gamma").Item.Entry.Definition!;
+            ArcMotion.SetLevel(choices, ArcMotionLevel.Full);
+            var createdRow = choices.ItemsSource!.Cast<InstanceListRow>().Single(r => r.Id == created.Id);
+            var exitContainer = choices.ContainerFromItem(createdRow);
+            search.Text = "Practice"; Layout();
+            Toolbar("SortButton"); Invoke(Menu("sortMenu"), "名称升序");
+            Check(ReferenceEquals(exitContainer, choices.ContainerFromItem(createdRow)),
+                "Sorting while another row exits must not rebuild its presence container.");
+            Wait(() => choices.Items.Count == 2);
+            search.Text = ""; Layout();
+            var catalogWithCreated = daemon.Catalog;
+            daemon.InstanceListGate = new TaskCompletionSource();
+            Toolbar("RefreshButton");
+            daemon.Catalog = new(daemon.Catalog.Instances.Where(i => i.Id != created.Id).ToArray());
+            var externalRefreshGate = daemon.InstanceListGate;
+            daemon.InstanceListGate = null; externalRefreshGate.SetResult();
+            Wait(() => !loading.IsLoading && Rows().Length == 2);
+            Check(choices.Items.Count == 3 && !createdRow.IsPresent,
+                "Rows removed by a toolbar refresh must also remain mounted for their exit, not disappear during loading.");
+            Wait(() => choices.Items.Count == 2 && !loading.IsResolving);
+            daemon.Catalog = catalogWithCreated;
+            Pump(model.RefreshInstancesAsync()); Layout();
+            createdRow = choices.ItemsSource!.Cast<InstanceListRow>().Single(r => r.Id == created.Id);
             Pump(model.DeleteInstanceAsync(created.Id, created.Revision)); Layout();
+            Check(choices.Items.Count == 3 && !createdRow.IsPresent, "Backend deletion must retain the row until its exit completes.");
+            Wait(() => choices.Items.Count == 2);
 
-            OpenDelete(first); var writes = daemon.InstanceWrites.Count;
+            OpenDelete(first, pointerMenu: true); var writes = daemon.InstanceWrites.Count;
             var deleteSurface = popover.Popup!.Child as PopoverSurface ?? popover.Popup.Child!.GetVisualDescendants().OfType<PopoverSurface>().Single();
-            Check(deleteSurface.Background is ISolidColorBrush { Opacity: < 1 } && hold.Opacity == 1,
+            Check(deleteSurface.Background is ISolidColorBrush { Color.A: 0 } && deleteSurface.Padding == default && hold.Opacity == 1,
                 "Non-glass delete-popover background must be translucent without fading confirmation text.");
             hold.Focus(); SendKey(owner, Key.Space);
             Check(daemon.InstanceWrites.Count == writes, "Early release must not send deletion.");
@@ -281,6 +384,8 @@ internal static class InstancesPageTests
             hold.RaiseEvent(new RoutedEventArgs(HoldToConfirm.ConfirmedEvent)); Layout();
             Wait(() => Rows().Length == 1 && !popover.IsOpen);
             Check(daemon.InstanceWrites.Last().InstanceId == first && shell.StartupInstanceId == second, "Deletion must target captured row, not selected startup.");
+            Check(owner.FindControl<ToastStack>("InstanceNotifications")!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "实例已删除:"),
+                "The deletion notification title must end with a colon.");
             OpenDelete(second); writes = daemon.InstanceWrites.Count;
             daemon.Catalog = new(daemon.Catalog.Instances.Select(i => i with { Definition = i.Definition! with { Revision = i.Definition.Revision + 1 } }).ToArray());
             Pump(model.RefreshInstancesAsync()); Layout();
@@ -297,11 +402,14 @@ internal static class InstancesPageTests
             Invoke(OpenMenu(second), "查看日志");
             var logWindow = owner.OwnedWindows.OfType<ServerLogWindow>().Single(); Check(logWindow.IsVisible, "Logs must open existing owned log window.");
             logWindow.Close(); Layout();
-            daemon.IdleForPresetTests = true; Pump(server.RefreshAsync());
+            daemon.IdleForPresetTests = true;
+            // The catalog is about to become empty: a concurrent fake status poll must not resolve a now-missing run instance with Single().
+            daemon.CfgRunIdentity = false;
+            Pump(server.RefreshAsync());
             Pump(model.DeleteInstanceAsync(second, daemon.Catalog.Instances.Single().Definition!.Revision)); Layout();
             Wait(() => page.FindControl<EmptyState>("Empty")!.IsVisible);
             Check(page.FindControl<EmptyState>("Empty") is { IsVisible: true, Title: "暂无实例" }, "Empty catalog must differ from no search matches.");
-            Console.WriteLine("PASS gui.instances.per-field-staggered-skeleton-exit-presence-subtle-shadows-and-stable-refresh");
+            Console.WriteLine("PASS gui.instances.exit-lifecycle-selection-crossfade-stable-press-and-menu-anchored-delete");
         }
         finally
         {

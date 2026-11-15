@@ -48,6 +48,7 @@ public static class ThemeCatalog
         var resources = new ResourceDictionary
         {
             ["ShellBackground"] = new SolidColorBrush(Color.Parse(palette.Background)),
+            ["FloatingSurfaceBackground"] = new SolidColorBrush(Color.Parse(palette.Raised), 0.8),
             ["SidebarBackground"] = new SolidColorBrush(Color.Parse(palette.Sidebar)),
             ["BackgroundScrim"] = new SolidColorBrush(Color.Parse(palette.Scrim)),
             ["BackdropStartColor"] = Color.Parse(palette.GradientStart),

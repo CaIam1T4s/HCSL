@@ -15,6 +15,7 @@ using HCSL.Host.ViewModels;
 using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
+using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Motion;
 using TKCode.Arc.Primitives;
 
@@ -22,10 +23,14 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class InstancesPage : UserControl
 {
+    private static readonly StyledProperty<double> ShadowGutterProperty =
+        AvaloniaProperty.Register<InstancesPage, double>("ShadowGutter");
     private ShellViewModel? shell;
     private bool operating, refreshing, updating;
     private readonly Dictionary<Guid, InstanceListRow> rows = [];
     private readonly ObservableCollection<InstanceListRow> visibleRows = [];
+    private readonly HashSet<Guid> exitingRows = [];
+    private readonly HashSet<Guid> finishedExits = [];
     private readonly AnimatedItemReorder reorder;
     private InstanceDefinition? pendingDelete;
     private Guid? propertiesId;
@@ -43,13 +48,26 @@ public partial class InstancesPage : UserControl
         CreateButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
         SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowDown);
         ToolbarActions.DefaultExpandedItem = SortButton;
+        LoadingRegion.Resolved += (_, _) => Dispatcher.UIThread.Post(FinishExits);
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         DeletePopover.Closed += (_, _) => { if (!operating) { pendingDelete = null; DeleteConfirm.IsConfirmed = false; } };
         PropertiesPopover.Closed += (_, _) => propertiesId = null;
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => { Unsubscribe(); CloseOverlays(); };
-        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays(); };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && !IsVisible) CloseOverlays();
+            if (e.Property == ShadowGutterProperty)
+            {
+                // Keep rows aligned with the toolbar, while reserving space inside both the scroll viewport
+                // and SkeletonMorph's animated clipping shell for their soft shadows and keyboard focus rings.
+                var gutter = GetValue(ShadowGutterProperty);
+                LoadingRegion.Margin = new Thickness(-gutter);
+                InstanceChoices.Margin = new Thickness(gutter);
+            }
+        };
+        ArcTokens.Bind(this, ShadowGutterProperty, ArcDesignTokenKind.Space8);
     }
 
     private void CloseOverlays()
@@ -119,23 +137,39 @@ public partial class InstancesPage : UserControl
             };
             var next = ordered.ThenBy(r => r.Id).ToArray();
             // Cancelled exits (filter cleared / refresh returned the row) reuse the same row and container.
-            foreach (var row in next) row.SetPresent(true);
+            foreach (var row in next)
+            {
+                exitingRows.Remove(row.Id);
+                finishedExits.Remove(row.Id);
+                row.SetPresent(true);
+            }
             var desired = next.ToList();
             foreach (var row in visibleRows.Where(r => !next.Contains(r)).ToArray())
             {
                 var container = InstanceChoices.ContainerFromItem(row) as Control;
                 var presence = container?.GetVisualDescendants()
                     .OfType<PresenceHost>().FirstOrDefault(p => p.Name == "RowPresence");
-                if (!refreshing && IsEffectivelyVisible && presence is { IsLoaded: true } &&
-                    ArcMotion.GetEffectiveLevel(presence) == ArcMotionLevel.Full)
+                if (IsEffectivelyVisible && presence is { IsLoaded: true } &&
+                    ArcMotion.GetEffectiveLevel(presence) != ArcMotionLevel.Off)
                 {
-                    // PresenceHost's default Collapse=None fades in place, so remaining rows keep their geometry
-                    // until the exit completes; the container is never given a sticky local height.
+                    // Full scales/fades and Reduced fades. Refresh removals follow the same exit lifecycle.
+                    // Retain by completion, not an instantaneous Progress sample while bindings are updating.
+                    exitingRows.Add(row.Id);
                     row.SetPresent(false);
-                    if (presence.Progress > 0)
-                        desired.Insert(Math.Min(visibleRows.IndexOf(row), desired.Count), row);
+                    desired.Insert(Math.Min(visibleRows.IndexOf(row), desired.Count), row);
                 }
-                else row.SetPresent(false);
+                else
+                {
+                    exitingRows.Remove(row.Id);
+                    finishedExits.Remove(row.Id);
+                    row.SetPresent(false);
+                }
+            }
+            if (exitingRows.Count > 0)
+            {
+                // Move can rebuild ItemsControl containers: keep existing order until all exits finish,
+                // otherwise a freshly mounted IsPresent=false host skips the animation entirely.
+                desired = visibleRows.Where(desired.Contains).Concat(desired.Where(r => !visibleRows.Contains(r))).ToList();
             }
             if (!desired.SequenceEqual(visibleRows))
             {
@@ -165,14 +199,31 @@ public partial class InstancesPage : UserControl
 
     private void RowExited(object? sender, EventArgs e)
     {
-        if (sender is not PresenceHost { DataContext: InstanceListRow row }) return;
+        if (sender is not PresenceHost { DataContext: InstanceListRow row } presence) return;
         Dispatcher.UIThread.Post(() =>
         {
-            if (row.IsPresent || !visibleRows.Contains(row)) return;
-            reorder.Capture();
-            visibleRows.Remove(row);
-            Update();
+            // A queued completion from an earlier exit must not remove a row that was restored and is exiting again.
+            if (row.IsPresent || presence.IsPresent || presence.Progress > 0 || !visibleRows.Contains(row)) return;
+            finishedExits.Add(row.Id);
+            FinishExits();
         });
+    }
+
+    private void FinishExits()
+    {
+        // Arc's skeleton region counts resolving blocks, but Unregister does not settle that count.
+        // Keep faded rows attached until their block callbacks have completed, or IsResolving can stick forever.
+        if (LoadingRegion.IsLoading || LoadingRegion.IsResolving || finishedExits.Count == 0) return;
+        var finished = visibleRows.Where(r => !r.IsPresent && finishedExits.Contains(r.Id)).ToArray();
+        if (finished.Length == 0) return;
+        reorder.Capture();
+        foreach (var row in finished)
+        {
+            exitingRows.Remove(row.Id);
+            finishedExits.Remove(row.Id);
+            visibleRows.Remove(row);
+        }
+        Update();
     }
 
     private void StartupSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -261,11 +312,7 @@ public partial class InstancesPage : UserControl
             if (!IsVisible || !rows.TryGetValue(row.Id, out var current) || !container.IsAttachedToVisualTree()) return;
             propertiesId = row.Id;
             PropertiesCard.DataContext = current;
-            var origin = menuOrigin ?? container.TranslatePoint(default, PropertyAnchorLayer) ?? default;
-            Canvas.SetLeft(PropertiesAnchor, origin.X);
-            Canvas.SetTop(PropertiesAnchor, origin.Y - PropertiesAnchor.Height);
-            PropertyAnchorLayer.UpdateLayout();
-            PropertiesPopover.ShowAt(PropertiesAnchor);
+            ShowAtMenuOrigin(PropertiesPopover, PropertiesAnchor, container, menuOrigin);
         }), true);
         Entry("删除实例", LucideIconKind.Trash, nameof(row.CanEdit), () => Dispatcher.UIThread.Post(() =>
         {
@@ -278,9 +325,18 @@ public partial class InstancesPage : UserControl
             pendingDelete = target;
             DeleteConfirm.IsConfirmed = false;
             AutomationProperties.SetName(DeleteConfirm, "长按删除实例：" + target.Name);
-            DeletePopover.ShowAt(container);
+            ShowAtMenuOrigin(DeletePopover, DeleteAnchor, container, menuOrigin);
         }), true, true);
         menu.Open(container);
+    }
+
+    private void ShowAtMenuOrigin(Popover popover, Border anchor, Control container, Point? menuOrigin)
+    {
+        var origin = menuOrigin ?? container.TranslatePoint(default, PropertyAnchorLayer) ?? default;
+        Canvas.SetLeft(anchor, origin.X);
+        Canvas.SetTop(anchor, origin.Y - anchor.Height);
+        PropertyAnchorLayer.UpdateLayout();
+        popover.ShowAt(anchor);
     }
 
     private InstanceDefinition? Current(Guid id) => Model?.Instances.FirstOrDefault(i => i.Entry.Id == id)?.Entry.Definition;
@@ -356,7 +412,7 @@ public partial class InstancesPage : UserControl
         if (!model.CanCreate || Current(target.Id)?.Revision != target.Revision)
         {
             DeleteConfirm.IsConfirmed = false;
-            Error("删除未提交", "实例或宿主状态已变化，请重新打开删除菜单。");
+            Error("删除未提交:", "实例或宿主状态已变化，请重新打开删除菜单。");
             return;
         }
         operating = true; DeleteConfirm.IsEnabled = false; Update();
@@ -364,13 +420,13 @@ public partial class InstancesPage : UserControl
         {
             if (!await model.DeleteInstanceAsync(target.Id, target.Revision))
             {
-                Error("删除失败", model.Error);
+                Error("删除失败:", model.Error);
                 DeleteConfirm.IsConfirmed = false;
                 return;
             }
             DeletePopover.IsOpen = false;
             pendingDelete = null;
-            Owner?.ShowInstanceNotification("实例已删除", target.Name, ToastKind.Success);
+            Owner?.ShowInstanceNotification("实例已删除:", target.Name, ToastKind.Success);
         }
         finally { operating = false; DeleteConfirm.IsEnabled = true; DeleteConfirm.IsConfirmed = false; Update(); }
     }

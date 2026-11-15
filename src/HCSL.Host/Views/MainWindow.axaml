@@ -1,4 +1,4 @@
-<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
+<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto" Background="Transparent">
       <arc:TitleBar.LeftContent>
@@ -42,7 +42,7 @@
               </arc:SidebarSection>
               <arc:Sidebar.Footer>
               <StackPanel Spacing="8" Margin="0,16,0,0">
-                <arc:ThemeSwitcher x:Name="SidebarThemeSwitcher" Variant="Reveal"
+                <arc:ThemeSwitcher x:Name="SidebarThemeSwitcher" Variant="Reveal" IsVisible="False"
                                    Text="切换到深色模式" ThemeChangeRequested="SidebarThemeRequested"/>
                 <TextBlock Text="● 开发预览" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}" Margin="12,0,0,0"/>
               </StackPanel>
@@ -58,11 +58,18 @@
           <pages:SettingsPage IsVisible="{Binding IsSettings}"/>
         </Grid>
       </Grid>
-    <Border x:Name="DialogOverlay" IsVisible="False" Background="{arc:ArcDesignTokenResource Scrim}">
-      <Border Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="640" MaxHeight="620">
-        <ScrollViewer><ContentControl x:Name="DialogContent"/></ScrollViewer>
-      </Border>
-    </Border>
     <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight"/>
   </Grid>
+  <controls:WindowModalLayer.Content>
+    <Border x:Name="DialogOverlay" IsVisible="False" Background="{arc:ArcDesignTokenResource Scrim}"
+            KeyboardNavigation.TabNavigation="Cycle">
+      <Border x:Name="DialogSurface" Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="640" MaxHeight="620">
+        <!-- ScrollViewer.Padding shrinks its clipped presenter. Put the gutter INSIDE the scroll content instead.
+             Matching negative margin preserves the form's position and width, with room for every control's floating shadow. -->
+        <ScrollViewer Margin="-32" Padding="0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ContentControl x:Name="DialogContent" Padding="32" HorizontalContentAlignment="Stretch"/>
+        </ScrollViewer>
+      </Border>
+    </Border>
+  </controls:WindowModalLayer.Content>
 </arc:ArcWindow>

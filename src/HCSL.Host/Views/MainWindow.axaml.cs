@@ -79,17 +79,37 @@ public partial class MainWindow : ArcWindow
     }
     public async Task<bool> EditInstanceAsync(InstanceDefinition? original, Func<HCSL.Frontend.HostInstanceDraft, Task<string?>> save, bool nameOnly = false)
     {
-        var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(new TextBlock { Text = original is null ? "创建实例" : nameOnly ? "重命名实例" : "编辑实例", FontSize = 20 });
-        var name = new Input { Text = original?.Name ?? "", PlaceholderText = "实例名称（1–80 字符）" };
-        var port = new Input { Text = (original?.GamePort ?? 27015).ToString(), PlaceholderText = "游戏端口" };
-        var address = new Input { Text = (DataContext as ShellViewModel)?.Servers.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知，请刷新实例列表", IsReadOnly = true };
-        var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        void Field(string label, Control field) { content.Children.Add(new TextBlock { Text = label }); content.Children.Add(field); }
-        Field("实例名称", name);
-        if (!nameOnly)
+        var content = new StackPanel();
+        content.Classes.Add("instance-editor");
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var heading = new StackPanel { Spacing = 4 };
+        heading.Children.Add(new TextBlock { Text = original is null ? "创建实例" : nameOnly ? "重命名实例" : "编辑实例", FontSize = 20 });
+        heading.Children.Add(new TextBlock { Text = nameOnly ? "设置新的实例名称。" : "设置实例名称和游戏端口。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        header.Children.Add(heading);
+        var close = new TKCode.Arc.Button { Content = "×", Variant = ButtonVariant.Ghost, Width = 32, Height = 32,
+            MinWidth = 0, MinHeight = 0, Padding = default, FontSize = 20 };
+        Avalonia.Automation.AutomationProperties.SetName(close, "关闭对话框");
+        close.Click += (_, _) =>
         {
-            Field("游戏端口", port); Field("本机连接地址（自动识别，只读）", address);
+            if (ReferenceEquals(DialogContent.Content, content)) prompt?.TrySetResult(0);
+        };
+        var closeSurface = new ElevatedSurface(close) { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(12, 0, 0, 0) };
+        Grid.SetColumn(closeSurface, 1);
+        header.Children.Add(closeSurface);
+        content.Children.Add(header);
+        var divider = new Border { Margin = new Thickness(-24, 0, -24, 0) };
+        divider.Classes.Add("instance-editor-divider");
+        content.Children.Add(divider);
+        var name = new Input { Text = original?.Name ?? "", Label = "实例名称（1–80 字符）", IsLabelVisible = false, MaxLength = 80, PlaceholderText = "实例名称（1–80 字符）" };
+        var port = new Input { Text = original?.GamePort.ToString() ?? "", Label = "端口", IsLabelVisible = false, PlaceholderText = "端口" };
+        var error = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap, IsVisible = false };
+        void Field(string label, Control field) { content.Children.Add(new TextBlock { Text = label }); content.Children.Add(field); }
+        content.Children.Add(new ElevatedSurface(name));
+        if (!nameOnly) content.Children.Add(new ElevatedSurface(port));
+        if (original is not null && !nameOnly)
+        {
+            var address = new Input { Text = (DataContext as ShellViewModel)?.Servers.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知，请刷新实例列表", IsReadOnly = true };
+            Field("本机连接地址（自动识别，只读）", address);
             content.Children.Add(new TextBlock { Text = "本机网卡地址仅供连接参考，不保证可达或限制访问。127.0.0.1 仅供本机客户端使用；访问控制请配置防火墙。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
         }
         content.Children.Add(error);
@@ -103,8 +123,9 @@ public partial class MainWindow : ArcWindow
                 var failure = await save(draft);
                 if (failure is null) return true;
                 error.Text = failure;
+                error.IsVisible = true;
             }
-            catch (InstanceException e) { error.Text = e.Code + ": " + e.Message; }
+            catch (InstanceException e) { error.Text = e.Code + ": " + e.Message; error.IsVisible = true; }
         }
         return false;
     }
@@ -135,13 +156,24 @@ public partial class MainWindow : ArcWindow
     {
         var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         prompt = completion;
-        var buttons = new WrapPanel { Orientation = Orientation.Horizontal };
+        var isInstanceEditor = content.Classes.Contains("instance-editor");
+        DialogSurface.Width = isInstanceEditor ? 320 : double.NaN;
+        DialogSurface.MaxWidth = isInstanceEditor ? 320 : 640;
+        var buttons = new WrapPanel { Orientation = Orientation.Horizontal,
+            HorizontalAlignment = isInstanceEditor ? HorizontalAlignment.Right : HorizontalAlignment.Left };
+        TKCode.Arc.Button? firstButton = null;
         for (var i = 0; i < choices.Length; i++)
         {
             var index = i;
-            var button = new TKCode.Arc.Button { Content = choices[i], Variant = ButtonVariant.Secondary, Margin = new Avalonia.Thickness(0, 0, 8, 8) };
+            var isSave = isInstanceEditor && i == choices.Length - 1;
+            var button = new TKCode.Arc.Button { Content = choices[i], Variant = isSave ? ButtonVariant.Primary : ButtonVariant.Secondary,
+                IsDefault = isSave, Margin = isInstanceEditor ? default : new Thickness(0, 0, 8, 8) };
+            if (isSave) button.Classes.Add("instance-save");
+            firstButton ??= button;
             button.Click += (_, _) => completion.TrySetResult(index);
-            buttons.Children.Add(button);
+            if (isInstanceEditor) buttons.Children.Add(new ElevatedSurface(button) { Height = 32, VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(i == 0 ? 0 : 8, 8, 0, 0) });
+            else buttons.Children.Add(button);
         }
         content.Children.Add(buttons);
         DialogContent.Content = content; DialogOverlay.IsVisible = true; ShellContent.IsEnabled = false;
@@ -149,7 +181,11 @@ public partial class MainWindow : ArcWindow
         // them while an in-window confirmation is active so it cannot be obscured.
         PromptVisibilityChanged?.Invoke(true);
         Activate();
-        buttons.Children.FirstOrDefault()?.Focus();
+        var initialFocus = isInstanceEditor ? content.GetVisualDescendants().OfType<Input>().FirstOrDefault() as Control : firstButton;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (ReferenceEquals(prompt, completion)) initialFocus?.Focus();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
         try { return await completion.Task; }
         finally
         {

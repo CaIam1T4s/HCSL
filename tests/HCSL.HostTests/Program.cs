@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -11,13 +13,18 @@ using HCSL.Host.Services;
 using HCSL.Host.ViewModels;
 using HCSL.Host.Views;
 using HCSL.UI.Shared.Styles.Themes;
+using HCSL.UI.Shared.Controls;
 using System.Text.Json;
 using TKCode.Arc;
 
 // Real Arc templates, fake IPC only: no desktop, Steam, files, daemon or CS2 process.
 var only = ParseOnly(args);
-AppBuilder.Configure<HCSL.Host.App>().UseHeadless(new AvaloniaHeadlessPlatformOptions())
-    .UseArc(a => a.UseArcControls().UseArcBlocks().UseArcSpecial().WithTheme(t => t.Appearance(ArcAppearance.Dark).Preset(ThemeCatalog.ArcPreset)))
+var appBuilder = AppBuilder.Configure<HCSL.Host.App>().UseHeadless(new AvaloniaHeadlessPlatformOptions
+{
+    UseHeadlessDrawing = only != "theme-raster"
+});
+if (only == "theme-raster") appBuilder.UseSkia();
+appBuilder.UseArc(a => a.UseArcControls().UseArcBlocks().UseArcSpecial().WithTheme(t => t.Appearance(ArcAppearance.Dark).Preset(ThemeCatalog.ArcPreset)))
     .SetupWithoutStarting();
 if (only is "input")
 {
@@ -37,6 +44,11 @@ var owner = new MainWindow
     DataContext = new ShellViewModel(new ThemeService(Avalonia.Application.Current!), steam, model, baseline)
 };
 owner.Show();
+if (only == "theme-raster")
+{
+    ThemeRasterIsolationTests.Run(owner, daemon, model, server);
+    return 0;
+}
 Layout();
 if (only is null or "background")
 {
@@ -103,7 +115,9 @@ if (only is null or "background")
     Check(tint.R == neutral.R && tint.G == neutral.G && tint.B == neutral.B && tint.A < 255,
         $"Arc frost must follow the neutral theme surface: tint={tint}, neutral={neutral}, opacity={material.TintOpacity}.");
     ArcTheme.Apply(t => t.Appearance(ArcAppearance.Dark)); Layout();
-    var themeButton = owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.GetVisualDescendants()
+    var themeSwitcher = owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!;
+    themeSwitcher.ApplyTemplate(); // The hidden entry is not materialized by ordinary layout.
+    var themeButton = themeSwitcher.GetVisualDescendants()
         .OfType<TKCode.Arc.Button>().Single(b => b.Name == "PART_Button");
     Check(themeButton.Background is Avalonia.Media.ISolidColorBrush { Opacity: > 0, Color.A: > 0 } themeSurface &&
           (themeSurface.Opacity < 1 || themeSurface.Color.A < 255) && themeButton.Opacity == 1,
@@ -140,8 +154,9 @@ if (only is null or "sidebar")
     Check(sidebar.Sections.Count == 2 && sidebar.Sections[0].Items.Count == 4 && sidebar.Sections[1].Items.Count == 1,
         "The sidebar must preserve server and general navigation groups.");
     Check(sidebar.Header is not null && sidebar.Footer is not null &&
-          owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.IsEffectivelyVisible,
-        "The account header and theme-switching footer must remain visible.");
+          !owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.IsVisible &&
+          !owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!.IsEffectivelyVisible,
+        "The account header/footer must remain, while the snapshot-based theme entry stays hidden.");
     foreach (var page in shell.Pages)
     {
         shell.NavigateCommand.Execute(page.Id); Layout();
@@ -166,6 +181,11 @@ if (only is null or "instances")
 {
     InstancesPageTests.Run(owner, daemon, model, server);
     if (only is "instances") return 0;
+}
+if (only is null or "theme-transition")
+{
+    ThemeTransitionIsolationTests.Run(owner);
+    if (only is "theme-transition") return 0;
 }
 if (only is "home")
 {
@@ -330,8 +350,10 @@ for (var attempt = 0; attempt < 2; attempt++)
     queryInput.Focus();
     var disabledDuringSend = false;
     queryInput.PropertyChanged += (_, e) => { if (e.Property.Name == "IsEnabled" && !queryInput.IsEnabled) disabledDuringSend = true; };
-    log.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(b => Equals(b.Content, "发送命令"))
-        .RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    var sendConsole = log.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(b => Equals(b.Content, "发送命令"));
+    Check(model.Server.CanSendConsole && sendConsole.IsEnabled,
+        $"Console fixture not writable: state={server.State}, active={server.Active}, connected={server.Connected}, status={server.ConsoleStatus}");
+    sendConsole.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
     WaitUntil(() => model.Server.ConsoleStatus.Contains("HCSL-CONSOLE-WRITTEN"));
     Check(model.Server.Active && daemon.Queries == attempt + 1, "GUI query must reach IPC without stopping the run.");
     Layout();
@@ -441,13 +463,44 @@ var editor = owner.EditInstanceAsync(null, draft =>
 });
 Layout();
 var inputs = owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<TKCode.Arc.Input>().ToArray();
-Check(inputs.Length == 3, "Instance form must contain name, port and address fields.");
+Check(inputs.Length == 2 && string.IsNullOrEmpty(inputs[1].Text), "Creation must show only name and initially empty port fields.");
+var dialogSurface = owner.FindControl<Border>("DialogSurface")!;
+var dialogOverlay = owner.FindControl<Border>("DialogOverlay")!;
+var modalPresenter = owner.GetVisualDescendants().OfType<ContentPresenter>().Single(p => p.Name == "PART_ModalPresenter");
+Check(dialogSurface.Bounds.Width == 320 && dialogSurface.Background is Avalonia.Media.ISolidColorBrush { Opacity: 0.8 },
+    "Instance editor must use a half-width, 80%-opaque material without fading its foreground.");
+Check(WindowModalLayer.GetIsOpen(owner) && modalPresenter.IsVisible &&
+      !modalPresenter.GetVisualAncestors().OfType<VisualLayerManager>().Any() &&
+      dialogOverlay.TranslatePoint(default, owner) == new Point(0, 0) && dialogOverlay.Bounds.Size == owner.ClientSize,
+    "Modal scrim must cover the full client including title chrome, above the transient layer manager.");
+var form = (StackPanel)owner.FindControl<ContentControl>("DialogContent")!.Content!;
+Check(form.Spacing == 12, "Form spacing must use Space3 (12px), not Space16 (64px).");
+var formButtons = form.GetVisualDescendants().OfType<TKCode.Arc.Button>().Where(b => b.Content is "取消" or "保存").ToArray();
+Check(formButtons.Length == 2 && formButtons.All(b => b.Bounds.Height == 32 && b.BorderThickness == default) &&
+      formButtons.Single(b => Equals(b.Content, "保存")).Variant == ButtonVariant.Primary,
+    "Save and cancel must have equal 32px heights, no frame stroke, and a primary save action.");
+Check(inputs.All(input => input.GetVisualDescendants().OfType<FieldFrame>().Single(f => f.Name == "PART_Frame").BorderThickness == default),
+    "Editor fields must use shadow emphasis instead of an outlined frame.");
+var viewport = owner.FindControl<ContentControl>("DialogContent")!.GetVisualAncestors().OfType<ScrollContentPresenter>().First();
+foreach (var elevated in form.GetVisualDescendants().OfType<ElevatedSurface>())
+{
+    var origin = elevated.TranslatePoint(default, viewport)!.Value;
+    Check(origin.X >= 31.9 && origin.Y >= 31.9 &&
+          origin.X + elevated.Bounds.Width <= viewport.Bounds.Width - 31.9 &&
+          origin.Y + elevated.Bounds.Height <= viewport.Bounds.Height - 31.9,
+        $"Control shadow must have a real 32px viewport gutter, not ScrollViewer.Padding: {elevated.Bounds}, origin={origin}, viewport={viewport.Bounds}.");
+}
+inputs[0].Focus(); Layout();
+var nameElevation = (ElevatedSurface)inputs[0].GetVisualParent()!;
+WaitUntil(() => nameElevation.Children.OfType<Border>().Single(b => b.Classes.Contains("surface-active-shadow")).Opacity == 1);
+Check(nameElevation.Children.OfType<Border>().Single(b => b.Classes.Contains("surface-resting-shadow")).Opacity == 0,
+    "Focus styles must override resting shadow opacity; no sticky local opacity values.");
 inputs[0].Text = "New instance"; inputs[1].Text = "not-a-port";
 Click(owner, "保存");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("HCSL-INSTANCE-PORT") == true));
 Check(saveCalls == 0 && !editor.IsCompleted, "Invalid input must retain the dialog without saving.");
 inputs[1].Text = "27017";
-Check(inputs[2].IsReadOnly, "Automatically detected address must be read-only.");
+Check(inputs.All(input => !input.IsReadOnly), "Creation must not include the read-only address field.");
 Check(!owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Any(s => s.ItemsSource is string[]), "Instance form must not imply a bind/isolation mode.");
 Click(owner, "保存");
 PumpUntil(editor);
@@ -457,7 +510,11 @@ Layout();
 Click(owner, "取消");
 PumpUntil(cancelEditor);
 Check(!cancelEditor.Result && saveCalls == 1, "Cancelled editor must not save.");
-Console.WriteLine("PASS gui.instances.editor-validation-readonly-address-save-and-cancel");
+var closeEditor = owner.EditInstanceAsync(null, _ => { saveCalls++; return Task.FromResult<string?>(null); });
+Layout(); Click(owner, "×"); PumpUntil(closeEditor);
+Check(!closeEditor.Result && saveCalls == 1 && !WindowModalLayer.GetIsOpen(owner) && !modalPresenter.IsVisible,
+    "The top-right close action must cancel without saving and fully release the modal layer.");
+Console.WriteLine("PASS gui.instances.editor-two-inputs-empty-port-equal-actions-shadow-gutters-modal-layer-save-and-cancel");
 var presetCalls = 0;
 PresetDefinition? savedPreset = null;
 var presetEditor = owner.EditPresetAsync("新建配置预设", null, false, draft =>

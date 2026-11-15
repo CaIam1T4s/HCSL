@@ -30,6 +30,11 @@
               </VisualLayerManager>
             </Grid>
           </Border>
+          <!-- The modal plane is outside the layer manager: its scrim covers title chrome, menus, popovers and toasts. -->
+          <ContentPresenter Name="PART_ModalPresenter" ZIndex="1"
+                            IsVisible="{Binding (controls:WindowModalLayer.IsOpen), RelativeSource={RelativeSource TemplatedParent}}"
+                            Content="{Binding (controls:WindowModalLayer.Content), RelativeSource={RelativeSource TemplatedParent}}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
         </Panel>
       </ControlTemplate>
     </Setter>
@@ -46,11 +51,12 @@
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
   </Style>
-  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions arc|ExpandingButtonGroupItem:expanded">
+  <!-- Tint the template surface, not the action's spring/brush-transition source property. -->
+  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions arc|ExpandingButtonGroupItem:expanded /template/ Border#PART_Body">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.55}"/>
   </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|Popover.launch-configuration arc|PopoverSurface">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.82}"/>
+    <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
   </Style>
   <Style Selector="TextBlock.instance-subtitle">
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
@@ -202,7 +208,60 @@
   <Style Selector="Border.dialog-overlay">
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Scrim}"/>
   </Style>
+  <!-- Only the material is translucent. Foregrounds, shadow layers and modal scrims retain their own opacity. -->
+  <Style Selector="arc|DialogSurface, arc|DrawerSurface, arc|PopoverSurface, arc|MenuSurface, arc|Toast, arc|Tooltip">
+    <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
+  </Style>
+  <Style Selector=".elevated-surface Border.surface-shadow">
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusPill}"/>
+    <Setter Property="arc:ArcMotion.Tracks" Value="True"/>
+    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
+  </Style>
+  <Style Selector=".elevated-surface Border.surface-active-shadow">
+    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
+  </Style>
+  <Style Selector=".elevated-surface:focus-within Border.surface-resting-shadow">
+    <Setter Property="Opacity" Value="0"/>
+  </Style>
+  <Style Selector=".elevated-surface:focus-within Border.surface-active-shadow">
+    <Setter Property="Opacity" Value="1"/>
+  </Style>
+  <Style Selector=".elevated-surface Border.surface-shadow:motion-full">
+    <Setter Property="Transitions"><Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions></Setter>
+  </Style>
+  <Style Selector=".elevated-surface Border.surface-shadow:motion-reduced">
+    <Setter Property="Transitions"><Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions></Setter>
+  </Style>
+  <Style Selector="StackPanel.instance-editor">
+    <Setter Property="MinWidth" Value="0"/>
+    <Setter Property="Spacing" Value="{arc:ArcDesignTokenResource Space3}"/>
+  </Style>
+  <Style Selector="StackPanel.instance-editor arc|Input /template/ arc|FieldFrame#PART_Frame">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector="StackPanel.instance-editor arc|Button">
+    <Setter Property="Size" Value="Small"/>
+    <Setter Property="MinHeight" Value="32"/>
+    <Setter Property="Height" Value="32"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector="StackPanel.instance-editor arc|Button[Variant=Secondary]">
+    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+  </Style>
+  <Style Selector="StackPanel.instance-editor arc|Button.instance-save">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
+  </Style>
+  <Style Selector="Border.instance-editor-divider">
+    <!-- EdgeThickness is a Thickness token, not a scalar Height. -->
+    <Setter Property="Height" Value="1"/>
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Border}"/>
+  </Style>
   <Style Selector="Border.dialog-surface">
+    <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
     <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusSurface}"/>
     <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
   </Style>
