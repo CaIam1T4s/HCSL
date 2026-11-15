@@ -5,7 +5,7 @@ using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 
-namespace HCSL.UI.Shared.Services;
+namespace HCSL.UI.Diagnostics;
 
 public enum ThemeEffectIsolationMode { None, Shadows, All }
 

@@ -3,7 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using TKCode.Arc;
 
-namespace HCSL.UI.Shared.Services;
+namespace HCSL.UI.Diagnostics;
 
 /// <summary>Opt-in A/B modes for diagnosing theme snapshots; Normal preserves Arc's original transition.</summary>
 public enum ThemeTransitionMode { Normal, Observe, Direct, Settled }

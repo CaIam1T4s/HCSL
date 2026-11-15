@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/HCSL.Host/HCSL.Host.csproj" />
+    <ProjectReference Include="../../build/HCSL.UI.Diagnostics/HCSL.UI.Diagnostics.csproj" />
     <PackageReference Include="Avalonia.Headless" Version="12.1.5" />
   </ItemGroup>
 </Project>

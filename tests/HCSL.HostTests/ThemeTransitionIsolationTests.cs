@@ -4,8 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.Threading;
 using HCSL.Host.Views;
-using HCSL.Host.ViewModels;
-using HCSL.UI.Shared.Services;
+using HCSL.UI.Diagnostics;
 using TKCode.Arc;
 
 internal static class ThemeTransitionIsolationTests
@@ -19,12 +18,6 @@ internal static class ThemeTransitionIsolationTests
               ThemeTransitionIsolation.ParseMode(" settled ") == ThemeTransitionMode.Settled,
             "Isolation is opt-in; unknown configuration must preserve the original Arc transition.");
         CheckEffectRestoration();
-        var sourceShadow = BoxShadows.Parse("2 8 20 -2 #90000000");
-        var centered = CenteredShadow.Center(sourceShadow);
-        Check(centered.Count == sourceShadow.Count && centered[0].OffsetX == 0 && centered[0].OffsetY == 0 &&
-              centered[0].Blur == sourceShadow[0].Blur && centered[0].Spread == sourceShadow[0].Spread &&
-              centered[0].Color == sourceShadow[0].Color,
-            "Centered elevation must retain token blur/spread/color rather than inventing an appearance.");
         var original = ArcTheme.State.Appearance;
         var requested = Application.Current!.RequestedThemeVariant;
         var trigger = owner.FindControl<ThemeSwitcher>("SidebarThemeSwitcher")!;
@@ -55,30 +48,18 @@ internal static class ThemeTransitionIsolationTests
                     Check(stages.SequenceEqual(expected), "Diagnostic checkpoints must distinguish snapshot bypass from settled-layout capture.");
                 }
             }
-            var shell = (ShellViewModel)owner.DataContext!;
-            var originalSelection = shell.SelectedTheme;
-            var environment = Environment.GetEnvironmentVariable("HCSL_THEME_TRANSITION");
             var stderr = Console.Error;
             using var diagnostic = new StringWriter();
             try
             {
-                Environment.SetEnvironmentVariable("HCSL_THEME_TRANSITION", "direct");
                 Console.SetError(diagnostic);
-                var next = originalSelection == "浅色" ? ThemeSwitcherAppearance.Dark : ThemeSwitcherAppearance.Light;
-                var request = new ThemeSwitcherChangeRequestedEventArgs(ThemeSwitcher.ThemeChangeRequestedEvent,
-                    next, ThemeSwitcherVariant.Reveal, trigger, default);
-                trigger.RaiseEvent(request);
-                Layout();
-                Check(request.Handled && shell.SelectedTheme == (next == ThemeSwitcherAppearance.Dark ? "深色" : "浅色") &&
-                      diagnostic.ToString().Contains("mode=Direct") && diagnostic.ToString().Contains("phase=complete"),
-                    "The actual sidebar handler must honor the opt-in mode and produce geometry checkpoints.");
+                var windowDiagnostics = new ThemeWindowDiagnostics(owner);
+                Pump(ThemeTransitionIsolation.RunAsync(trigger, ThemeSwitcherVariant.Reveal, () => Task.CompletedTask,
+                    ThemeTransitionMode.Direct, phase => windowDiagnostics.LogGeometry(ThemeTransitionMode.Direct, phase)));
+                Check(diagnostic.ToString().Contains("mode=Direct") && diagnostic.ToString().Contains("phase=complete"),
+                    "Tool-owned geometry checkpoints must remain available without installing a product handler.");
             }
-            finally
-            {
-                Console.SetError(stderr);
-                Environment.SetEnvironmentVariable("HCSL_THEME_TRANSITION", environment);
-                shell.SelectedTheme = originalSelection;
-            }
+            finally { Console.SetError(stderr); }
             Console.WriteLine("PASS gui.theme.isolation-observe-direct-settled-normal-flow (headless; not a rendered Reveal/DPI verification)");
         }
         finally

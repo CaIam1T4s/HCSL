@@ -20,6 +20,7 @@
   <Project Path="tests/HCSL.InstanceTests/HCSL.InstanceTests.csproj" />
   <Folder Name="/build/">
     <Project Path="build/HCSL.Dev/HCSL.Dev.csproj" />
+    <Project Path="build/HCSL.UI.Diagnostics/HCSL.UI.Diagnostics.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">

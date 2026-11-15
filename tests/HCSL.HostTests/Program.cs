@@ -182,10 +182,21 @@ if (only is null or "instances")
     InstancesPageTests.Run(owner, daemon, model, server);
     if (only is "instances") return 0;
 }
-if (only is null or "theme-transition")
+if (only is null or "shadow")
+{
+    CenteredShadowTests.Run();
+    if (only is "shadow") return 0;
+}
+if (only is null or "theme")
+{
+    ThemeSwitchingTests.Run(owner);
+    if (only is "theme") return 0;
+}
+// Development-only diagnostics are explicitly requested, never part of the product switching path.
+if (only is "theme-transition")
 {
     ThemeTransitionIsolationTests.Run(owner);
-    if (only is "theme-transition") return 0;
+    return 0;
 }
 if (only is "home")
 {
@@ -838,7 +849,7 @@ if (only is "start") return 0;
 
 if (only is not null)
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, logs, forms, presets, pools, plugins, cfg, maps, start, errors or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, background, sidebar, instances, shadow, theme, theme-transition, theme-raster, home, logs, forms, presets, pools, plugins, frameworks, cfg, maps, start, errors or all.");
     return 2;
 }
 return 0;

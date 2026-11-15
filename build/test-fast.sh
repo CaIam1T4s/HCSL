@@ -3,6 +3,10 @@
 #
 #   ./build/test-fast.sh server maps      # build ServerTests, run --only maps
 #   ./build/test-fast.sh host cfg         # build HostTests, run --only cfg
+#   ./build/test-fast.sh host theme       # normal product switching and diagnostic-isolation guard
+#   ./build/test-fast.sh host shadow      # normal centered-shadow regression
+#   ./build/test-fast.sh host theme-transition # opt-in development transition diagnostics
+#   ./build/test-fast.sh host theme-raster # opt-in CPU Skia captures; writes visible content under /tmp
 #   ./build/test-fast.sh tui              # build + run TuiTests
 #   ./build/test-fast.sh deployment
 #   ./build/test-fast.sh full             # build solution, run every test project

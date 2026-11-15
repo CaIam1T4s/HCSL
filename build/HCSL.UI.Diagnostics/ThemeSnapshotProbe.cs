@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 
-namespace HCSL.UI.Shared.Services;
+namespace HCSL.UI.Diagnostics;
 
 /// <summary>Independent renders using Arc's capture formula; these are not the private bitmap owned by Arc.</summary>
 public static class ThemeSnapshotProbe

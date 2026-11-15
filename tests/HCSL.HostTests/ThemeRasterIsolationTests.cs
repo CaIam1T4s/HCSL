@@ -9,7 +9,7 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using HCSL.Host.Views;
-using HCSL.UI.Shared.Services;
+using HCSL.UI.Diagnostics;
 using TKCode.Arc;
 using TKCode.Arc.Motion;
 
