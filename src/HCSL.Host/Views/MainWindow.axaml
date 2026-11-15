@@ -55,7 +55,7 @@
           <pages:InstancePage x:Name="InstanceManagementPage" IsVisible="{Binding IsInstance}"/>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>
-          <pages:SettingsPage IsVisible="{Binding IsSettings}"/>
+          <pages:SettingsPage x:Name="SettingsPageView" IsVisible="{Binding IsSettings}"/>
         </Grid>
       </Grid>
     <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight"/>
@@ -63,6 +63,7 @@
   <controls:WindowModalLayer.Content>
     <Border x:Name="DialogOverlay" IsVisible="False" Background="{arc:ArcDesignTokenResource Scrim}"
             KeyboardNavigation.TabNavigation="Cycle">
+      <arc:PresenceHost x:Name="DialogPresence" IsPresent="False" Mode="Scale" EnterScale="0.97">
       <Border x:Name="DialogSurface" Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="640" MaxHeight="620">
         <!-- ScrollViewer.Padding shrinks its clipped presenter. Put the gutter INSIDE the scroll content instead.
              Matching negative margin preserves the form's position and width, with room for every control's floating shadow. -->
@@ -70,6 +71,7 @@
           <ContentControl x:Name="DialogContent" Padding="32" HorizontalContentAlignment="Stretch"/>
         </ScrollViewer>
       </Border>
+      </arc:PresenceHost>
     </Border>
   </controls:WindowModalLayer.Content>
 </arc:ArcWindow>

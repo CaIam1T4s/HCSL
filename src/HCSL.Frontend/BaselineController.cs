@@ -23,6 +23,7 @@ public sealed class BaselineController(BaselineClient client) : INotifyPropertyC
             "Embedded" => "内置",
             _ => "缺失，需刷新"
         });
+    public string? InstalledBuildId => result?.BuildId;
     public bool NeedsRefresh => result is { Source: "None" };
 
     private void Notify([System.Runtime.CompilerServices.CallerMemberName] string? name = null) =>
@@ -42,7 +43,7 @@ public sealed class BaselineController(BaselineClient client) : INotifyPropertyC
         { Status = e.Message; result = null; }
         finally
         {
-            Busy = false; Notify(nameof(StatusText)); Notify(nameof(NeedsRefresh));
+            Busy = false; Notify(nameof(StatusText)); Notify(nameof(NeedsRefresh)); Notify(nameof(InstalledBuildId));
         }
     }
 
@@ -62,7 +63,7 @@ public sealed class BaselineController(BaselineClient client) : INotifyPropertyC
         { Status = e.Message; return false; }
         finally
         {
-            Busy = false; Notify(nameof(StatusText)); Notify(nameof(NeedsRefresh));
+            Busy = false; Notify(nameof(StatusText)); Notify(nameof(NeedsRefresh)); Notify(nameof(InstalledBuildId));
         }
     }
 

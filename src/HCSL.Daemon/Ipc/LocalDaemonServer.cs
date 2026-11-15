@@ -284,6 +284,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         return request.Kind switch
         {
             RequestKind.Hello => Hello(request),
+            RequestKind.ContentStatus => new(LocalProtocol.Version, request.Id, true,
+                ContentStatusJson: JsonSerializer.Serialize(HCSL.Infrastructure.Steam.Cs2ContentStatusReader.Read(RequiredOptions(request).Workspace.LibraryRoot))),
             RequestKind.Instances => Instances(request),
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),

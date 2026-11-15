@@ -172,7 +172,11 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             if (installation is not null)
             {
                 if (!parser.AppInstalled) return Result(SteamCmdStage.Failed, "HCSL-CS2-UNCONFIRMED", process.ExitCode);
-                if (installation.Complete(id) is { } baselineWarning) Report(SteamCmdStage.Succeeded, baselineWarning);
+                if (installation.Complete(id, () => Report(SteamCmdStage.CheckingBaseline, "Checking deployment verification records.")) is { } baselineWarning)
+                {
+                    Report(SteamCmdStage.CheckingBaseline, baselineWarning);
+                    return Result(SteamCmdStage.Succeeded, "HCSL-CS2-BASELINE-PENDING", process.ExitCode);
+                }
                 return Result(SteamCmdStage.Succeeded, "HCSL-CS2-OK", process.ExitCode);
             }
             return parser.Authenticated ? Result(SteamCmdStage.Succeeded, "HCSL-STEAMCMD-OK", process.ExitCode)

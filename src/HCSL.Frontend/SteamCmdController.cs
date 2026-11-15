@@ -9,6 +9,10 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
 {
     private CancellationTokenSource connection = new();
     private OperationSnapshot? snapshot;
+    private HCSL.Core.Cs2ContentStatus? contentStatus;
+    public bool? ContentInstalled => contentStatus?.Installed;
+    public string? ContentBuildId => contentStatus?.BuildId;
+    public bool ContentUpdateAvailable => contentStatus?.UpdateAvailable == true;
     private long revision = -1;
     private Guid daemonInstance;
     private int generation;
@@ -19,7 +23,7 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
     public event PropertyChangedEventHandler? PropertyChanged;
     public string SettingsRoot { get => settings; set => Set(ref settings, value); }
     public string DataRoot { get => data; set => Set(ref data, value); }
-    public string LibraryRoot { get => library; set { Set(ref library, value); PropertyChanged?.Invoke(this, new(nameof(ServerDirectory))); } }
+    public string LibraryRoot { get => library; set { if (library == value) return; contentStatus = null; Set(ref library, value); Notify(); } }
     public string ExecutablePath { get => executable; set => Set(ref executable, value); }
     public string AccountName { get => account; set => Set(ref account, value); }
     public string TimeoutSeconds { get => timeout; set => Set(ref timeout, value); }
@@ -97,6 +101,21 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
             Post(() => { connecting = false; Notify(); }, current);
         }
     }
+    public async Task RefreshContentStatusAsync()
+    {
+        if (!connected || disposed) return;
+        var current = generation;
+        try
+        {
+            var response = await client.SendAsync(Request(RequestKind.ContentStatus, new(new(settings, data, library))), connection.Token);
+            if (!response.Success || response.InstanceId != daemonInstance) throw new IOException(response.Code);
+            var value = System.Text.Json.JsonSerializer.Deserialize<HCSL.Core.Cs2ContentStatus>(response.ContentStatusJson ?? "null");
+            Post(() => { contentStatus = value; Notify(); }, current);
+        }
+        catch (Exception e) when (e is IOException or OperationCanceledException or System.Text.Json.JsonException)
+        { Post(() => { contentStatus = null; Notify(); }, current); }
+    }
+
     public Task StartAsync() => OptionsRequestAsync(RequestKind.StartProbe);
     public Task InstallAsync() => OptionsRequestAsync(RequestKind.InstallOrUpdate);
     public Task ValidateAsync() => OptionsRequestAsync(RequestKind.ValidateContent);
@@ -192,6 +211,7 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
         ProbeStage.Authenticating => "认证中", ProbeStage.WaitingForPassword => "等待密码", ProbeStage.WaitingForGuardCode => "等待验证码",
         ProbeStage.WaitingForMobileApproval => "等待手机确认", ProbeStage.Authenticated => "已认证", ProbeStage.Cancelling => "正在取消并清理",
         ProbeStage.DownloadingContent => "下载 CS2 内容", ProbeStage.ValidatingContent => "校验 CS2 内容", ProbeStage.InstallingContent => "应用 CS2 内容",
+        ProbeStage.CheckingBaseline => "检查部署校验记录",
         ProbeStage.Succeeded => "已完成", ProbeStage.Failed => "失败", ProbeStage.Cancelled => "已取消", ProbeStage.TimedOut => "超时",
         ProbeStage.RecoveryRequired => "需要恢复检查", _ => stage.ToString()
     };

@@ -1,80 +1,80 @@
-<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.Pages.DownloadsPage" x:DataType="vm:ShellViewModel">
-  <ScrollViewer>
-    <StackPanel Margin="36" Spacing="20">
-      <TextBlock Classes="heading" Text="下载中心"/>
-      <TextBlock Classes="muted" Text="准备 SteamCMD、验证登录，并安装、更新或校验全局 CS2 服务端。" TextWrapping="Wrap"/>
-      <Border Classes="panel">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Classes="subheading" Text="SteamCMD"/>
-            <arc:Button Grid.Column="1" Content="连接本机宿主" Click="ConnectDaemon" IsEnabled="{Binding SteamCmd.CanConnect}" Variant="Secondary"/>
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:vm="using:HCSL.Host.ViewModels"
+             xmlns:controls="using:HCSL.UI.Shared.Controls"
+             x:Class="HCSL.Host.Views.Pages.DownloadsPage" x:DataType="vm:ShellViewModel">
+  <UserControl.Styles>
+    <Style Selector="arc|Button">
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Size" Value="Small"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="MinHeight" Value="32"/>
+    </Style>
+    <Style Selector="arc|Button[Variant=Primary]">
+      <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
+      <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
+    </Style>
+    <Style Selector="arc|Button.resource-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
+  </UserControl.Styles>
+  <Grid Margin="32" RowDefinitions="Auto,*" RowSpacing="12">
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <TextBlock Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
+      <controls:ElevatedSurface Grid.Column="1"><arc:Button Content="刷新" Variant="Ghost" Click="RefreshResources"/></controls:ElevatedSurface>
+      <controls:ElevatedSurface Grid.Column="2"><arc:Button Content="下载设置" Variant="Ghost" Click="OpenSettings"/></controls:ElevatedSurface>
+    </Grid>
+    <StackPanel Grid.Row="1" Spacing="8">
+      <TextBlock Text="服务端" Classes="section"/>
+      <controls:ElevatedSurface>
+        <arc:Button x:Name="ServerResource" Classes="resource-row" Variant="Ghost" Click="OpenServer" Height="56" Padding="0" BorderThickness="0"
+                    HorizontalContentAlignment="Stretch" IsPressScaleEnabled="False">
+          <!-- Arc's animated content host sizes to its child; give that child the full row width explicitly. -->
+          <Grid Width="{Binding #ServerResource.Bounds.Width}" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+            <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Server}" Size="24" Margin="16,0,0,0" VerticalAlignment="Center"/>
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Left">
+              <TextBlock Text="CS2 服务端"/>
+              <TextBlock x:Name="ServerVersion" Text="-" Classes="muted" FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
+            </StackPanel>
+            <arc:Badge Grid.Column="2" Content="更新可用" IsVisible="{Binding SteamCmd.ContentUpdateAvailable}" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="3" Text="›" Margin="0,0,16,0" HorizontalAlignment="Right" VerticalAlignment="Center"/>
           </Grid>
-          <TextBlock Text="{Binding SteamCmd.ConnectionText}" Classes="muted"/>
-          <TextBlock Text="应用会自动连接或启动本机宿主。关闭界面后，已提交任务继续运行。" Classes="muted" TextWrapping="Wrap"/>
-          <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" IsEnabled="{Binding SteamCmd.CanEdit}">
-            <TextBlock Text="设置目录" VerticalAlignment="Center"/>
-            <arc:Input Grid.Column="1" Text="{Binding SteamCmd.SettingsRoot, Mode=TwoWay}" Margin="0,3"/>
-            <TextBlock Grid.Row="1" Text="数据目录" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="1" Grid.Column="1" Text="{Binding SteamCmd.DataRoot, Mode=TwoWay}" Margin="0,3"/>
-            <TextBlock Grid.Row="2" Text="内容库" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="2" Grid.Column="1" Text="{Binding SteamCmd.LibraryRoot, Mode=TwoWay}" Margin="0,3"/>
-            <TextBlock Grid.Row="3" Text="SteamCMD 路径" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="3" Grid.Column="1" Text="{Binding SteamCmd.ExecutablePath, Mode=TwoWay}" PlaceholderText="留空使用受管工具；或填写现有工具的绝对路径" Margin="0,3"/>
-            <TextBlock Grid.Row="4" Text="Steam 登录名" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="4" Grid.Column="1" Text="{Binding SteamCmd.AccountName, Mode=TwoWay}" PlaceholderText="留空为匿名登录" Margin="0,3"/>
-            <TextBlock Grid.Row="5" Text="登录超时（秒）" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="5" Grid.Column="1" Text="{Binding SteamCmd.TimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
-            <TextBlock Grid.Row="6" Text="安装超时（秒）" VerticalAlignment="Center"/>
-            <arc:Input Grid.Row="6" Grid.Column="1" Text="{Binding SteamCmd.InstallTimeoutSeconds, Mode=TwoWay}" Margin="0,3"/>
-          </Grid>
-          <TextBlock Text="{Binding SteamCmd.ServerDirectory}" Classes="muted" TextWrapping="Wrap"/>
-          <TextBlock Text="首次使用建议将内容库放在空间充足的磁盘；新默认位置为用户主目录下的 HCSL-Library。安装目标为内容库下的 server 文件夹。安装中断会保留下载内容，可重新提交任务继续；校验可能重新下载文件。" Classes="muted" TextWrapping="Wrap"/>
-          <arc:Checkbox Content="受管工具缺失时，从 Valve 下载 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}" IsEnabled="{Binding SteamCmd.CanEdit}"/>
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <arc:Button Content="准备并登录" Click="StartProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Primary"/>
-            <arc:Button Content="取消任务" Click="CancelProbe" IsEnabled="{Binding SteamCmd.CanCancel}" Variant="Ghost"/>
-            <arc:Button Content="恢复检查" Click="RecoverProbe" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Ghost"/>
-          </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <arc:Button Content="安装/更新 CS2" Click="InstallServer" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
-            <arc:Button Content="校验 CS2 文件" Click="ValidateServer" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Secondary"/>
-          </StackPanel>
-        </StackPanel>
-      </Border>
-      <Border Classes="panel">
-        <StackPanel Spacing="10">
-          <TextBlock Classes="subheading" Text="{Binding SteamCmd.StageText}"/>
-          <TextBlock Classes="muted" Text="{Binding SteamCmd.Detail}" TextWrapping="Wrap"/>
-          <arc:Progress IsVisible="{Binding SteamCmd.ShowDeterminateProgress}" Label="{Binding SteamCmd.StageText}" Value="{Binding SteamCmd.ProgressPercent}" IsValueVisible="True"/>
-          <arc:Skeleton IsVisible="{Binding SteamCmd.ShowIndeterminateProgress}" Height="36"/>
-          <StackPanel IsVisible="{Binding SteamCmd.NeedsInput}" Spacing="8">
-            <TextBlock Text="{Binding SteamCmd.ChallengeText}" TextWrapping="Wrap"/>
-            <Grid ColumnDefinitions="*,Auto">
-              <arc:PasswordField x:Name="SecretInput" MaxLength="512" PlaceholderText="仅用于当前认证，不保存"/>
-              <arc:Button Grid.Column="1" Content="提交" Click="SubmitSecret" IsEnabled="{Binding SteamCmd.CanSubmit}" Margin="12,0,0,0" Variant="Secondary"/>
-            </Grid>
-          </StackPanel>
-          <TextBlock Classes="muted" Text="{Binding SteamCmd.OperationText}" FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
-          <arc:Textarea x:Name="TaskLogOutput" Text="{Binding SteamCmd.LogText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Classes="task-log"/>
-        </StackPanel>
-      </Border>
-      <Border Classes="panel">
-        <StackPanel Spacing="10">
-          <TextBlock Classes="subheading" Text="启动基线"/>
-          <TextBlock Text="{Binding Baseline.StatusText}" TextWrapping="Wrap"/>
-          <TextBlock Classes="muted" Text="CS2 更新后，部署会以 HCSL-DEPLOY-BASELINE 拒绝旧哈希。此处重新校验已安装文件并记录本地基线；它不启动游戏，也不代表新构建已完成开服验收。" TextWrapping="Wrap"/>
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <arc:Button Content="重新检查" Click="RefreshBaselineStatus" IsEnabled="{Binding Baseline.CanRefresh}" Variant="Secondary"/>
-            <arc:Button Content="校验并刷新基线" Click="RefreshBaseline" IsEnabled="{Binding Baseline.CanRefresh}" IsVisible="{Binding Baseline.NeedsRefresh}" Variant="Secondary"/>
-          </StackPanel>
-        </StackPanel>
-      </Border>
-      <Border Classes="panel">
-        <StackPanel Spacing="10">
-          <TextBlock Classes="subheading" Text="插件"/>
-          <TextBlock Classes="muted" Text="插件下载和实例开服尚未接入。此处安装操作只维护全局服务端基础文件。" TextWrapping="Wrap"/>
-        </StackPanel>
-      </Border>
+        </arc:Button>
+      </controls:ElevatedSurface>
+      <TextBlock Text="框架" Classes="section"/>
+      <TextBlock Text="框架在线版本目录与下载源尚未接入。" Classes="muted" TextWrapping="Wrap"/>
     </StackPanel>
-  </ScrollViewer>
+    <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
+      <StackPanel Spacing="12">
+        <TextBlock Text="安装位置"/>
+        <TextBlock Text="{Binding SteamCmd.ServerDirectory}" TextWrapping="Wrap" Classes="muted"/>
+      </StackPanel>
+      <arc:Dialog.Actions>
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+          <arc:Button Content="校验" Variant="Secondary" Click="ValidateServer" IsEnabled="{Binding SteamCmd.CanStart}"/>
+          <arc:Button x:Name="InstallButton" Content="更新" Variant="Primary" Click="InstallServer" IsEnabled="{Binding SteamCmd.CanStart}"/>
+        </StackPanel>
+      </arc:Dialog.Actions>
+    </arc:Dialog>
+    <arc:Dialog x:Name="DownloadDialog" Title="下载 CS2 服务端" ShowHeader="False" ShowCloseButton="False"
+                CloseOnEscape="False" CloseOnOutsidePress="False" Size="Large">
+      <StackPanel Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock x:Name="TaskTitle" Text="下载 CS2 服务端" Classes="subheading"/>
+          <TextBlock x:Name="Elapsed" Grid.Column="1" Text="00:00" VerticalAlignment="Center"/>
+        </Grid>
+        <arc:Stepper x:Name="TaskSteps" Orientation="Vertical" IsNavigable="False" Label="下载阶段"/>
+        <Grid Height="40">
+          <arc:Progress x:Name="TaskProgress" Maximum="100" IsValueVisible="True" IsVisible="False" VerticalAlignment="Bottom"/>
+          <Canvas x:Name="UnknownProgressTrack" Height="16" VerticalAlignment="Bottom" ClipToBounds="True" IsHitTestVisible="False">
+            <arc:Skeleton x:Name="UnknownProgress" Lines="1" IsLoading="True" Label="当前阶段进度不可用"/>
+          </Canvas>
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+          <TextBlock Text="-" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Text="- / -" VerticalAlignment="Center"/>
+          <controls:ElevatedSurface Grid.Column="2" Height="32"><arc:Button x:Name="CancelButton" Content="取消" Variant="Ghost" Click="CancelProbe"/></controls:ElevatedSurface>
+        </Grid>
+      </StackPanel>
+    </arc:Dialog>
+  </Grid>
 </UserControl>

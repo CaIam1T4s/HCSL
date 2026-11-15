@@ -132,6 +132,7 @@ public sealed partial class PlayerWindow : ArcWindow
         var editor = new ServerEditorDialog(controller);
         DialogSurface.Child = editor;
         DialogOverlay.IsVisible = true;
+        DialogPresence.IsPresent = true;
         ShellContent.IsEnabled = false;
         void ClosingWithEditor(object? sender, WindowClosingEventArgs e)
         {
@@ -143,6 +144,8 @@ public sealed partial class PlayerWindow : ArcWindow
         finally
         {
             Closing -= ClosingWithEditor;
+            if (!closed) await HCSL.UI.Shared.Services.PresenceLifecycle.HideAsync(DialogPresence);
+            else DialogPresence.IsPresent = false;
             DialogOverlay.IsVisible = false;
             DialogSurface.Child = null;
             ShellContent.IsEnabled = true;

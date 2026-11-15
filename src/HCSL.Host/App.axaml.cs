@@ -24,7 +24,8 @@ public partial class App : Avalonia.Application
         {
             var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
             var daemon = new DaemonClient();
-            var baseline = new BaselineController(new BaselineClient(daemon));
+            var baseline = new BaselineController(new BaselineClient(daemon,
+                () => new(steamCmd.SettingsRoot, steamCmd.DataRoot, steamCmd.LibraryRoot)));
             var servers = new HostServerController(
                 new ServerController(daemon, action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
                 new InstanceClient(daemon), new HCSL.Infrastructure.Storage.LocalDirectoryOpener(), daemon);

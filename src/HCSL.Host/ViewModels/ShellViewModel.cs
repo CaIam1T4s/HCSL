@@ -90,6 +90,7 @@ public sealed class ShellViewModel : ObservableObject
     public string SidebarBlurLabel => $"{SidebarBlurRadius:0} px";
     public IReadOnlyList<string> Themes { get; } = ["跟随系统", "浅色", "深色"];
     public string VersionLabel => ProductVersion.Display;
+    public bool DownloadsBlocked { get; set; }
     public ICommand NavigateCommand { get; }
     public ICommand SetThemeCommand { get; }
 
@@ -103,7 +104,7 @@ public sealed class ShellViewModel : ObservableObject
         SetThemeCommand = new RelayCommand(value => { if (value is string theme) SelectedTheme = theme; });
         NavigateCommand = new RelayCommand(value =>
         {
-            if (value is string id && Pages.FirstOrDefault(page => page.Id == id) is { } page)
+            if (!DownloadsBlocked && value is string id && Pages.FirstOrDefault(page => page.Id == id) is { } page)
             {
                 if (id == "home" && StartupInstanceId is { } startup &&
                     Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)

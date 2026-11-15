@@ -58,8 +58,28 @@ public partial class MainWindow : ArcWindow
             shell.NavigateCommand.Execute(route);
     }
 
+    public void OpenDownloadSettings()
+    {
+        if (DataContext is not ShellViewModel model || model.DownloadsBlocked) return;
+        model.NavigateCommand.Execute("settings");
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => SettingsPageView.ShowDownloadSettings(), Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    public void SetDownloadsBlocked(bool blocked)
+    {
+        if (DataContext is ShellViewModel model)
+        {
+            model.DownloadsBlocked = blocked;
+            model.Servers.DownloadsInProgress = blocked;
+        }
+        MainSidebar.IsEnabled = !blocked;
+        ShellTitleBar.IsEnabled = !blocked;
+        PromptVisibilityChanged?.Invoke(blocked);
+    }
+
     public async Task<(bool Confirmed, bool AllowLowMemory)> ConfirmStartAsync(string text)
     {
+        if (DataContext is ShellViewModel { DownloadsBlocked: true }) return (false, false);
         var content = new StackPanel { Spacing = 12 };
         content.Children.Add(new TextBlock { Text = "启动服务器", FontSize = 20 });
         content.Children.Add(new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
@@ -177,6 +197,7 @@ public partial class MainWindow : ArcWindow
         }
         content.Children.Add(buttons);
         DialogContent.Content = content; DialogOverlay.IsVisible = true; ShellContent.IsEnabled = false;
+        DialogPresence.IsPresent = true;
         // Owned tool windows stay above their owner on many window managers. Hide
         // them while an in-window confirmation is active so it cannot be obscured.
         PromptVisibilityChanged?.Invoke(true);
@@ -189,6 +210,8 @@ public partial class MainWindow : ArcWindow
         try { return await completion.Task; }
         finally
         {
+            if (!windowClosed) await HCSL.UI.Shared.Services.PresenceLifecycle.HideAsync(DialogPresence);
+            else DialogPresence.IsPresent = false;
             content.Children.Remove(buttons);
             DialogContent.Content = null; DialogOverlay.IsVisible = false; ShellContent.IsEnabled = true; prompt = null;
             PromptVisibilityChanged?.Invoke(false);
@@ -204,7 +227,7 @@ public partial class MainWindow : ArcWindow
             return;
         }
         e.Cancel = true;
-        if (closingFlow || prompt is not null || DataContext is not ShellViewModel model) return;
+        if (closingFlow || prompt is not null || DataContext is not ShellViewModel model || model.DownloadsBlocked) return;
         closingFlow = true;
         try
         {

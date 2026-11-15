@@ -151,9 +151,13 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InstanceException) { Error = e.Message; return false; }
         finally { Busy = false; Notify(); }
     }
+    public bool DownloadsInProgress { get; set; }
+    public bool CanDownloadResources => !DownloadsInProgress && !Busy && Server.Connected && !Server.ConnectionUnknown &&
+        !Server.Active && !Server.Busy && Server.State != ServerState.RecoveryRequired;
+
     public Task<bool> StartAsync(bool allowLowMemory = false)
     {
-        if (Busy || Selected?.Entry.Definition is null || !Server.CanStart) return Task.FromResult(false);
+        if (DownloadsInProgress || Busy || Selected?.Entry.Definition is null || !Server.CanStart) return Task.FromResult(false);
         Server.Attach(Selected.Entry.Id);
         return Server.StartAsync(autoDeploy: true, allowLowMemory: allowLowMemory);
     }

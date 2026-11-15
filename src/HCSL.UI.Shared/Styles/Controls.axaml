@@ -39,6 +39,15 @@
       </ControlTemplate>
     </Setter>
   </Style>
+  <Style Selector="arc|Dialog">
+    <Setter Property="BackdropBlur" Value="{arc:ArcDesignTokenResource BackdropBlurDialog}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.wallpaper-shell.modal-open /template/ Border#PART_Root">
+    <Setter Property="Effect"><BlurEffect Radius="{arc:ArcDesignTokenResource BackdropBlurDialog}"/></Setter>
+  </Style>
+  <Style Selector="arc|ArcWindow.player-shell.modal-open Grid.modal-background, arc|ArcWindow.player-shell.modal-open arc|TitleBar">
+    <Setter Property="Effect"><BlurEffect Radius="{arc:ArcDesignTokenResource BackdropBlurDialog}"/></Setter>
+  </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|TitleBar">
     <Setter Property="BorderThickness" Value="0"/>
   </Style>
@@ -259,6 +268,19 @@
     <!-- EdgeThickness is a Thickness token, not a scalar Height. -->
     <Setter Property="Height" Value="1"/>
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Border}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.download-error">
+    <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.download-error arc|Button">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Size" Value="Small"/>
+    <Setter Property="Height" Value="32"/>
+    <Setter Property="MinHeight" Value="32"/>
+  </Style>
+  <Style Selector="arc|ArcWindow.download-error arc|Button[Variant=Primary]">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
   </Style>
   <Style Selector="Border.dialog-surface">
     <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>

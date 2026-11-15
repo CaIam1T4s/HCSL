@@ -3,7 +3,7 @@ using HCSL.Core;
 namespace HCSL.Frontend;
 
 /// <summary>Startup baseline status/refresh through the daemon. The UI never reads game files directly.</summary>
-public sealed class BaselineClient(IDaemonClient client)
+public sealed class BaselineClient(IDaemonClient client, Func<WorkspacePaths>? workspace = null)
 {
     private static readonly TimeSpan StatusTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RefreshTimeout = TimeSpan.FromMinutes(10);
@@ -15,8 +15,11 @@ public sealed class BaselineClient(IDaemonClient client)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var paths = workspace?.Invoke();
+        if (paths is null || string.IsNullOrWhiteSpace(paths.SettingsRoot) || string.IsNullOrWhiteSpace(paths.DataRoot) || string.IsNullOrWhiteSpace(paths.LibraryRoot))
+            paths = hello.Defaults;
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Baseline,
-            Options: new(hello.Defaults), BaselineJson: System.Text.Json.JsonSerializer.Serialize(new BaselineCommand(action))), timeout, ct);
+            Options: new(paths), BaselineJson: System.Text.Json.JsonSerializer.Serialize(new BaselineCommand(action))), timeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return System.Text.Json.JsonSerializer.Deserialize<BaselineResult>(response.BaselineResultJson ?? "null")
             ?? throw new IOException("Missing baseline result.");

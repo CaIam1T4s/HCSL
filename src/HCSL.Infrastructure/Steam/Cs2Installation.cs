@@ -36,7 +36,7 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
 
     /// <summary>Marks the install Ready, then tries to refresh the local baseline.</summary>
     /// <returns>A warning when the baseline could not be written; the installation itself is still Ready.</returns>
-    internal string? Complete(Guid operationId)
+    internal string? Complete(Guid operationId, Action? checkingBaseline = null)
     {
         var binary = OperatingSystem.IsWindows() ? "game/bin/win64/cs2.exe" : "game/bin/linuxsteamrt64/cs2";
         RequireFile(binary);
@@ -50,6 +50,7 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
             throw new SteamCmdException("HCSL-CS2-FILES", "CS2 installation metadata is missing or incomplete.");
         Write(new(1, 730, "Ready", build.Groups[1].Value));
         completed = true;
+        checkingBaseline?.Invoke();
         try { (refreshBaseline ?? ((l, b, o) => RuntimeDeploymentService.RefreshLocalBaseline(l, b, o)))(layout, build.Groups[1].Value, operationId); }
         catch (Exception e) when (e is DeploymentException or IOException or UnauthorizedAccessException)
         { return "HCSL-CS2-BASELINE-PENDING: CS2 is Ready but the startup baseline was not refreshed; run 'hcsl baseline refresh --yes' before deploying (" + e.Message + ")"; }

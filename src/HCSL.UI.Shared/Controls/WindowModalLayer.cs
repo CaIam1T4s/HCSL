@@ -11,6 +11,12 @@ public sealed class WindowModalLayer : AvaloniaObject
     public static readonly AttachedProperty<bool> IsOpenProperty =
         AvaloniaProperty.RegisterAttached<WindowModalLayer, Window, bool>("IsOpen");
 
+    static WindowModalLayer()
+    {
+        IsOpenProperty.Changed.AddClassHandler<Window>((window, _) =>
+            window.Classes.Set("modal-open", GetIsOpen(window)));
+    }
+
     public static Control? GetContent(Window window) => window.GetValue(ContentProperty);
     public static void SetContent(Window window, Control? value) => window.SetValue(ContentProperty, value);
     public static bool GetIsOpen(Window window) => window.GetValue(IsOpenProperty);

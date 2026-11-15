@@ -4,7 +4,7 @@ public enum SteamCmdStage
 {
     Preparing, DownloadingTool, Starting, SelfUpdating, Ready, Authenticating,
     WaitingForPassword, WaitingForGuardCode, WaitingForMobileApproval,
-    Authenticated, DownloadingContent, ValidatingContent, InstallingContent, Cancelling, Succeeded, Failed, Cancelled, TimedOut, RecoveryRequired
+    Authenticated, DownloadingContent, ValidatingContent, InstallingContent, Cancelling, Succeeded, Failed, Cancelled, TimedOut, RecoveryRequired, CheckingBaseline
 }
 public enum SteamCmdInstallMode { InstallOrUpdate, Validate }
 public sealed record SteamCmdInstallRequest(SteamCmdProbeRequest Session, SteamCmdInstallMode Mode = SteamCmdInstallMode.InstallOrUpdate);

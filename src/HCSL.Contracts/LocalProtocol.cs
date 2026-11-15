@@ -7,12 +7,12 @@ using System.Text.RegularExpressions;
 
 namespace HCSL.Contracts;
 
-public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin }
+public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin, ContentStatus }
 public enum ProbeStage
 {
     Idle, Preparing, DownloadingTool, Starting, SelfUpdating, Ready, Authenticating,
     WaitingForPassword, WaitingForGuardCode, WaitingForMobileApproval,
-    Authenticated, DownloadingContent, ValidatingContent, InstallingContent, Cancelling, Succeeded, Failed, Cancelled, TimedOut, RecoveryRequired
+    Authenticated, DownloadingContent, ValidatingContent, InstallingContent, Cancelling, Succeeded, Failed, Cancelled, TimedOut, RecoveryRequired, CheckingBaseline
 }
 public enum ChallengeKind { Password, GuardCode }
 public sealed record WorkspacePaths(string SettingsRoot, string DataRoot, string LibraryRoot);
@@ -28,7 +28,8 @@ public sealed record LocalRequest(int Version, Guid Id, RequestKind Kind, ProbeO
 public sealed record LocalResponse(int Version, Guid Id, bool Success, string? Code = null,
     string? Message = null, WorkspacePaths? Defaults = null, OperationSnapshot? Snapshot = null, Guid InstanceId = default, int ProcessId = 0, string? InstanceCatalogJson = null, string? ServerSnapshotJson = null,
     string? DaemonBuild = null, string? ConsoleReceiptJson = null, string? PresetCfgResultJson = null, string? MapPoolResultJson = null, string? PluginResultJson = null, string? DeploymentPlanJson = null, string? PluginImportResultJson = null, string? PluginImportPreviewJson = null, string? ServerKickResultJson = null, string? AdminResultJson = null,
-    string? FrameworkCheckJson = null, string? FrameworkInstallResultJson = null, string? PluginCfgResultJson = null, string? BaselineResultJson = null);
+    string? FrameworkCheckJson = null, string? FrameworkInstallResultJson = null, string? PluginCfgResultJson = null, string? BaselineResultJson = null,
+    string? ContentStatusJson = null);
 
 public static class LocalProtocol
 {

@@ -1,4 +1,4 @@
-<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:shared="using:HCSL.UI.Shared.Controls" x:Class="HCSL.Client.Views.PlayerWindow" Title="HCSL · 玩家客户端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
+<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:shared="using:HCSL.UI.Shared.Controls" x:Class="HCSL.Client.Views.PlayerWindow" Classes="player-shell" shared:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" Title="HCSL · 玩家客户端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar Height="44" Title="HCSL · 玩家客户端" CaptionButtons="Auto">
       <arc:TitleBar.Icon>
@@ -7,6 +7,7 @@
     </arc:TitleBar>
   </arc:ArcWindow.TitleBar>
   <Grid>
+    <Grid Classes="modal-background">
     <shared:BackgroundScene x:Name="BackgroundLayer" Strength="1"/>
     <Grid x:Name="ShellContent" ColumnDefinitions="216,*">
         <Grid>
@@ -57,8 +58,11 @@
           </Border>
         </Grid>
     </Grid>
+    </Grid>
     <Border x:Name="DialogOverlay" Classes="dialog-overlay" IsVisible="False">
-      <Border x:Name="DialogSurface" Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="560" MaxHeight="600"/>
+      <arc:PresenceHost x:Name="DialogPresence" IsPresent="False" Mode="Scale" EnterScale="0.97">
+        <Border x:Name="DialogSurface" Classes="panel dialog-surface" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24" MaxWidth="560" MaxHeight="600"/>
+      </arc:PresenceHost>
     </Border>
   </Grid>
 </arc:ArcWindow>
