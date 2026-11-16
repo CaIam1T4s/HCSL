@@ -138,8 +138,6 @@ public partial class DownloadsPage
                     }
                 }, DispatcherPriority.Loaded);
             }
-            LoadMoreSurface.IsVisible = true;
-            LoadMoreButton.IsHitTestVisible = true;
             Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException)
@@ -180,33 +178,38 @@ public partial class DownloadsPage
     private void UpdateLoadMoreVisibility()
     {
         var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
-        if (!hasMore)
-        {
-            LoadMoreSurface.IsVisible = false;
-            LoadMoreButton.IsHitTestVisible = false;
-            return;
-        }
         var viewportHeight = VersionScroll.Viewport.Height;
         var extentHeight = VersionScroll.Extent.Height;
         var offsetY = VersionScroll.Offset.Y;
-        var atBottom = offsetY + viewportHeight >= extentHeight - 20;
-        if (atBottom && !LoadMoreSurface.IsVisible)
+        var atBottom = hasMore && offsetY + viewportHeight >= extentHeight - 20;
+        if (atBottom)
         {
-            LoadMoreSurface.IsVisible = true;
-            LoadMoreButton.Opacity = 0;
-            LoadMoreButton.IsHitTestVisible = true;
-            Dispatcher.UIThread.Post(() => LoadMoreButton.Opacity = 1, DispatcherPriority.Loaded);
+            if (!LoadMoreSurface.IsVisible)
+            {
+                LoadMoreSurface.IsVisible = true;
+                LoadMoreButton.Opacity = 0;
+                LoadMoreButton.IsHitTestVisible = true;
+                Dispatcher.UIThread.Post(() => LoadMoreButton.Opacity = 1, DispatcherPriority.Loaded);
+            }
+            else
+            {
+                LoadMoreButton.IsHitTestVisible = true;
+                LoadMoreButton.Opacity = 1;
+            }
         }
-        else if (!atBottom && LoadMoreSurface.IsVisible)
+        else
         {
-            LoadMoreButton.IsHitTestVisible = false;
-            LoadMoreButton.Opacity = 0;
-            Dispatcher.UIThread.Post(() => LoadMoreSurface.IsVisible = false, DispatcherPriority.Loaded);
-        }
-        else if (atBottom)
-        {
-            LoadMoreButton.IsHitTestVisible = true;
-            LoadMoreButton.Opacity = 1;
+            if (LoadMoreSurface.IsVisible)
+            {
+                LoadMoreButton.IsHitTestVisible = false;
+                LoadMoreButton.Opacity = 0;
+                Dispatcher.UIThread.Post(() => LoadMoreSurface.IsVisible = false, DispatcherPriority.Loaded);
+            }
+            else
+            {
+                LoadMoreButton.IsHitTestVisible = false;
+                LoadMoreButton.Opacity = 0;
+            }
         }
     }
     private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
