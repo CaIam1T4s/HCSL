@@ -22,8 +22,11 @@
     <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
       <arc:Button x:Name="CatalogBack" Content="返回" Variant="Ghost" Click="CloseFrameworkCatalog" IsVisible="False"/>
       <TextBlock x:Name="DownloadsHeading" Grid.Column="1" Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
-      <controls:ElevatedSurface Grid.Column="2"><arc:Button Content="刷新" Variant="Ghost" Click="RefreshResources"/></controls:ElevatedSurface>
-      <controls:ElevatedSurface Grid.Column="3"><arc:Button Content="下载设置" Variant="Ghost" Click="OpenSettings"/></controls:ElevatedSurface>
+      <arc:ExpandingButtonGroup x:Name="ToolbarActions" Grid.Column="2" Classes="launch-actions" Label="下载中心操作" HorizontalAlignment="Right">
+        <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="RefreshResources"/>
+        <arc:ExpandingButtonGroupItem x:Name="SettingsButton" Label="下载设置" Click="OpenSettings"/>
+      </arc:ExpandingButtonGroup>
+      <controls:ElevatedSurface Grid.Column="3" IsVisible="False"/>
     </Grid>
     <StackPanel x:Name="ResourceList" Grid.Row="1" Spacing="8">
       <TextBlock Text="服务端" Classes="section"/>

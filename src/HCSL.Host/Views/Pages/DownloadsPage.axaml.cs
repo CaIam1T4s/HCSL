@@ -9,6 +9,7 @@ using HCSL.Contracts;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views.Pages;
 
@@ -26,6 +27,8 @@ public partial class DownloadsPage : UserControl
     {
         InitializeComponent();
         InitializeFrameworkCatalog();
+        RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
+        SettingsButton.Icon = Lucide.Geometry(LucideIconKind.Settings);
         timer.Tick += (_, _) =>
         {
             var time = elapsed.Elapsed;
