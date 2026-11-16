@@ -122,9 +122,10 @@ public partial class DownloadsPage
             var within = offset.Y - Math.Max(0, anchorIndex) * 56;
             var merged = result.Versions.Concat(shownVersions).DistinctBy(v => v.Tag)
                 .OrderByDescending(v => v.PublishedAt).ThenByDescending(v => v.ReleaseId).ToArray();
+            var wasEmpty = shownVersions.Count == 0;
             shownVersions.Clear(); shownVersions.AddRange(merged);
             RenderCatalog();
-            var firstLoad = shownVersions.Count == 0 && result.CheckedAt is null && result.Error is null;
+            var firstLoad = wasEmpty && result.CheckedAt is null && result.Error is null;
             VersionsLoading.IsLoading = firstLoad;
             CatalogStatus.Text = result.Error is not null ? "暂时无法刷新，保留已有缓存。" :
                 firstLoad ? "正在获取版本目录…" : shownVersions.Count == 0 ? "暂无可用版本。" : result.FromCache ? "已显示本地缓存。" : "版本目录已更新。";
@@ -171,6 +172,7 @@ public partial class DownloadsPage
             {
                 catalogBusy = false;
                 LoadMoreButton.IsEnabled = true;
+                Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded);
             }
         }
     }

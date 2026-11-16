@@ -35,7 +35,7 @@
     </Style>
   </UserControl.Styles>
   <Grid Margin="32" RowDefinitions="Auto,*" RowSpacing="12">
-    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
       <arc:Button x:Name="CatalogBack" Content="返回" Variant="Ghost" Click="CloseFrameworkCatalog" IsVisible="False"/>
       <TextBlock x:Name="DownloadsHeading" Grid.Column="1" Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
       <Grid Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Width="{arc:ArcDesignTokenResource MediaSizeXL}">
