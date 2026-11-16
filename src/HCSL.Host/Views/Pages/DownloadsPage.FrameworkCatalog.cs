@@ -80,6 +80,7 @@ public partial class DownloadsPage
         VersionScroll.Offset = new Vector(0, 0);
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
+        LoadMoreButton.Opacity = 0;
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -199,17 +200,9 @@ public partial class DownloadsPage
         }
         else
         {
-            if (LoadMoreSurface.IsVisible)
-            {
-                LoadMoreButton.IsHitTestVisible = false;
-                LoadMoreButton.Opacity = 0;
-                Dispatcher.UIThread.Post(() => LoadMoreSurface.IsVisible = false, DispatcherPriority.Loaded);
-            }
-            else
-            {
-                LoadMoreButton.IsHitTestVisible = false;
-                LoadMoreButton.Opacity = 0;
-            }
+            LoadMoreButton.IsHitTestVisible = false;
+            LoadMoreButton.Opacity = 0;
+            LoadMoreSurface.IsVisible = false;
         }
     }
     private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
