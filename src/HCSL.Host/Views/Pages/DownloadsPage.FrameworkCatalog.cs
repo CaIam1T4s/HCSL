@@ -82,6 +82,7 @@ public partial class DownloadsPage
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
+        UpdateLoadMoreVisibility();
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
