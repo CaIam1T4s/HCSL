@@ -82,7 +82,6 @@ public partial class DownloadsPage
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
-        UpdateLoadMoreVisibility();
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -152,7 +151,12 @@ public partial class DownloadsPage
         }
         finally
         {
-            if (generation == catalogGeneration) { catalogBusy = false; LoadMoreButton.IsEnabled = true; }
+            if (generation == catalogGeneration)
+            {
+                catalogBusy = false;
+                LoadMoreButton.IsEnabled = true;
+                Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded + 1);
+            }
         }
     }
     private void RenderCatalog()
