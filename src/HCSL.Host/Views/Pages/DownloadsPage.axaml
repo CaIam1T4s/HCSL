@@ -53,7 +53,14 @@
         </arc:SkeletonMorph>
       </ScrollViewer>
       <controls:ElevatedSurface x:Name="LoadMoreSurface" Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0" VerticalAlignment="Bottom" IsVisible="False">
-        <arc:Button x:Name="LoadMoreButton" Content="加载更多" Click="LoadMoreButton_Click" Variant="Ghost">
+        <arc:Button x:Name="LoadMoreButton" Click="LoadMoreButton_Click" Variant="Ghost" IsEnabled="True">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Panel Width="18" Height="18">
+              <arc:ArcGlyph x:Name="LoadMoreGlyph" Data="{x:Static arc:ArcIcons.RefreshCw}" Size="16" IsVisible="True"/>
+              <arc:MorphLoader x:Name="LoadMoreLoader" Size="18" Variant="Dots" IsDecorative="True" IsVisible="False"/>
+            </Panel>
+            <TextBlock x:Name="LoadMoreLabel" Text="加载更多" VerticalAlignment="Center"/>
+          </StackPanel>
           <arc:Button.Transitions>
             <Transitions>
               <arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/>

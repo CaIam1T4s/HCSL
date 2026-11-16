@@ -230,13 +230,47 @@ public partial class DownloadsPage
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
         LoadMoreSurface.IsVisible = false;
+        LoadMoreGlyph.IsVisible = false;
+        LoadMoreLoader.IsVisible = true;
+        LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Loading;
+        LoadMoreLabel.Text = "加载中…";
         LoadMoreVersions(sender, e);
     }
     private async void LoadMoreVersions(object? sender, RoutedEventArgs e)
     {
         if (catalogBusy || catalogId is not { } id || catalogResult is not { } result) return;
-        await LoadCatalogAsync(shownVersions.Count < result.TotalCached
-            ? new(id, CacheOnly: true, Offset: shownVersions.Count)
-            : new(id, Page: result.NextPage, Offset: shownVersions.Count), catalogGeneration);
+        try
+        {
+            await LoadCatalogAsync(shownVersions.Count < result.TotalCached
+                ? new(id, CacheOnly: true, Offset: shownVersions.Count)
+                : new(id, Page: result.NextPage, Offset: shownVersions.Count), catalogGeneration);
+            LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Success;
+            LoadMoreLabel.Text = "已加载";
+            Dispatcher.UIThread.Post(async () =>
+            {
+                await Task.Delay(1000);
+                LoadMoreLoader.IsVisible = false;
+                LoadMoreGlyph.IsVisible = true;
+                LoadMoreLabel.Text = "加载更多";
+                LoadMoreButton.Opacity = 0;
+                LoadMoreButton.IsHitTestVisible = false;
+                LoadMoreSurface.IsVisible = false;
+            });
+        }
+        catch
+        {
+            LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Error;
+            LoadMoreLabel.Text = "加载失败";
+            Dispatcher.UIThread.Post(async () =>
+            {
+                await Task.Delay(1000);
+                LoadMoreLoader.IsVisible = false;
+                LoadMoreGlyph.IsVisible = true;
+                LoadMoreLabel.Text = "加载更多";
+                LoadMoreButton.Opacity = 0;
+                LoadMoreButton.IsHitTestVisible = false;
+                LoadMoreSurface.IsVisible = false;
+            });
+        }
     }
 }
