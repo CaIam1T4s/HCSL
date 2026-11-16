@@ -31,6 +31,7 @@ public partial class DownloadsPage
             if (e.OffsetDelta.Y == 0) return;
             UpdateLoadMoreVisibility();
         };
+        VersionScroll.SizeChanged += (_, e) => UpdateLoadMoreVisibility();
         foreach (var framework in FrameworkRules.Known)
         {
             var version = new TextBlock { Text = "-", VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
