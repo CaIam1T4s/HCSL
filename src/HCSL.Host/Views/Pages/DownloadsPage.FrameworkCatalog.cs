@@ -227,8 +227,6 @@ public partial class DownloadsPage
     private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
     {
         LoadMoreButton.IsHitTestVisible = false;
-        LoadMoreButton.Opacity = 0;
-        LoadMoreSurface.IsVisible = false;
         LoadMoreGlyph.IsVisible = false;
         LoadMoreLoader.IsVisible = true;
         LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Loading;
