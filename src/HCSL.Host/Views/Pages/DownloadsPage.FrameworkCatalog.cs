@@ -81,6 +81,9 @@ public partial class DownloadsPage
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
+#if DEBUG
+        System.Diagnostics.Debug.WriteLine("[OpenFrameworkCatalogAsync] Reset load more button state");
+#endif
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -139,7 +142,13 @@ public partial class DownloadsPage
                     }
                 }, DispatcherPriority.Loaded);
             }
-            Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() =>
+            {
+#if DEBUG
+                System.Diagnostics.Debug.WriteLine("[LoadCatalogAsync] Calling UpdateLoadMoreVisibility");
+#endif
+                UpdateLoadMoreVisibility();
+            }, DispatcherPriority.Loaded);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException)
         {
@@ -178,11 +187,20 @@ public partial class DownloadsPage
     }
     private void UpdateLoadMoreVisibility()
     {
+#if DEBUG
         var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
         var viewportHeight = VersionScroll.Viewport.Height;
         var extentHeight = VersionScroll.Extent.Height;
         var offsetY = VersionScroll.Offset.Y;
         var atBottom = hasMore && offsetY + viewportHeight >= extentHeight - 20;
+        System.Diagnostics.Debug.WriteLine($"[UpdateLoadMoreVisibility] hasMore={hasMore}, offsetY={offsetY}, viewportHeight={viewportHeight}, extentHeight={extentHeight}, atBottom={atBottom}, IsVisible={LoadMoreSurface.IsVisible}, Opacity={LoadMoreButton.Opacity}, IsHitTestVisible={LoadMoreButton.IsHitTestVisible}");
+#else
+        var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
+        var viewportHeight = VersionScroll.Viewport.Height;
+        var extentHeight = VersionScroll.Extent.Height;
+        var offsetY = VersionScroll.Offset.Y;
+        var atBottom = hasMore && offsetY + viewportHeight >= extentHeight - 20;
+#endif
         if (atBottom)
         {
             if (!LoadMoreSurface.IsVisible)
