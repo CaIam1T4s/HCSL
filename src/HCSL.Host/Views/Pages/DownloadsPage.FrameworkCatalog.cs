@@ -82,7 +82,6 @@ public partial class DownloadsPage
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
-        UpdateLoadMoreVisibility();
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -93,6 +92,7 @@ public partial class DownloadsPage
         await LoadCatalogAsync(new(id, CacheOnly: true), generation);
         if (generation == catalogGeneration && catalogResult?.NeedsRefresh == true)
             await LoadCatalogAsync(new(id, Refresh: true), generation);
+        Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded + 1);
     }
     private void CloseFrameworkCatalog(object? sender, RoutedEventArgs e)
     {
@@ -147,7 +147,7 @@ public partial class DownloadsPage
         {
             if (generation != catalogGeneration) return;
             CatalogStatus.Text = "目录暂不可用，已有缓存不会清除。" + Environment.NewLine + e.Message;
-        VersionsLoading.IsLoading = false;
+            VersionsLoading.IsLoading = false;
         }
         finally
         {
