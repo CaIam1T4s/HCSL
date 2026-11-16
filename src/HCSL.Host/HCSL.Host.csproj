@@ -16,7 +16,7 @@
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../HCSL.Infrastructure/HCSL.Infrastructure.csproj" /><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /><ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" /></ItemGroup>
   <ItemGroup>
-    <LucideIcon Include="PackageOpen;LoaderCircle;Rocket;CircleCheckBig;Clock;CircleAlert;TriangleAlert;Pause;ArrowLeft;RotateCw;Play;EllipsisVertical;ScrollText;Settings;PencilLine;Trash;FolderSync;Plus;ArrowUp;ArrowDown;Info" />
+    <LucideIcon Include="PackageOpen;LoaderCircle;Rocket;CircleCheckBig;Clock;CircleAlert;TriangleAlert;Pause;ArrowLeft;RotateCw;Play;EllipsisVertical;ScrollText;Settings;PencilLine;Trash;FolderSync;Plus;ArrowUp;ArrowDown;Info;CircleSmall" />
   </ItemGroup>
   <Import Project="../../build/DaemonPayload.targets" />
 </Project>

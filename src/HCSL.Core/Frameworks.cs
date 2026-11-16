@@ -181,6 +181,25 @@ public static class FrameworkRules
         return null;
     }
 
+    /// <summary>
+    /// Pick the version a fresh install would select: stable releases first (matching <see cref="Preferred"/>),
+    /// then parseable versions with a usable asset for this OS. Returns null when nothing is installable.
+    /// </summary>
+    public static string? SelectableVersion(string id, IEnumerable<FrameworkReleaseEntry> entries, bool windows)
+    {
+        var ordered = entries
+            .OrderBy(e => e.Prerelease ? 1 : 0)
+            .ThenByDescending(e => e.PublishedAt ?? DateTimeOffset.MinValue)
+            .ThenByDescending(e => e.ReleaseId);
+        foreach (var entry in ordered)
+        {
+            if (entry.UnavailableReason is not null) continue;
+            var version = VersionFromTag(id, entry.Tag) ?? entry.Version;
+            if (version is not null) return version;
+        }
+        return null;
+    }
+
     /// <summary>Choose the release asset for the current OS. Returns null when no asset matches exactly.</summary>
     public static string? SelectAsset(string id, IEnumerable<string> assets, bool windows, bool withRuntime)
     {

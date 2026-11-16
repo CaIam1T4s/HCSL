@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              xmlns:vm="using:HCSL.Host.ViewModels"
              xmlns:controls="using:HCSL.UI.Shared.Controls"
              x:Class="HCSL.Host.Views.Pages.DownloadsPage" x:DataType="vm:ShellViewModel">
@@ -44,17 +45,22 @@
       <TextBlock Text="框架" Classes="section"/>
       <StackPanel x:Name="FrameworkRows" Spacing="8"/>
     </StackPanel>
-    <Grid x:Name="FrameworkCatalogPanel" Grid.Row="1" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8" IsVisible="False">
+    <Grid x:Name="FrameworkCatalogPanel" Grid.Row="1" RowDefinitions="Auto,*" RowSpacing="8" IsVisible="False">
       <TextBlock x:Name="CatalogStatus" Classes="muted" TextWrapping="Wrap"/>
-      <arc:SkeletonMorph x:Name="VersionsLoading" Grid.Row="1" IsLoading="True" Background="Transparent" LoadingLabel="读取框架版本目录">
-        <arc:MorphBlock SkeletonHeight="168" SkeletonRadius="12">
-          <ScrollViewer x:Name="VersionScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="VersionRows"/>
-          </ScrollViewer>
-        </arc:MorphBlock>
-      </arc:SkeletonMorph>
-      <arc:Button x:Name="LoadMoreButton" Grid.Row="2" Content="加载更多" Click="LoadMoreVersions" Variant="Ghost" HorizontalAlignment="Center"/>
-      <TextBlock Grid.Row="3" Text="当前提供版本目录浏览；独立的框架下载任务与依赖选择尚未接入此页面。" Classes="muted" TextWrapping="Wrap"/>
+      <ScrollViewer x:Name="VersionScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <arc:SkeletonMorph x:Name="VersionsLoading" IsLoading="True" Stagger="0:0:0.05" LoadingLabel="读取框架版本目录">
+          <StackPanel x:Name="VersionRows" Margin="0,0,12,0"/>
+        </arc:SkeletonMorph>
+      </ScrollViewer>
+      <controls:ElevatedSurface Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0" VerticalAlignment="Bottom">
+        <arc:Button x:Name="LoadMoreButton" Content="加载更多" Click="LoadMoreButton_Click" Variant="Ghost" IsVisible="False" Opacity="1">
+          <arc:Button.Transitions>
+            <Transitions>
+              <arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/>
+            </Transitions>
+          </arc:Button.Transitions>
+        </arc:Button>
+      </controls:ElevatedSurface>
     </Grid>
     <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
       <StackPanel Spacing="12">

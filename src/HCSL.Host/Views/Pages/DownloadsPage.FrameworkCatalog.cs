@@ -26,19 +26,27 @@ public partial class DownloadsPage
 
     private void InitializeFrameworkCatalog()
     {
+        VersionScroll.ScrollChanged += (_, e) =>
+        {
+            if (e.OffsetDelta.Y == 0) return;
+            UpdateLoadMoreVisibility();
+        };
         foreach (var framework in FrameworkRules.Known)
         {
-            var version = new TextBlock { Text = "-", VerticalAlignment = VerticalAlignment.Center };
+            var version = new TextBlock { Text = "-", VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
             version.Classes.Add("muted");
             frameworkLabels.Add(framework.Id, version);
-            var update = new Badge { Content = "更新可用", IsVisible = false, VerticalAlignment = VerticalAlignment.Center };
+            var update = new Badge { Content = "更新可用", IsVisible = false, VerticalAlignment = VerticalAlignment.Center, Tone = BadgeTone.Warning, Size = BadgeSize.Small };
+            update.Classes.Add("update-badge");
             frameworkUpdates.Add(framework.Id, update);
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), ColumnSpacing = 12, Margin = new Thickness(16, 0) };
-            row.Children.Add(new TextBlock { Text = framework.DisplayName, VerticalAlignment = VerticalAlignment.Center });
-            Grid.SetColumn(version, 1); row.Children.Add(version);
-            Grid.SetColumn(update, 2); row.Children.Add(update);
-            var arrow = new TextBlock { Text = "›", VerticalAlignment = VerticalAlignment.Center };
-            Grid.SetColumn(arrow, 3); row.Children.Add(arrow);
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"), ColumnSpacing = 8, Margin = new Thickness(16, 0) };
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var nameText = new TextBlock { Text = framework.DisplayName, VerticalAlignment = VerticalAlignment.Center };
+            namePanel.Children.Add(nameText);
+            update.VerticalAlignment = VerticalAlignment.Center;
+            namePanel.Children.Add(update);
+            Grid.SetColumn(namePanel, 0); row.Children.Add(namePanel);
+            Grid.SetColumn(version, 2); row.Children.Add(version);
             var button = new TKCode.Arc.Button { Content = row, Variant = ButtonVariant.Ghost, Height = 48, Padding = default,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch, IsPressScaleEnabled = false };
             button.SizeChanged += (_, e) => row.Width = Math.Max(0, e.NewSize.Width - 32);
@@ -54,9 +62,9 @@ public partial class DownloadsPage
             {
                 var page = await shell.Servers.FrameworkCatalogAsync(new(framework.Id, CacheOnly: true), CatalogWorkspace);
                 frameworkLabels[framework.Id].Text = page.InstalledVersions.FirstOrDefault() ?? "未下载";
-                var stable = page.Versions.Where(v => !v.Prerelease).Select(v => v.Version);
-                var latest = FrameworkRules.OrderVersions(framework.Id, stable).FirstOrDefault();
-                frameworkUpdates[framework.Id].IsVisible = latest is not null && page.InstalledVersions.FirstOrDefault() is { } installed &&
+                var latest = FrameworkRules.SelectableVersion(framework.Id, page.Versions, OperatingSystem.IsWindows());
+                var installed = FrameworkRules.OrderVersions(framework.Id, page.InstalledVersions).FirstOrDefault();
+                frameworkUpdates[framework.Id].IsVisible = latest is not null && installed is not null &&
                     FrameworkRules.CompareVersions(framework.Id, latest, installed) > 0;
             }
             catch (Exception e) when (e is IOException or OperationCanceledException) { frameworkLabels[framework.Id].Text = "-"; frameworkUpdates[framework.Id].IsVisible = false; }
@@ -69,6 +77,8 @@ public partial class DownloadsPage
         catalogBusy = false;
         shownVersions.Clear(); downloadedVersions.Clear(); VersionRows.Children.Clear();
         catalogResult = null;
+        VersionScroll.Offset = new Vector(0, 0);
+        LoadMoreButton.IsVisible = false;
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -89,6 +99,7 @@ public partial class DownloadsPage
         FrameworkCatalogPanel.IsVisible = false;
         ResourceList.IsVisible = true;
         DownloadsHeading.Text = "下载中心";
+        _ = RefreshFrameworkRowsAsync();
     }
     private async Task LoadCatalogAsync(FrameworkCatalogCommand command, int generation)
     {
@@ -122,12 +133,14 @@ public partial class DownloadsPage
                 }, DispatcherPriority.Loaded);
             }
             LoadMoreButton.IsVisible = shownVersions.Count < result.TotalCached || result.NextPage is not null;
+            LoadMoreButton.Opacity = 1;
+            Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException)
         {
             if (generation != catalogGeneration) return;
-            VersionsLoading.IsLoading = false;
             CatalogStatus.Text = "目录暂不可用，已有缓存不会清除。" + Environment.NewLine + e.Message;
+        VersionsLoading.IsLoading = false;
         }
         finally
         {
@@ -139,17 +152,50 @@ public partial class DownloadsPage
         VersionRows.Children.Clear();
         foreach (var release in shownVersions)
         {
-            var row = new Grid { Height = 56, ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 12 };
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
-            text.Children.Add(new TextBlock { Text = release.Version });
-            var detail = new TextBlock { Text = release.UnavailableReason ?? release.PublishedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-" };
-            detail.Classes.Add("muted"); text.Children.Add(detail); row.Children.Add(text);
+            var row = new Grid { Height = 56, ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 0, 12, 0) };
+            var textPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+            var versionBlock = new MorphBlock { SkeletonWidth = 80, Lines = 1, LineHeight = 20 };
+            versionBlock.Content = new TextBlock { Text = release.Version, VerticalAlignment = VerticalAlignment.Center };
+            textPanel.Children.Add(versionBlock);
+            var detailBlock = new MorphBlock { SkeletonWidth = 120, Lines = 1, LineHeight = 16 };
+            var detailText = new TextBlock { Text = release.UnavailableReason ?? release.PublishedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-" };
+            detailText.Classes.Add("muted");
+            detailBlock.Content = detailText;
+            textPanel.Children.Add(detailBlock);
+            row.Children.Add(textPanel);
             var badges = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-            badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版" });
-            if (downloadedVersions.Contains(release.Version)) badges.Children.Add(new Badge { Content = "已下载" });
+            if (downloadedVersions.Contains(release.Version))
+                badges.Children.Add(new Badge { Content = "已下载", Tone = BadgeTone.Success, Size = BadgeSize.Small });
+            badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版", Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info, Size = BadgeSize.Small });
             Grid.SetColumn(badges, 1); row.Children.Add(badges);
             VersionRows.Children.Add(row);
         }
+    }
+    private void UpdateLoadMoreVisibility()
+    {
+        var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
+        if (!hasMore) { LoadMoreButton.IsVisible = false; LoadMoreButton.Opacity = 1; return; }
+        var viewportHeight = VersionScroll.Viewport.Height;
+        var extentHeight = VersionScroll.Extent.Height;
+        var offsetY = VersionScroll.Offset.Y;
+        var atBottom = offsetY + viewportHeight >= extentHeight - 20;
+        if (atBottom && !LoadMoreButton.IsVisible)
+        {
+            LoadMoreButton.IsVisible = true;
+            LoadMoreButton.Opacity = 0;
+            Dispatcher.UIThread.Post(() => LoadMoreButton.Opacity = 1, DispatcherPriority.Loaded);
+        }
+        else if (!atBottom && LoadMoreButton.IsVisible)
+        {
+            LoadMoreButton.Opacity = 0;
+            Dispatcher.UIThread.Post(() => LoadMoreButton.IsVisible = false, DispatcherPriority.Loaded);
+        }
+    }
+    private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
+    {
+        LoadMoreButton.Opacity = 0;
+        Dispatcher.UIThread.Post(() => LoadMoreButton.IsVisible = false, DispatcherPriority.Loaded);
+        LoadMoreVersions(sender, e);
     }
     private async void LoadMoreVersions(object? sender, RoutedEventArgs e)
     {
