@@ -167,19 +167,6 @@ public partial class DownloadsPage
             {
                 catalogBusy = false;
                 LoadMoreButton.IsEnabled = true;
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (shownVersions.Count == 0 || catalogResult?.TotalCached == 0)
-                    {
-                        LoadMoreSurface.IsVisible = false;
-                        LoadMoreButton.IsHitTestVisible = false;
-                        LoadMoreButton.Opacity = 0;
-                    }
-                    else
-                    {
-                        UpdateLoadMoreVisibility();
-                    }
-                }, DispatcherPriority.Loaded + 1);
             }
         }
     }
