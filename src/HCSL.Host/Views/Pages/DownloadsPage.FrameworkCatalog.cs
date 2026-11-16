@@ -248,10 +248,11 @@ public partial class DownloadsPage
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Success;
             LoadMoreLabel.Text = "已加载";
             await Task.Delay(1000);
+            LoadMoreButton.Opacity = 0;
+            await Task.Delay(300);
             LoadMoreLoader.IsVisible = false;
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
-            LoadMoreButton.Opacity = 0;
             LoadMoreButton.IsHitTestVisible = false;
             LoadMoreSurface.IsVisible = false;
         }
@@ -260,10 +261,11 @@ public partial class DownloadsPage
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Error;
             LoadMoreLabel.Text = "加载失败";
             await Task.Delay(1000);
+            LoadMoreButton.Opacity = 0;
+            await Task.Delay(300);
             LoadMoreLoader.IsVisible = false;
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
-            LoadMoreButton.Opacity = 0;
             LoadMoreButton.IsHitTestVisible = false;
             LoadMoreSurface.IsVisible = false;
         }
