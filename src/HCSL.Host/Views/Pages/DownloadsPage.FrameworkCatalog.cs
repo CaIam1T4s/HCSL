@@ -200,7 +200,8 @@ public partial class DownloadsPage
         var viewportHeight = VersionScroll.Viewport.Height;
         var extentHeight = VersionScroll.Extent.Height;
         var offsetY = VersionScroll.Offset.Y;
-        var atBottom = hasMore && offsetY + viewportHeight >= extentHeight - 20;
+        var maxOffset = Math.Max(0, extentHeight - viewportHeight);
+        var atBottom = hasMore && maxOffset > 0 && offsetY >= maxOffset - 20;
         if (atBottom)
         {
             if (!LoadMoreSurface.IsVisible)
