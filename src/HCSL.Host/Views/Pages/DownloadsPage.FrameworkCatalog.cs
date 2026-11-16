@@ -243,31 +243,25 @@ public partial class DownloadsPage
                 : new(id, Page: result.NextPage, Offset: shownVersions.Count), catalogGeneration);
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Success;
             LoadMoreLabel.Text = "已加载";
-            Dispatcher.UIThread.Post(async () =>
-            {
-                await Task.Delay(1000);
-                LoadMoreLoader.IsVisible = false;
-                LoadMoreGlyph.IsVisible = true;
-                LoadMoreLabel.Text = "加载更多";
-                LoadMoreButton.Opacity = 0;
-                LoadMoreButton.IsHitTestVisible = false;
-                LoadMoreSurface.IsVisible = false;
-            });
+            await Task.Delay(1000);
+            LoadMoreLoader.IsVisible = false;
+            LoadMoreGlyph.IsVisible = true;
+            LoadMoreLabel.Text = "加载更多";
+            LoadMoreButton.Opacity = 0;
+            LoadMoreButton.IsHitTestVisible = false;
+            LoadMoreSurface.IsVisible = false;
         }
         catch
         {
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Error;
             LoadMoreLabel.Text = "加载失败";
-            Dispatcher.UIThread.Post(async () =>
-            {
-                await Task.Delay(1000);
-                LoadMoreLoader.IsVisible = false;
-                LoadMoreGlyph.IsVisible = true;
-                LoadMoreLabel.Text = "加载更多";
-                LoadMoreButton.Opacity = 0;
-                LoadMoreButton.IsHitTestVisible = false;
-                LoadMoreSurface.IsVisible = false;
-            });
+            await Task.Delay(1000);
+            LoadMoreLoader.IsVisible = false;
+            LoadMoreGlyph.IsVisible = true;
+            LoadMoreLabel.Text = "加载更多";
+            LoadMoreButton.Opacity = 0;
+            LoadMoreButton.IsHitTestVisible = false;
+            LoadMoreSurface.IsVisible = false;
         }
     }
 }
