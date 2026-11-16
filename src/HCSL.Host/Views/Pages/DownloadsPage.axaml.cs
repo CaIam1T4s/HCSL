@@ -25,11 +25,7 @@ public partial class DownloadsPage : UserControl
     public DownloadsPage()
     {
         InitializeComponent();
-        // Arc's documented one-line Skeleton paints 72% of its layout width. Extend only its layout,
-        // not its pixels, inside a fixed-width clipped track so the placeholder matches Progress exactly.
-        UnknownProgressTrack.SizeChanged += (_, e) => UnknownProgress.Width = e.NewSize.Width / 0.72;
-        // Preserve the native placeholder's entire measured height, rather than clipping it to a guessed line height.
-        UnknownProgress.SizeChanged += (_, e) => UnknownProgressTrack.Height = Math.Max(16, e.NewSize.Height);
+        InitializeFrameworkCatalog();
         timer.Tick += (_, _) =>
         {
             var time = elapsed.Elapsed;
@@ -66,8 +62,13 @@ public partial class DownloadsPage : UserControl
         if (model.Connected) await model.RefreshContentStatusAsync();
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
         Update();
+        await RefreshFrameworkRowsAsync();
     }
-    private async void RefreshResources(object? sender, RoutedEventArgs e) => await RefreshAsync();
+    private async void RefreshResources(object? sender, RoutedEventArgs e)
+    {
+        if (catalogId is { } id) await LoadCatalogAsync(new(id, Refresh: true), catalogGeneration);
+        else await RefreshAsync();
+    }
     private void OpenSettings(object? sender, RoutedEventArgs e) => Owner?.OpenDownloadSettings();
     private void OpenServer(object? sender, RoutedEventArgs e) => ServerDialog.IsOpen = true;
     private async void InstallServer(object? sender, RoutedEventArgs e) => await RunAsync(false);
@@ -87,8 +88,8 @@ public partial class DownloadsPage : UserControl
         if (!isValidation) TaskSteps.Steps.Add(new StepperStep { Label = "应用服务端文件" });
         TaskSteps.Steps.Add(new StepperStep { Label = "检查部署校验记录" });
         TaskSteps.CurrentIndex = 0;
-        TaskProgress.IsVisible = false;
-        UnknownProgress.IsVisible = true;
+        ProgressRegion.IsVisible = true;
+        ProgressRegion.IsLoading = true;
         elapsed.Restart();
         Elapsed.Text = resumed ? "-" : "00:00";
         if (!resumed) timer.Start();
@@ -151,8 +152,8 @@ public partial class DownloadsPage : UserControl
         if (model.LastSnapshot is not { } snapshot) return;
         if (!model.Connected)
         {
-            TaskProgress.IsVisible = false;
-            UnknownProgress.IsVisible = true;
+            ProgressRegion.IsVisible = true;
+            ProgressRegion.IsLoading = true;
             TaskSteps.Steps[TaskSteps.CurrentIndex].Error = "连接已断开，任务状态未知；取消时将尝试重新连接。";
             return;
         }
@@ -179,9 +180,9 @@ public partial class DownloadsPage : UserControl
             if (snapshot.Stage == ProbeStage.Cancelling) TaskSteps.Steps[TaskSteps.CurrentIndex].Description = "正在取消，等待任务清理完成。";
             var known = snapshot.Stage != ProbeStage.Cancelling &&
                 snapshot.Percent is { } p && double.IsFinite(p) && p is >= 0 and <= 100;
-            TaskProgress.IsVisible = known;
-            UnknownProgress.IsVisible = !known;
             if (known) TaskProgress.Value = snapshot.Percent!.Value;
+            ProgressRegion.IsVisible = true;
+            ProgressRegion.IsLoading = !known;
             if (!authenticationCancelled && (snapshot.Stage is ProbeStage.WaitingForPassword or ProbeStage.WaitingForGuardCode or ProbeStage.WaitingForMobileApproval))
             {
                 authenticationCancelled = true;
@@ -223,8 +224,7 @@ public partial class DownloadsPage : UserControl
     {
         handlingFailure = true;
         timer.Stop(); elapsed.Stop();
-        TaskProgress.IsVisible = false;
-        UnknownProgress.IsVisible = false;
+        ProgressRegion.IsVisible = false;
         const string reason = "宿主任务身份已改变，无法确认原任务结果。请在下载设置中执行恢复检查；不会取消其他任务或自动重试。";
         TaskSteps.Steps[TaskSteps.CurrentIndex].Error = reason;
         await ShowFailureAsync(reason, null);
@@ -237,8 +237,7 @@ public partial class DownloadsPage : UserControl
         handlingFailure = true;
         timer.Stop();
         elapsed.Stop();
-        TaskProgress.IsVisible = false;
-        UnknownProgress.IsVisible = false;
+        ProgressRegion.IsVisible = false;
         var reason = authenticationCancelled ? "该任务需要 Steam 认证；当前版本尚未提供登录界面，任务已取消。" : snapshot.Message;
         TaskSteps.Steps[TaskSteps.CurrentIndex].Error = reason;
         var retry = await ShowFailureAsync(reason, snapshot);

@@ -3,6 +3,13 @@ namespace HCSL.Frontend;
 
 public sealed partial class HostServerController
 {
+    public Task<FrameworkCatalogResult> FrameworkCatalogAsync(FrameworkCatalogCommand command, HCSL.Contracts.WorkspacePaths? workspace = null, CancellationToken ct = default)
+    {
+        if (!Server.Connected || frameworks is null)
+            throw new IOException("HCSL-FRAMEWORK-NET: Host is disconnected.");
+        return frameworks.CatalogAsync(command, workspace, ct);
+    }
+
     public bool CanInstallFramework => !Busy && !Server.Busy && Server.Connected && !Server.Active
         && Server.State is not (ServerState.RecoveryRequired or ServerState.Preparing or ServerState.Starting or ServerState.LoadingMap or ServerState.Stopping);
 

@@ -11,7 +11,7 @@ namespace HCSL.Infrastructure.Frameworks;
 /// Downloads only the closed <see cref="FrameworkRules.Known"/> catalog from official GitHub releases.
 /// Every archive must match the release digest before the normal plugin importer accepts it.
 /// </summary>
-public sealed class FrameworkManager : IFrameworkManager
+public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCatalog
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = false };
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, ReleaseInfo[] Releases)> cache = new(StringComparer.Ordinal);
@@ -79,8 +79,15 @@ public sealed class FrameworkManager : IFrameworkManager
         if (!framework.Installable)
             throw new InstanceException("HCSL-FRAMEWORK-ID", framework.DisplayName + " has no installer in this build; import its release manually.");
         var paths = LocalWorkspaceManager.ConfiguredOrDefault(workspace);
-        var releases = await Releases(framework, ct);
+        var releases = command.Version is { } cachedVersion && CachedRelease(workspace, framework, cachedVersion) is not null
+            ? new[] { await HistoricalReleaseAsync(workspace, framework, cachedVersion, ct) }
+            : await Releases(framework, ct);
         var chosen = Select(framework, releases, command.Version);
+        if (chosen is null && command.Version is { } requested)
+        {
+            var historical = await HistoricalReleaseAsync(workspace, framework, requested, ct);
+            chosen = Select(framework, [historical], requested);
+        }
         if (chosen is null)
             throw new InstanceException("HCSL-FRAMEWORK-RELEASE", "No matching release/asset was found for this platform.");
         var (release, asset, version) = chosen.Value;
@@ -270,6 +277,6 @@ public sealed class FrameworkManager : IFrameworkManager
     private static IEnumerable<ReleaseInfo> Preferred(ReleaseInfo[] releases) =>
         releases.Where(r => !r.Prerelease).Concat(releases.Where(r => r.Prerelease));
 
-    private sealed record ReleaseInfo(string Tag, bool Prerelease, ReleaseAsset[] Assets);
+    private sealed record ReleaseInfo(string Tag, bool Prerelease, ReleaseAsset[] Assets, long Id = 0, DateTimeOffset? PublishedAt = null);
     private sealed record ReleaseAsset(string Name, string Url, long Size, string? Digest);
 }

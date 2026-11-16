@@ -18,12 +18,13 @@
     <Style Selector="arc|Button.resource-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
   </UserControl.Styles>
   <Grid Margin="32" RowDefinitions="Auto,*" RowSpacing="12">
-    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-      <TextBlock Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
-      <controls:ElevatedSurface Grid.Column="1"><arc:Button Content="刷新" Variant="Ghost" Click="RefreshResources"/></controls:ElevatedSurface>
-      <controls:ElevatedSurface Grid.Column="2"><arc:Button Content="下载设置" Variant="Ghost" Click="OpenSettings"/></controls:ElevatedSurface>
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+      <arc:Button x:Name="CatalogBack" Content="返回" Variant="Ghost" Click="CloseFrameworkCatalog" IsVisible="False"/>
+      <TextBlock x:Name="DownloadsHeading" Grid.Column="1" Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
+      <controls:ElevatedSurface Grid.Column="2"><arc:Button Content="刷新" Variant="Ghost" Click="RefreshResources"/></controls:ElevatedSurface>
+      <controls:ElevatedSurface Grid.Column="3"><arc:Button Content="下载设置" Variant="Ghost" Click="OpenSettings"/></controls:ElevatedSurface>
     </Grid>
-    <StackPanel Grid.Row="1" Spacing="8">
+    <StackPanel x:Name="ResourceList" Grid.Row="1" Spacing="8">
       <TextBlock Text="服务端" Classes="section"/>
       <controls:ElevatedSurface>
         <arc:Button x:Name="ServerResource" Classes="resource-row" Variant="Ghost" Click="OpenServer" Height="56" Padding="0" BorderThickness="0"
@@ -41,8 +42,20 @@
         </arc:Button>
       </controls:ElevatedSurface>
       <TextBlock Text="框架" Classes="section"/>
-      <TextBlock Text="框架在线版本目录与下载源尚未接入。" Classes="muted" TextWrapping="Wrap"/>
+      <StackPanel x:Name="FrameworkRows" Spacing="8"/>
     </StackPanel>
+    <Grid x:Name="FrameworkCatalogPanel" Grid.Row="1" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8" IsVisible="False">
+      <TextBlock x:Name="CatalogStatus" Classes="muted" TextWrapping="Wrap"/>
+      <arc:SkeletonMorph x:Name="VersionsLoading" Grid.Row="1" IsLoading="True" Background="Transparent" LoadingLabel="读取框架版本目录">
+        <arc:MorphBlock SkeletonHeight="168" SkeletonRadius="12">
+          <ScrollViewer x:Name="VersionScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="VersionRows"/>
+          </ScrollViewer>
+        </arc:MorphBlock>
+      </arc:SkeletonMorph>
+      <arc:Button x:Name="LoadMoreButton" Grid.Row="2" Content="加载更多" Click="LoadMoreVersions" Variant="Ghost" HorizontalAlignment="Center"/>
+      <TextBlock Grid.Row="3" Text="当前提供版本目录浏览；独立的框架下载任务与依赖选择尚未接入此页面。" Classes="muted" TextWrapping="Wrap"/>
+    </Grid>
     <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
       <StackPanel Spacing="12">
         <TextBlock Text="安装位置"/>
@@ -64,10 +77,12 @@
         </Grid>
         <arc:Stepper x:Name="TaskSteps" Orientation="Vertical" IsNavigable="False" Label="下载阶段"/>
         <Grid Height="40">
-          <arc:Progress x:Name="TaskProgress" Maximum="100" IsValueVisible="True" IsVisible="False" VerticalAlignment="Bottom"/>
-          <Canvas x:Name="UnknownProgressTrack" Height="16" VerticalAlignment="Bottom" ClipToBounds="True" IsHitTestVisible="False">
-            <arc:Skeleton x:Name="UnknownProgress" Lines="1" IsLoading="True" Label="当前阶段进度不可用"/>
-          </Canvas>
+          <arc:SkeletonMorph x:Name="ProgressRegion" IsLoading="True" Stagger="0:0:0" LoadingLabel="当前阶段进度不可用"
+                             Background="Transparent" VerticalAlignment="Bottom">
+            <arc:MorphBlock SkeletonHeight="4" SkeletonRadius="2">
+              <arc:Progress x:Name="TaskProgress" Maximum="100" IsValueVisible="True"/>
+            </arc:MorphBlock>
+          </arc:SkeletonMorph>
         </Grid>
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
           <TextBlock Text="-" VerticalAlignment="Center"/>

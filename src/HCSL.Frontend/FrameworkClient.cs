@@ -9,6 +9,17 @@ public sealed class FrameworkClient(IDaemonClient client)
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(25);
 
+    public async Task<FrameworkCatalogResult> CatalogAsync(FrameworkCatalogCommand command, WorkspacePaths? workspace = null, CancellationToken ct = default)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkCatalog,
+            Options: new(workspace ?? hello.Defaults), FrameworkCatalogJson: JsonSerializer.Serialize(command)), CheckTimeout, ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<FrameworkCatalogResult>(response.FrameworkCatalogJson ?? "null")
+            ?? throw new IOException("Missing framework catalog result.");
+    }
+
     public async Task<FrameworkCheckResult> CheckAsync(string? id = null, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);

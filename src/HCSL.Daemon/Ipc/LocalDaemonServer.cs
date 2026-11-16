@@ -102,12 +102,13 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
                 if (request.Kind == RequestKind.Baseline)
                     deadline.CancelAfter(TimeSpan.FromMinutes(10));
-                else if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall)
+                else if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall or RequestKind.FrameworkCatalog)
                     deadline.CancelAfter(TimeSpan.FromMinutes(20));
                 else if (request.Kind == RequestKind.PluginCfg)
                     deadline.CancelAfter(TimeSpan.FromMinutes(5));
                 LocalResponse response;
                 try { response = request.Kind == RequestKind.Baseline ? await BaselineAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.FrameworkCatalog ? await FrameworkCatalogAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Admin ? await AdminAsync(request, deadline.Token)
@@ -185,6 +186,16 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(result.BuildId, result.Source, result.LocalBuildId,
                 Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
     }
+    private async Task<LocalResponse> FrameworkCatalogAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<FrameworkCatalogCommand>(request.FrameworkCatalogJson ?? "null")
+            ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework catalog command is required.");
+        var result = await Frameworks.CatalogAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
+        return new(LocalProtocol.Version, request.Id, true, FrameworkCatalogJson: JsonSerializer.Serialize(result));
+    }
+
     private async Task<LocalResponse> FrameworkCheckAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");

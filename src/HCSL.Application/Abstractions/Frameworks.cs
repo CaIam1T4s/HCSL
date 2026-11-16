@@ -5,6 +5,11 @@ namespace HCSL.Application.Abstractions;
 /// Curated framework installer. Version checks are read-only; installs download only from the
 /// catalog's official releases and write a normal plugin package that the existing deploy path consumes.
 /// </summary>
+public interface IFrameworkCatalog
+{
+    Task<FrameworkCatalogResult> CatalogAsync(WorkspaceRequest workspace, FrameworkCatalogCommand command, CancellationToken ct = default);
+}
+
 public interface IFrameworkManager
 {
     Task<FrameworkCheckResult> CheckAsync(WorkspaceRequest workspace, string? frameworkId = null, CancellationToken ct = default);

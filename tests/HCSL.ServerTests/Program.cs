@@ -58,6 +58,12 @@ if (only is null or "players")
     if (only is "players") { Console.WriteLine("PASS only players"); return 0; }
 }
 
+if (only is null or "framework-catalog")
+{
+    await HCSL.ServerTests.FrameworkCatalogTests.RunAsync();
+    if (only is "framework-catalog") { Console.WriteLine("PASS only framework-catalog"); return 0; }
+}
+
 if (only is null or "frameworks")
 {
     await HCSL.ServerTests.FrameworkTests.RunAsync();
@@ -86,7 +92,7 @@ if (only is null or "controller")
 
 if (only is not null && only is not "daemon")
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use maps, network, instance, cfg, plugins, players, frameworks, dev, console, controller, daemon or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use maps, network, instance, cfg, plugins, players, frameworks, framework-catalog, dev, console, controller, daemon or all.");
     return 2;
 }
 
