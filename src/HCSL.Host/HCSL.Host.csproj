@@ -13,6 +13,8 @@
     <PackageReference Include="TKCode.Arc.Blocks" Version="1.1.0" />
     <PackageReference Include="TKCode.Arc.Special" Version="1.1.0" />
     <PackageReference Include="TKCode.Arc.Icons.Lucide" Version="1.1.0" />
+    <PackageReference Include="TKCode.Spyglass.Agent" Version="0.2.3" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="TKCode.Spyglass.HotReload" Version="0.2.3" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../HCSL.Infrastructure/HCSL.Infrastructure.csproj" /><ProjectReference Include="../HCSL.Frontend/HCSL.Frontend.csproj" /><ProjectReference Include="../HCSL.UI.Shared/HCSL.UI.Shared.csproj" /></ItemGroup>
   <ItemGroup>
