@@ -52,8 +52,8 @@
           <StackPanel x:Name="VersionRows" Margin="0,0,12,0"/>
         </arc:SkeletonMorph>
       </ScrollViewer>
-      <controls:ElevatedSurface Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0" VerticalAlignment="Bottom">
-        <arc:Button x:Name="LoadMoreButton" Content="加载更多" Click="LoadMoreButton_Click" Variant="Ghost" IsVisible="False" Opacity="1">
+      <controls:ElevatedSurface x:Name="LoadMoreSurface" Grid.Row="1" HorizontalAlignment="Center" Margin="0,8,0,0" VerticalAlignment="Bottom" IsVisible="False">
+        <arc:Button x:Name="LoadMoreButton" Content="加载更多" Click="LoadMoreButton_Click" Variant="Ghost">
           <arc:Button.Transitions>
             <Transitions>
               <arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/>

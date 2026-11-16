@@ -78,7 +78,8 @@ public partial class DownloadsPage
         shownVersions.Clear(); downloadedVersions.Clear(); VersionRows.Children.Clear();
         catalogResult = null;
         VersionScroll.Offset = new Vector(0, 0);
-        LoadMoreButton.IsVisible = false;
+        LoadMoreSurface.IsVisible = false;
+        LoadMoreButton.IsHitTestVisible = false;
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
@@ -129,11 +130,16 @@ public partial class DownloadsPage
                 var index = shownVersions.FindIndex(v => v.Tag == anchor);
                 if (index >= 0) Dispatcher.UIThread.Post(() =>
                 {
-                    if (generation == catalogGeneration) VersionScroll.Offset = new Vector(offset.X, index * 56 + within);
+                    if (generation == catalogGeneration)
+                    {
+                        var newOffset = index * 56 + within;
+                        var maxOffset = Math.Max(0, VersionScroll.Extent.Height - VersionScroll.Viewport.Height);
+                        VersionScroll.Offset = new Vector(offset.X, Math.Min(newOffset, maxOffset));
+                    }
                 }, DispatcherPriority.Loaded);
             }
-            LoadMoreButton.IsVisible = shownVersions.Count < result.TotalCached || result.NextPage is not null;
-            LoadMoreButton.Opacity = 1;
+            LoadMoreSurface.IsVisible = true;
+            LoadMoreButton.IsHitTestVisible = true;
             Dispatcher.UIThread.Post(() => UpdateLoadMoreVisibility(), DispatcherPriority.Loaded);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException)
@@ -174,27 +180,39 @@ public partial class DownloadsPage
     private void UpdateLoadMoreVisibility()
     {
         var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
-        if (!hasMore) { LoadMoreButton.IsVisible = false; LoadMoreButton.Opacity = 1; return; }
+        if (!hasMore)
+        {
+            LoadMoreSurface.IsVisible = false;
+            LoadMoreButton.IsHitTestVisible = false;
+            return;
+        }
         var viewportHeight = VersionScroll.Viewport.Height;
         var extentHeight = VersionScroll.Extent.Height;
         var offsetY = VersionScroll.Offset.Y;
         var atBottom = offsetY + viewportHeight >= extentHeight - 20;
-        if (atBottom && !LoadMoreButton.IsVisible)
+        if (atBottom && !LoadMoreSurface.IsVisible)
         {
-            LoadMoreButton.IsVisible = true;
+            LoadMoreSurface.IsVisible = true;
             LoadMoreButton.Opacity = 0;
+            LoadMoreButton.IsHitTestVisible = true;
             Dispatcher.UIThread.Post(() => LoadMoreButton.Opacity = 1, DispatcherPriority.Loaded);
         }
-        else if (!atBottom && LoadMoreButton.IsVisible)
+        else if (!atBottom && LoadMoreSurface.IsVisible)
         {
+            LoadMoreButton.IsHitTestVisible = false;
             LoadMoreButton.Opacity = 0;
-            Dispatcher.UIThread.Post(() => LoadMoreButton.IsVisible = false, DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() => LoadMoreSurface.IsVisible = false, DispatcherPriority.Loaded);
+        }
+        else if (atBottom)
+        {
+            LoadMoreButton.IsHitTestVisible = true;
+            LoadMoreButton.Opacity = 1;
         }
     }
     private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
     {
+        LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
-        Dispatcher.UIThread.Post(() => LoadMoreButton.IsVisible = false, DispatcherPriority.Loaded);
         LoadMoreVersions(sender, e);
     }
     private async void LoadMoreVersions(object? sender, RoutedEventArgs e)
