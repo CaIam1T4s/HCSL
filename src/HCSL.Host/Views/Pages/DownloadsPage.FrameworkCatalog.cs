@@ -149,7 +149,7 @@ public partial class DownloadsPage
                     LoadMoreButton.IsHitTestVisible = false;
                     LoadMoreButton.Opacity = 0;
                 }
-                else if (catalogBusy)
+                else if (!catalogBusy && LoadMoreLoader.IsVisible)
                 {
                     // Don't update visibility while loading more
                 }
