@@ -7,6 +7,7 @@ using HCSL.Contracts;
 using HCSL.Core;
 using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views.Pages;
 
@@ -196,7 +197,11 @@ public partial class DownloadsPage
             row.Children.Add(textPanel);
             var badges = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
             if (downloadedVersions.Contains(release.Version))
-                badges.Children.Add(new Badge { Content = "已下载", Tone = BadgeTone.Success, Size = BadgeSize.Small });
+                badges.Children.Add(new Badge
+                {
+                    Content = "已下载", Tone = BadgeTone.Success, Size = BadgeSize.Small,
+                    Icon = new LucideIcon { Kind = LucideIconKind.CircleCheckBig, Size = 12 }
+                });
             badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版", Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info, Size = BadgeSize.Small });
             Grid.SetColumn(badges, 1); row.Children.Add(badges);
             VersionRows.Children.Add(row);
