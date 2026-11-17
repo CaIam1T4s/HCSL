@@ -107,10 +107,13 @@ public partial class DownloadsPage
             latest = null;
         }
 
-        var satisfied = installed is not null;
+        var shownVersion = installed ?? latest ?? "无可用版本";
+        // "Installed" means the very version this row names is on disk; a newer release in the
+        // catalog does not turn an already satisfied dependency back into work to do.
+        var satisfied = installed is not null && string.Equals(shownVersion, installed, StringComparison.Ordinal);
         var check = new ArcCheckbox
         {
-            Content = definition.DisplayName + "（" + (installed ?? latest ?? "无可用版本") + "）",
+            Content = definition.DisplayName + "（" + shownVersion + "）",
             IsChecked = true,
             IsEnabled = !satisfied && latest is not null,
             VerticalAlignment = VerticalAlignment.Center
@@ -161,18 +164,43 @@ public partial class DownloadsPage
         if (installRelease is not { } release || catalogId is not { } id || Servers is not { } servers)
             throw new IOException("HCSL-FRAMEWORK-BUSY: 无法读取安装目标。");
 
-        foreach (var (dependency, version, toggle, _) in installDependencies)
-            if (toggle.IsChecked == true && toggle.IsEnabled)
-                await servers.InstallFrameworkAsync(dependency.Id, version);
-
-        var result = await servers.InstallFrameworkAsync(id, release.Version);
-        if (InstallAddToPreset.IsChecked == true)
-            await AddFrameworkToPresetAsync(id);
-
-        Owner?.ShowInstanceNotification("已安装 " + (FrameworkRules.Find(id)?.DisplayName ?? id),
-            result.Version + " · " + result.Files + " 个文件", ToastKind.Success);
+        var name = FrameworkRules.Find(id)?.DisplayName ?? id;
+        var pending = installDependencies
+            .Where(d => d.Check.IsChecked == true && d.Check.IsEnabled)
+            .ToArray();
+        InstallTaskTitle.Text = "正在安装 " + name;
+        InstallStepsList.Steps.Clear();
+        InstallStepsList.Steps.Add(new StepperStep { Label = "准备安装" });
+        foreach (var dependency in pending)
+            InstallStepsList.Steps.Add(new StepperStep { Label = "安装 " + dependency.Definition.DisplayName });
+        InstallStepsList.Steps.Add(new StepperStep { Label = "安装 " + name });
+        InstallStepsList.Steps.Add(new StepperStep { Label = "刷新版本目录" });
+        InstallStepsList.CurrentIndex = 1;
         InstallDialog.IsOpen = false;
-        await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
+        InstallProgressDialog.IsOpen = true;
+
+        try
+        {
+            foreach (var dependency in pending)
+            {
+                await servers.InstallFrameworkAsync(dependency.Definition.Id, dependency.Version);
+                InstallStepsList.CurrentIndex++;
+            }
+
+            var result = await servers.InstallFrameworkAsync(id, release.Version);
+            InstallStepsList.CurrentIndex++;
+            if (InstallAddToPreset.IsChecked == true)
+                await AddFrameworkToPresetAsync(id);
+
+            await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
+            InstallStepsList.CurrentIndex = InstallStepsList.Steps.Count;
+            Owner?.ShowInstanceNotification("已安装 " + name,
+                result.Version + " · " + result.Files + " 个文件", ToastKind.Success);
+        }
+        finally
+        {
+            InstallProgressDialog.IsOpen = false;
+        }
     }
 
     /// <summary>
