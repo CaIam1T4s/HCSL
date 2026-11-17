@@ -112,12 +112,25 @@ public partial class DownloadsPage
             Content = definition.DisplayName + "（" + (installed ?? latest ?? "无可用版本") + "）",
             IsChecked = true,
             IsEnabled = !satisfied && latest is not null,
-            Description = satisfied ? "已安装" : latest is null ? "目录中没有可用版本" : null
+            VerticalAlignment = VerticalAlignment.Center
         };
+        var state = new Badge
+        {
+            Content = satisfied ? "已安装" : latest is null ? "不可用" : "将安装",
+            Tone = satisfied ? BadgeTone.Success : latest is null ? BadgeTone.Danger : BadgeTone.Info,
+            Size = BadgeSize.Small,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        // One fixed-height row per dependency: checkbox left, state right, matching the informational
+        // rows' rhythm instead of the 44px default control height.
+        var row = new Grid { Height = 24, ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        row.Children.Add(check);
+        Grid.SetColumn(state, 1);
+        row.Children.Add(state);
         if (latest is null)
             InstallConfirm.IsEnabled = false;
         installDependencies.Add((definition, latest ?? installed ?? "", check));
-        InstallDependencies.Children.Add(check);
+        InstallDependencies.Children.Add(row);
     }
 
     /// <summary>Shows the preset target only while the option is on, so the badge never reads as "already added".</summary>
