@@ -106,6 +106,35 @@
         </arc:Button>
       </controls:ElevatedSurface>
     </Grid>
+    <arc:Dialog x:Name="InstallDialog" Title="安装框架" Size="Large">
+      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+          <arc:Badge x:Name="InstallChannel" Content="正式版" Tone="Info" Size="Small"/>
+          <TextBlock x:Name="InstallPublished" Classes="muted" VerticalAlignment="Center"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+          <TextBlock x:Name="InstallAsset" TextWrapping="Wrap" FontFamily="{arc:ArcDesignTokenResource MonoFontFamily}" FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
+          <TextBlock x:Name="InstallAssetSize" Grid.Column="1" Classes="muted" VerticalAlignment="Center"/>
+        </Grid>
+        <StackPanel x:Name="InstallPersistentRow" Spacing="{arc:ArcDesignTokenResource Space1}" IsVisible="False">
+          <TextBlock Text="保留用户数据" Classes="muted"/>
+          <TextBlock x:Name="InstallPersistentPaths" FontSize="{arc:ArcDesignTokenResource TypeXS}" TextWrapping="Wrap" Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space2}">
+          <arc:Checkbox x:Name="InstallAddToPreset" Content="添加到当前预设"/>
+          <arc:Badge x:Name="InstallPreset" Grid.Column="1" Tone="Neutral" Size="Small" IsVisible="False"/>
+        </Grid>
+        <StackPanel x:Name="InstallDependencies" Spacing="{arc:ArcDesignTokenResource Space2}">
+          <TextBlock Text="依赖" Classes="muted" IsVisible="False" x:Name="InstallDependenciesLabel"/>
+        </StackPanel>
+      </StackPanel>
+      <arc:Dialog.Actions>
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}" HorizontalAlignment="Right">
+          <arc:Button x:Name="InstallDismiss" Content="取消" Variant="Secondary" Click="CloseInstallDialog"/>
+          <arc:ActionButton x:Name="InstallConfirm" Label="安装" PendingLabel="安装中" SuccessLabel="已安装"/>
+        </StackPanel>
+      </arc:Dialog.Actions>
+    </arc:Dialog>
     <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
       <StackPanel Spacing="12">
         <TextBlock Text="安装位置"/>

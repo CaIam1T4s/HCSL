@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -8,6 +9,7 @@ using HCSL.Core;
 using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
+using ArcButton = TKCode.Arc.Button;
 
 namespace HCSL.Host.Views.Pages;
 
@@ -185,7 +187,7 @@ public partial class DownloadsPage
         VersionRows.Children.Clear();
         foreach (var release in shownVersions)
         {
-            var row = new Grid { Height = 56, ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 0, 12, 0) };
+            var row = new Grid { Height = 56, ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 0, 12, 0) };
             var textPanel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
             var versionBlock = new MorphBlock { SkeletonWidth = 80, Lines = 1, LineHeight = 20 };
             versionBlock.Content = new TextBlock { Text = release.Version, VerticalAlignment = VerticalAlignment.Center };
@@ -205,6 +207,15 @@ public partial class DownloadsPage
                 });
             badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版", Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info, Size = BadgeSize.Small });
             Grid.SetColumn(badges, 1); row.Children.Add(badges);
+            var install = new ArcButton
+            {
+                Variant = ButtonVariant.Ghost, Size = ControlSize.Small, IsPressScaleEnabled = false,
+                VerticalAlignment = VerticalAlignment.Center,
+                Content = new LucideIcon { Kind = LucideIconKind.ArrowDownToLine, Size = 16 }
+            };
+            install.SetValue(AutomationProperties.NameProperty, "安装 " + release.Version);            var target = release;
+            install.Click += async (_, _) => await OpenInstallDialogAsync(target);
+            Grid.SetColumn(install, 2); row.Children.Add(install);
             VersionRows.Children.Add(row);
         }
     }
