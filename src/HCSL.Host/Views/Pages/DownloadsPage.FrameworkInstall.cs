@@ -179,8 +179,7 @@ public partial class DownloadsPage
         installTimer.Tick -= TickInstallElapsed;
         installTimer.Tick += TickInstallElapsed;
         InstallTaskTitle.Text = "正在安装 " + name;
-        InstallSpeed.Text = "-";
-        InstallBytes.Text = "- / " + FormatBytes(release.Bytes);
+        InstallTotalSize.Text = "共 " + FormatBytes(release.Bytes);
         InstallElapsed.Text = "00:00";
         installElapsed.Restart();
         installTimer.Start();
