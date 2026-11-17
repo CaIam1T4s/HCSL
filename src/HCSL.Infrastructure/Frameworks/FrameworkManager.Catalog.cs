@@ -205,6 +205,10 @@ public sealed partial class FrameworkManager
         foreach (var release in state.Releases.OrderByDescending(r => r.PublishedAt).ThenByDescending(r => r.Id))
         {
             var version = FrameworkRules.VersionFromTag(framework.Id, release.Tag);
+            // Metamod's repository also carries the Source 1 line (1.12.0.<build>). Those are a
+            // different product for a different engine, not an unsupported spelling of this
+            // framework, so they never belong in the Source 2 catalog.
+            if (version is null && FrameworkRules.IsBase(framework.Id)) continue;
             var name = FrameworkRules.SelectAsset(framework.Id, release.Assets.Select(a => a.Name), OperatingSystem.IsWindows(), true)
                 ?? FrameworkRules.SelectAsset(framework.Id, release.Assets.Select(a => a.Name), OperatingSystem.IsWindows(), false);
             var asset = release.Assets.FirstOrDefault(a => a.Name == name);
@@ -213,7 +217,10 @@ public sealed partial class FrameworkManager
                 asset.Digest is null || asset.Digest.Length != 71 || !asset.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) || !asset.Digest[7..].All(Uri.IsHexDigit) ? "缺少官方 SHA-256 校验信息" : null;
             if (reason is null && FrameworkRules.VersionFromAsset(framework.Id, name!) is { } assetVersion && assetVersion != version)
                 reason = "版本标签与发行包版本不一致";
-            entries.Add(new(release.Id, version ?? release.Tag, release.Tag, release.PublishedAt, release.Prerelease, name,
+            // Metamod has published no stable Source 2 channel yet, so GitHub flags every 2.0.0 build
+            // as a prerelease. Showing them all as prereleases would mislabel the only installable line.
+            var prerelease = FrameworkRules.IsBase(framework.Id) ? false : release.Prerelease;
+            entries.Add(new(release.Id, version ?? release.Tag, release.Tag, release.PublishedAt, prerelease, name,
                 asset?.Size ?? 0, reason is null, reason));
         }
         var packagesRoot = Path.Combine(libraryRoot, "plugin-packages");
