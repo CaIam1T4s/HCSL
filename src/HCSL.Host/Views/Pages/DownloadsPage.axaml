@@ -24,7 +24,12 @@
       <Setter Property="Height" Value="44"/>
       <Setter Property="MinHeight" Value="44"/>
     </Style>
-    <Style Selector="arc|Button.resource-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
+    <Style Selector="arc|Button.resource-row">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <!-- Same surface fill as the instance rows: a solid window-derived panel colour instead of the
+           transparent ghost background that let the wallpaper gradient show through. -->
+      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.78}"/>
+    </Style>
     <!-- Match InstancesPage expanding button group hover/focus styles -->
     <Style Selector="arc|ExpandingButtonGroup.downloads-actions /template/ Panel">
       <Setter Property="Background" Value="Transparent"/>

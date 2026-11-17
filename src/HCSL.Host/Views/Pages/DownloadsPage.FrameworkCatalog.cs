@@ -54,6 +54,7 @@ public partial class DownloadsPage
             Grid.SetColumn(version, 2); row.Children.Add(version);
             var button = new TKCode.Arc.Button { Content = row, Variant = ButtonVariant.Ghost, Height = 48, Padding = default,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch, IsPressScaleEnabled = false };
+            button.Classes.Add("resource-row");
             button.SizeChanged += (_, e) => row.Width = Math.Max(0, e.NewSize.Width - 32);
             button.Click += async (_, _) => await OpenFrameworkCatalogAsync(framework.Id);
             FrameworkRows.Children.Add(new ElevatedSurface(button));
