@@ -14,9 +14,19 @@ namespace HCSL.Host.Views.Pages;
 public partial class DownloadsPage
 {
     private FrameworkReleaseEntry? installRelease;
+    private readonly System.Diagnostics.Stopwatch installElapsed = new();
+    private readonly DispatcherTimer installTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<(FrameworkDefinition Definition, string Version, ArcCheckbox Check, Control Row)> installDependencies = [];
 
     private HostServerController? Servers => (DataContext as ShellViewModel)?.Servers;
+
+    private void TickInstallElapsed(object? sender, EventArgs e)
+    {
+        var time = installElapsed.Elapsed;
+        InstallElapsed.Text = time.TotalHours >= 1
+            ? $"{(int)time.TotalHours:00}:{time.Minutes:00}:{time.Seconds:00}"
+            : time.ToString(@"mm\:ss");
+    }
 
     /// <summary>
     /// Fills the install dialog for one release. Dependencies are resolved through the same read-only
@@ -159,6 +169,32 @@ public partial class DownloadsPage
         }
     }
 
+    /// <summary>
+    /// Mirrors the server download dialog's readouts: a clock on the right, and the traffic line under
+    /// the bar. The host reports no intermediate bytes, so the transfer figures stay "-" while the
+    /// release's known size supplies the denominator.
+    /// </summary>
+    private void ShowInstallProgress(string name, FrameworkReleaseEntry release)
+    {
+        installTimer.Tick -= TickInstallElapsed;
+        installTimer.Tick += TickInstallElapsed;
+        InstallTaskTitle.Text = "正在安装 " + name;
+        InstallSpeed.Text = "-";
+        InstallBytes.Text = "- / " + FormatBytes(release.Bytes);
+        InstallElapsed.Text = "00:00";
+        installElapsed.Restart();
+        installTimer.Start();
+        InstallProgressDialog.IsOpen = true;
+    }
+
+    private void StopInstallProgress()
+    {
+        installTimer.Stop();
+        installTimer.Tick -= TickInstallElapsed;
+        installElapsed.Reset();
+        InstallProgressDialog.IsOpen = false;
+    }
+
     private async Task InstallAsync()
     {
         if (installRelease is not { } release || catalogId is not { } id || Servers is not { } servers)
@@ -177,7 +213,7 @@ public partial class DownloadsPage
         InstallStepsList.Steps.Add(new StepperStep { Label = "刷新版本目录" });
         InstallStepsList.CurrentIndex = 1;
         InstallDialog.IsOpen = false;
-        InstallProgressDialog.IsOpen = true;
+        ShowInstallProgress(name, release);
 
         try
         {
@@ -199,7 +235,7 @@ public partial class DownloadsPage
         }
         finally
         {
-            InstallProgressDialog.IsOpen = false;
+            StopInstallProgress();
         }
     }
 

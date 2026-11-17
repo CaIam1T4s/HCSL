@@ -161,14 +161,25 @@
     <arc:Dialog x:Name="InstallProgressDialog" Title="安装框架" ShowHeader="False" ShowCloseButton="False"
                 CloseOnEscape="False" CloseOnOutsidePress="False" Size="Large">
       <StackPanel Spacing="12">
-        <TextBlock x:Name="InstallTaskTitle" Text="正在安装" Classes="subheading"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock x:Name="InstallTaskTitle" Text="正在安装" Classes="subheading"/>
+          <TextBlock x:Name="InstallElapsed" Grid.Column="1" Text="00:00" VerticalAlignment="Center"/>
+        </Grid>
         <arc:Stepper x:Name="InstallStepsList" Orientation="Vertical" IsNavigable="False" Details="Current" Label="安装阶段"/>
-        <!-- The host reports one result per call, so the amount of work cannot be measured here;
-             the skeleton form is the same unknown-progress treatment the server download dialog uses. -->
-        <arc:SkeletonMorph x:Name="InstallProgressRegion" IsLoading="True" Stagger="0:0:0"
-                           LoadingLabel="安装进度暂不可用" Background="Transparent">
-          <TextBlock Text="安装完成" Classes="muted"/>
-        </arc:SkeletonMorph>
+        <!-- The host reports one result per call, so transferred bytes cannot be measured here; the
+             skeleton form is the same unknown-progress treatment the server download dialog uses. -->
+        <Grid Height="40">
+          <arc:SkeletonMorph x:Name="InstallProgressRegion" IsLoading="True" Stagger="0:0:0"
+                             LoadingLabel="安装进度暂不可用" Background="Transparent" VerticalAlignment="Bottom">
+            <arc:MorphBlock SkeletonHeight="4" SkeletonRadius="2">
+              <arc:Progress x:Name="InstallProgress" Maximum="100" IsValueVisible="True"/>
+            </arc:MorphBlock>
+          </arc:SkeletonMorph>
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+          <TextBlock x:Name="InstallSpeed" Text="-" VerticalAlignment="Center"/>
+          <TextBlock x:Name="InstallBytes" Grid.Column="1" Text="-" VerticalAlignment="Center" Classes="muted"/>
+        </Grid>
       </StackPanel>
     </arc:Dialog>
     <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
