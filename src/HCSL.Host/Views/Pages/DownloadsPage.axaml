@@ -118,7 +118,7 @@
       <!-- The dialog panel caps its height; a scrollable body keeps the footer reachable when the
            dependency list grows instead of letting the panel clip the buttons away. -->
       <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" MaxHeight="320">
-        <StackPanel Classes="install-body" Spacing="{arc:ArcDesignTokenResource Space3}">
+        <StackPanel Classes="install-body" Spacing="{arc:ArcDesignTokenResource Space3}" Margin="0,0,12,0">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
             <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}" VerticalAlignment="Center">
               <arc:Badge x:Name="InstallChannel" Content="正式版" Tone="Info" Size="Small"/>
@@ -139,7 +139,10 @@
           <!-- Information block: what will be downloaded. The divider below starts the options block,
                so the taller checkbox rows there read as a group instead of uneven line spacing. -->
           <Border Classes="instance-editor-divider"/>
-          <Grid Height="{arc:ArcDesignTokenResource Space6}" ColumnDefinitions="Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space2}">
+          <!-- The checkbox keeps Arc's 44px control height; negative vertical margins shrink only its
+               footprint in the flow, so the row rhythm matches the text rows without squeezing or
+               clipping the control itself. -->
+          <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space2}" Margin="0,-10,0,-10">
             <arc:Checkbox x:Name="InstallAddToPreset" Content="添加到当前预设" VerticalAlignment="Center" CheckedStateChanged="PresetToggle"/>
             <arc:Badge x:Name="InstallPreset" Grid.Column="1" Tone="Neutral" Size="Small" VerticalAlignment="Center" IsVisible="False"/>
           </Grid>

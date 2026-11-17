@@ -14,7 +14,7 @@ namespace HCSL.Host.Views.Pages;
 public partial class DownloadsPage
 {
     private FrameworkReleaseEntry? installRelease;
-    private readonly List<(FrameworkDefinition Definition, string Version, ArcCheckbox Check)> installDependencies = [];
+    private readonly List<(FrameworkDefinition Definition, string Version, ArcCheckbox Check, Control Row)> installDependencies = [];
 
     private HostServerController? Servers => (DataContext as ShellViewModel)?.Servers;
 
@@ -82,7 +82,9 @@ public partial class DownloadsPage
 
     private async Task ShowDependenciesAsync(string id)
     {
-        foreach (var (_, _, existing) in installDependencies)
+        // Remove the row that was added, not the checkbox it contains; otherwise reopening the dialog
+        // keeps stacking one more row per open.
+        foreach (var (_, _, _, existing) in installDependencies)
             InstallDependencies.Children.Remove(existing);
         installDependencies.Clear();
 
@@ -105,8 +107,7 @@ public partial class DownloadsPage
             latest = null;
         }
 
-        var satisfied = installed is not null && latest is not null &&
-            FrameworkRules.CompareVersions(definition.Id, latest, installed) <= 0;
+        var satisfied = installed is not null;
         var check = new ArcCheckbox
         {
             Content = definition.DisplayName + "（" + (installed ?? latest ?? "无可用版本") + "）",
@@ -121,15 +122,15 @@ public partial class DownloadsPage
             Size = BadgeSize.Small,
             VerticalAlignment = VerticalAlignment.Center
         };
-        // One fixed-height row per dependency: checkbox left, state right, matching the informational
-        // rows' rhythm instead of the 44px default control height.
-        var row = new Grid { Height = 24, ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        // One row per dependency: checkbox left, state right. The negative margin only shrinks the
+        // row's footprint in the flow, so the 44px control is neither squeezed nor clipped.
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, -10, 0, -10) };
         row.Children.Add(check);
         Grid.SetColumn(state, 1);
         row.Children.Add(state);
         if (latest is null)
             InstallConfirm.IsEnabled = false;
-        installDependencies.Add((definition, latest ?? installed ?? "", check));
+        installDependencies.Add((definition, latest ?? installed ?? "", check, row));
         InstallDependencies.Children.Add(row);
     }
 
@@ -160,7 +161,7 @@ public partial class DownloadsPage
         if (installRelease is not { } release || catalogId is not { } id || Servers is not { } servers)
             throw new IOException("HCSL-FRAMEWORK-BUSY: 无法读取安装目标。");
 
-        foreach (var (dependency, version, toggle) in installDependencies)
+        foreach (var (dependency, version, toggle, _) in installDependencies)
             if (toggle.IsChecked == true && toggle.IsEnabled)
                 await servers.InstallFrameworkAsync(dependency.Id, version);
 
