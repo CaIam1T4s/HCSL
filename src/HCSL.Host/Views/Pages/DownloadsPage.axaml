@@ -132,7 +132,7 @@
             <arc:Badge x:Name="InstallPreset" Grid.Column="1" Tone="Neutral" Size="Small" IsVisible="False"/>
           </Grid>
           <StackPanel x:Name="InstallDependencies" Spacing="{arc:ArcDesignTokenResource Space2}" IsVisible="False">
-            <TextBlock Text="依赖" Classes="muted" x:Name="InstallDependenciesLabel"/>
+            <TextBlock Text="依赖" Classes="muted"/>
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
