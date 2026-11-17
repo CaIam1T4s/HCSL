@@ -15,6 +15,7 @@ public partial class DownloadsPage
     private string? catalogId;
     private int catalogGeneration;
     private bool catalogBusy;
+    private bool loadMoreAnimating;
     private FrameworkCatalogResult? catalogResult;
     private readonly List<FrameworkReleaseEntry> shownVersions = [];
     private readonly HashSet<string> downloadedVersions = new(StringComparer.Ordinal);
@@ -76,6 +77,7 @@ public partial class DownloadsPage
         catalogId = id;
         catalogGeneration++;
         catalogBusy = false;
+        loadMoreAnimating = false;
         shownVersions.Clear(); downloadedVersions.Clear(); VersionRows.Children.Clear();
         catalogResult = null;
         VersionScroll.Offset = new Vector(0, 0);
@@ -99,6 +101,7 @@ public partial class DownloadsPage
         catalogGeneration++;
         catalogId = null;
         catalogBusy = false;
+        loadMoreAnimating = false;
         CatalogBack.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = false;
         ResourceList.IsVisible = true;
@@ -144,15 +147,12 @@ public partial class DownloadsPage
             }
             Dispatcher.UIThread.Post(() =>
             {
+                if (loadMoreAnimating) return;
                 if (shownVersions.Count == 0 || catalogResult?.TotalCached == 0)
                 {
                     LoadMoreSurface.IsVisible = false;
                     LoadMoreButton.IsHitTestVisible = false;
                     LoadMoreButton.Opacity = 0;
-                }
-                else if (!catalogBusy && LoadMoreLoader.IsVisible)
-                {
-                    // Don't update visibility while loading more
                 }
                 else
                 {
@@ -202,12 +202,12 @@ public partial class DownloadsPage
     }
     private void UpdateLoadMoreVisibility()
     {
+        // While the load-more morph animation or its dwell delay is running, scrolling must not
+        // re-show or hide the button: the animation owns the surface until it finishes.
+        if (loadMoreAnimating) return;
         var hasMore = shownVersions.Count < (catalogResult?.TotalCached ?? 0) || catalogResult?.NextPage is not null;
-        var viewportHeight = VersionScroll.Viewport.Height;
-        var extentHeight = VersionScroll.Extent.Height;
-        var offsetY = VersionScroll.Offset.Y;
-        var maxOffset = Math.Max(0, extentHeight - viewportHeight);
-        var atBottom = hasMore && maxOffset > 0 && offsetY >= maxOffset - 20;
+        var scrollable = VersionScroll.Extent.Height > VersionScroll.Viewport.Height + 1;
+        var atBottom = hasMore && scrollable && IsLastRowReached();
         if (atBottom)
         {
             if (!LoadMoreSurface.IsVisible)
@@ -230,8 +230,20 @@ public partial class DownloadsPage
             LoadMoreSurface.IsVisible = false;
         }
     }
+    /// <summary>
+    /// Measures the last version row against the viewport instead of doing extent arithmetic:
+    /// ScrollViewer.Extent can be larger than the offset actually reachable (a row taller than the
+    /// real content limit), which made the "reached the bottom" test impossible to satisfy.
+    /// </summary>
+    private bool IsLastRowReached()
+    {
+        if (VersionRows.Children.Count == 0 || VersionRows.Children[^1] is not Control last) return false;
+        if (last.TranslatePoint(new Point(0, last.Bounds.Height), VersionScroll) is not { } bottom) return false;
+        return bottom.Y <= VersionScroll.Viewport.Height + 24;
+    }
     private void LoadMoreButton_Click(object? sender, RoutedEventArgs e)
     {
+        loadMoreAnimating = true;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreGlyph.IsVisible = false;
         LoadMoreLoader.IsVisible = true;
@@ -242,34 +254,44 @@ public partial class DownloadsPage
     private async void LoadMoreVersions(object? sender, RoutedEventArgs e)
     {
         if (catalogBusy || catalogId is not { } id || catalogResult is not { } result) return;
+        var generation = catalogGeneration;
         try
         {
             await LoadCatalogAsync(shownVersions.Count < result.TotalCached
                 ? new(id, CacheOnly: true, Offset: shownVersions.Count)
-                : new(id, Page: result.NextPage, Offset: shownVersions.Count), catalogGeneration);
+                : new(id, Page: result.NextPage, Offset: shownVersions.Count), generation);
+            if (generation != catalogGeneration) return;
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Success;
             LoadMoreLabel.Text = "已加载";
             await Task.Delay(1000);
+            if (generation != catalogGeneration) return;
             LoadMoreButton.Opacity = 0;
             await Task.Delay(300);
+            if (generation != catalogGeneration) return;
             LoadMoreLoader.IsVisible = false;
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
             LoadMoreButton.IsHitTestVisible = false;
             LoadMoreSurface.IsVisible = false;
+            loadMoreAnimating = false;
+            UpdateLoadMoreVisibility();
         }
         catch
         {
             LoadMoreLoader.Status = TKCode.Arc.MorphLoaderStatus.Error;
             LoadMoreLabel.Text = "加载失败";
             await Task.Delay(1000);
+            if (generation != catalogGeneration) return;
             LoadMoreButton.Opacity = 0;
             await Task.Delay(300);
+            if (generation != catalogGeneration) return;
             LoadMoreLoader.IsVisible = false;
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
             LoadMoreButton.IsHitTestVisible = false;
             LoadMoreSurface.IsVisible = false;
+            loadMoreAnimating = false;
+            UpdateLoadMoreVisibility();
         }
     }
 }
