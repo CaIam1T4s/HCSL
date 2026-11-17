@@ -30,15 +30,19 @@ public partial class DownloadsPage
         InstallDialog.Title = "安装 " + (FrameworkRules.Find(id)?.DisplayName ?? id);
         InstallChannel.Content = release.Prerelease ? "预发布版" : "正式版";
         InstallChannel.Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info;
+        InstallVersion.Text = release.Version;
         InstallPublished.Text = release.PublishedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
         InstallAsset.Text = release.Asset ?? "未提供下载资产";
         InstallAssetSize.Text = FormatBytes(release.Bytes);
+        InstallDialog.Description = FrameworkRules.Find(id)?.Repository;
+        InstallExisting.IsVisible = downloadedVersions.Contains(release.Version);
+        InstallExisting.Text = "库中已有该版本，安装会覆盖库内文件。";
         ShowPersistentPaths(id);
         ShowPresetTarget();
         await ShowDependenciesAsync(id);
-        InstallConfirm.AsyncAction = InstallAsync;
         InstallConfirm.IsEnabled = release.Downloadable;
         InstallDialog.IsOpen = true;
+        InstallConfirm.Focus();
     }
 
     private void ShowPersistentPaths(string id)
@@ -52,7 +56,7 @@ public partial class DownloadsPage
     {
         var selected = Servers?.Selected?.Entry;
         var preset = selected?.Presets.FirstOrDefault(p => p.Id == selected.Definition?.SelectedPresetId);
-        InstallPreset.IsVisible = selected is not null && preset is not null;
+        InstallPreset.IsVisible = false;
         InstallPreset.Content = selected is null || preset is null ? "" : selected.Definition?.Name + " · " + preset.Name;
         // Frameworks live in the shared library, so adding one to a preset only needs a writable preset.
         InstallAddToPreset.IsChecked = false;
@@ -70,7 +74,7 @@ public partial class DownloadsPage
 
         var requires = FrameworkRules.Find(id)?.Requires;
         var definition = requires is null ? null : FrameworkRules.Find(requires);
-        InstallDependenciesLabel.IsVisible = definition is not null;
+        InstallDependencies.IsVisible = definition is not null;
         if (definition is null || Servers is not { } servers)
             return;
 
@@ -102,31 +106,45 @@ public partial class DownloadsPage
         InstallDependencies.Children.Add(check);
     }
 
+    /// <summary>Shows the preset target only while the option is on, so the badge never reads as "already added".</summary>
+    private void PresetToggle(object? sender, TKCode.Arc.CheckboxStateChangedEventArgs e) =>
+        InstallPreset.IsVisible = InstallAddToPreset.IsChecked == true && InstallPreset.Content is not null;
+
+    private async void ConfirmInstall(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        InstallConfirm.IsLoading = true;
+        InstallConfirm.IsEnabled = false;
+        InstallDismiss.IsEnabled = false;
+        try { await InstallAsync(); }
+        catch (Exception error) when (error is IOException or InvalidOperationException)
+        {
+            Owner?.ShowInstanceNotification("安装失败", error.Message, ToastKind.Error);
+        }
+        finally
+        {
+            InstallConfirm.IsLoading = false;
+            InstallConfirm.IsEnabled = true;
+            InstallDismiss.IsEnabled = true;
+        }
+    }
+
     private async Task InstallAsync()
     {
         if (installRelease is not { } release || catalogId is not { } id || Servers is not { } servers)
             throw new IOException("HCSL-FRAMEWORK-BUSY: 无法读取安装目标。");
 
-        try
-        {
-            foreach (var (dependency, version, toggle) in installDependencies)
-                if (toggle.IsChecked == true && toggle.IsEnabled)
-                    await servers.InstallFrameworkAsync(dependency.Id, version);
+        foreach (var (dependency, version, toggle) in installDependencies)
+            if (toggle.IsChecked == true && toggle.IsEnabled)
+                await servers.InstallFrameworkAsync(dependency.Id, version);
 
-            var result = await servers.InstallFrameworkAsync(id, release.Version);
-            if (InstallAddToPreset.IsChecked == true)
-                await AddFrameworkToPresetAsync(id);
+        var result = await servers.InstallFrameworkAsync(id, release.Version);
+        if (InstallAddToPreset.IsChecked == true)
+            await AddFrameworkToPresetAsync(id);
 
-            Owner?.ShowInstanceNotification("已安装 " + (FrameworkRules.Find(id)?.DisplayName ?? id),
-                result.Version + " · " + result.Files + " 个文件", ToastKind.Success);
-            InstallDialog.IsOpen = false;
-            await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
-        }
-        catch (Exception e) when (e is IOException or InvalidOperationException)
-        {
-            Owner?.ShowInstanceNotification("安装失败", e.Message, ToastKind.Error);
-            throw;
-        }
+        Owner?.ShowInstanceNotification("已安装 " + (FrameworkRules.Find(id)?.DisplayName ?? id),
+            result.Version + " · " + result.Files + " 个文件", ToastKind.Success);
+        InstallDialog.IsOpen = false;
+        await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
     }
 
     /// <summary>
