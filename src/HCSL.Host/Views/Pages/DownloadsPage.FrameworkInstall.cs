@@ -37,12 +37,26 @@ public partial class DownloadsPage
         InstallDialog.Description = FrameworkRules.Find(id)?.Repository;
         InstallExisting.IsVisible = downloadedVersions.Contains(release.Version);
         InstallExisting.Text = "库中已有该版本，安装会覆盖库内文件。";
+        ShowAvailability(release);
         ShowPersistentPaths(id);
         ShowPresetTarget();
         await ShowDependenciesAsync(id);
-        InstallConfirm.IsEnabled = release.Downloadable;
         InstallDialog.IsOpen = true;
         InstallConfirm.Focus();
+    }
+
+    /// <summary>
+    /// A release without a usable asset cannot be installed. Say why and stop offering the accent
+    /// primary action, instead of leaving a normally-coloured button that only refuses clicks.
+    /// </summary>
+    private void ShowAvailability(FrameworkReleaseEntry release)
+    {
+        var reason = release.Downloadable ? null : release.UnavailableReason ?? "该版本没有可下载的资产";
+        InstallReason.IsVisible = reason is not null;
+        InstallReason.Text = reason ?? "";
+        InstallConfirm.Content = release.Downloadable ? "安装" : "不可安装";
+        InstallConfirm.Variant = release.Downloadable ? ButtonVariant.Primary : ButtonVariant.Secondary;
+        InstallConfirm.IsEnabled = release.Downloadable;
     }
 
     private void ShowPersistentPaths(string id)
