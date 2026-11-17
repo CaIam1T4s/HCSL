@@ -207,8 +207,9 @@ public sealed partial class FrameworkManager
             var version = FrameworkRules.VersionFromTag(framework.Id, release.Tag);
             // Metamod's repository also carries the Source 1 line (1.12.0.<build>). Those are a
             // different product for a different engine, not an unsupported spelling of this
-            // framework, so they never belong in the Source 2 catalog.
-            if (version is null && FrameworkRules.IsBase(framework.Id)) continue;
+            // framework, so they never belong in the Source 2 catalog. Other unparsable tags stay
+            // listed with a reason, so a genuinely new naming scheme is visible instead of vanishing.
+            if (FrameworkRules.IsBase(framework.Id) && FrameworkRules.IsSupersededMetamodTag(release.Tag)) continue;
             var name = FrameworkRules.SelectAsset(framework.Id, release.Assets.Select(a => a.Name), OperatingSystem.IsWindows(), true)
                 ?? FrameworkRules.SelectAsset(framework.Id, release.Assets.Select(a => a.Name), OperatingSystem.IsWindows(), false);
             var asset = release.Assets.FirstOrDefault(a => a.Name == name);

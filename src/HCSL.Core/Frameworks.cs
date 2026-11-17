@@ -77,6 +77,8 @@ public static class FrameworkRules
     ];
 
     private static readonly Regex MetamodTag = new(@"\A2\.0\.0\.(?<build>\d+)\z", RegexOptions.CultureInvariant);
+    /// <summary>Metamod's Source 1 line (1.12.0.&lt;build&gt;) shares the repository but not the engine.</summary>
+    private static readonly Regex MetamodSource1Tag = new(@"\A1\.\d+\.\d+\.\d+\z", RegexOptions.CultureInvariant);
     private static readonly Regex MetamodAsset = new(@"(?i)\Ammsource-2\.0\.0-git(?<build>\d+)-(?<os>linux|windows)\.(?<ext>tar\.gz|zip)\z", RegexOptions.CultureInvariant);
     private static readonly Regex CssTag = new(@"\Av?(?<version>\d+\.\d+\.\d+)\z", RegexOptions.CultureInvariant);
     private static readonly Regex CssAsset = new(@"(?i)\Acounterstrikesharp-(?<runtime>with-runtime-)?(?<os>linux|windows)-(?<version>\d+\.\d+\.\d+)\.zip\z", RegexOptions.CultureInvariant);
@@ -89,6 +91,12 @@ public static class FrameworkRules
 
     public static FrameworkDefinition? Find(string? id) =>
         Known.FirstOrDefault(f => string.Equals(f.Id, id, StringComparison.Ordinal));
+
+    /// <summary>
+    /// True for a release tag of the Metamod Source 1 line, which lives in the same repository but
+    /// targets a different engine; it must not appear in the Source 2 catalog.
+    /// </summary>
+    public static bool IsSupersededMetamodTag(string tag) => MetamodSource1Tag.IsMatch(tag);
 
     public static FrameworkReadinessProfile ReadinessProfileFor(string? id) =>
         Find(id)?.Readiness ?? FrameworkReadinessProfile.Standard;
