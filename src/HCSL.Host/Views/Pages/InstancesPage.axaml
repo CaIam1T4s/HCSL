@@ -138,12 +138,6 @@
   </UserControl.Styles>
   <Grid Margin="32" RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
     <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space3}">
-      <controls:ElevatedSurface>
-        <arc:Button x:Name="BackButton" Classes="instance-back" Variant="Ghost" Click="GoBack" arc:Tooltip.Tip="返回"
-                    AutomationProperties.Name="返回首页">
-          <lucide:LucideIcon Kind="ArrowLeft"/>
-        </arc:Button>
-      </controls:ElevatedSurface>
       <TextBlock Classes="heading" Text="实例列表" VerticalAlignment="Center"/>
     </StackPanel>
     <Grid x:Name="InstancesToolbar" Grid.Row="1" ColumnDefinitions="3*,*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">

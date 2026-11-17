@@ -17,6 +17,13 @@
       <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
     </Style>
+    <!-- The icon-only back button matches the InstancesPage back affordance instead of the compact
+         toolbar sizing used by every other button on this page. -->
+    <Style Selector="arc|Button.catalog-back">
+      <Setter Property="Size" Value="Medium"/>
+      <Setter Property="Height" Value="44"/>
+      <Setter Property="MinHeight" Value="44"/>
+    </Style>
     <Style Selector="arc|Button.resource-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style>
     <!-- Match InstancesPage expanding button group hover/focus styles -->
     <Style Selector="arc|ExpandingButtonGroup.downloads-actions /template/ Panel">
@@ -36,7 +43,12 @@
   </UserControl.Styles>
   <Grid Margin="32" RowDefinitions="Auto,*" RowSpacing="12">
     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-      <arc:Button x:Name="CatalogBack" Content="返回" Variant="Ghost" Click="CloseFrameworkCatalog" IsVisible="False"/>
+      <controls:ElevatedSurface x:Name="CatalogBack" VerticalAlignment="Center" IsVisible="False">
+        <arc:Button x:Name="CatalogBackButton" Classes="catalog-back" Variant="Ghost" Click="CloseFrameworkCatalog" arc:Tooltip.Tip="返回"
+                    AutomationProperties.Name="返回下载中心">
+          <lucide:LucideIcon Kind="ArrowLeft"/>
+        </arc:Button>
+      </controls:ElevatedSurface>
       <TextBlock x:Name="DownloadsHeading" Grid.Column="1" Classes="heading" Text="下载中心" VerticalAlignment="Center"/>
       <Grid Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" Width="{arc:ArcDesignTokenResource MediaSizeXL}">
         <arc:ExpandingButtonGroup x:Name="ToolbarActions" Classes="launch-actions downloads-actions" Label="下载中心操作" HorizontalAlignment="Stretch" ClipToBounds="False">

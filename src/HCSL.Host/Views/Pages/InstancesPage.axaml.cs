@@ -350,7 +350,6 @@ public partial class InstancesPage : UserControl
         Error("实例暂不可切换", "请等待当前操作完成后重试。");
         return false;
     }
-    private void GoBack(object? sender, RoutedEventArgs e) => shell?.NavigateCommand.Execute("home");
     private async void CreateInstance(object? sender, RoutedEventArgs e) => await EditAsync(null);
     private async Task EditAsync(InstanceListRow? row)
     {
