@@ -215,7 +215,13 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     /// </summary>
     private OperationSnapshot CancelWork(Guid? operationId)
     {
-        if (operationId is { } id && frameworkInstalls.TryRemove(id, out var install)) install.Cancel();
+        // A framework install is not a SteamCMD task; reporting it to operations.Cancel would raise
+        // HCSL-TASK-NOTFOUND even though the cancel itself succeeded.
+        if (operationId is { } id && frameworkInstalls.TryRemove(id, out var install))
+        {
+            install.Cancel();
+            return operations.Snapshot();
+        }
         return operations.Cancel(operationId);
     }
 
