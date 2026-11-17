@@ -29,7 +29,9 @@ public partial class DownloadsPage
     {
         VersionScroll.ScrollChanged += (_, e) =>
         {
-            if (e.OffsetDelta.Y == 0) return;
+            // Extent-only changes matter too: appended rows move the bottom without moving the offset,
+            // and the button has to follow that new bottom.
+            if (e.OffsetDelta.Y == 0 && e.ExtentDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
             UpdateLoadMoreVisibility();
         };
         VersionScroll.SizeChanged += (_, e) => UpdateLoadMoreVisibility();
@@ -272,9 +274,7 @@ public partial class DownloadsPage
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
             LoadMoreButton.IsHitTestVisible = false;
-            LoadMoreSurface.IsVisible = false;
-            loadMoreAnimating = false;
-            UpdateLoadMoreVisibility();
+            FinishLoadMoreAnimation();
         }
         catch
         {
@@ -289,9 +289,22 @@ public partial class DownloadsPage
             LoadMoreGlyph.IsVisible = true;
             LoadMoreLabel.Text = "加载更多";
             LoadMoreButton.IsHitTestVisible = false;
-            LoadMoreSurface.IsVisible = false;
-            loadMoreAnimating = false;
-            UpdateLoadMoreVisibility();
+            FinishLoadMoreAnimation();
         }
+    }
+    /// <summary>
+    /// Hands the surface back to the scroll-driven visibility logic once the animation ends.
+    /// The evaluation is deferred to a loaded-priority pass: the rows this page added have just been
+    /// inserted, and measuring the last row before that pass still sees the pre-growth layout, which
+    /// hid the button even when the user was sitting at the new bottom.
+    /// </summary>
+    private void FinishLoadMoreAnimation()
+    {
+        loadMoreAnimating = false;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (loadMoreAnimating) return;
+            UpdateLoadMoreVisibility();
+        }, DispatcherPriority.Loaded);
     }
 }
