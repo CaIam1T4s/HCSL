@@ -14,6 +14,8 @@ namespace HCSL.Host.Views.Pages;
 public partial class DownloadsPage
 {
     private FrameworkReleaseEntry? installRelease;
+    private Guid? installRequest;
+    private bool installCancelled;
     private readonly System.Diagnostics.Stopwatch installElapsed = new();
     private readonly DispatcherTimer installTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<(FrameworkDefinition Definition, string Version, ArcCheckbox Check, Control Row)> installDependencies = [];
@@ -218,11 +220,11 @@ public partial class DownloadsPage
         {
             foreach (var dependency in pending)
             {
-                await servers.InstallFrameworkAsync(dependency.Definition.Id, dependency.Version);
+                await servers.InstallFrameworkAsync(dependency.Definition.Id, dependency.Version, NewInstallRequest());
                 InstallStepsList.CurrentIndex++;
             }
 
-            var result = await servers.InstallFrameworkAsync(id, release.Version);
+            var result = await servers.InstallFrameworkAsync(id, release.Version, NewInstallRequest());
             InstallStepsList.CurrentIndex++;
             if (InstallAddToPreset.IsChecked == true)
                 await AddFrameworkToPresetAsync(id);
@@ -232,10 +234,51 @@ public partial class DownloadsPage
             Owner?.ShowInstanceNotification("已安装 " + name,
                 result.Version + " · " + result.Files + " 个文件", ToastKind.Success);
         }
+        catch (OperationCanceledException)
+        {
+            MarkInstallCancelled();
+            Owner?.ShowInstanceNotification("已取消安装", name + " 未安装，临时文件已清理", ToastKind.Warning);
+        }
+        catch (IOException) when (installCancelled)
+        {
+            MarkInstallCancelled();
+            Owner?.ShowInstanceNotification("已取消安装", name + " 未安装，临时文件已清理", ToastKind.Warning);
+        }
         finally
         {
+            installCancelled = false;
             StopInstallProgress();
         }
+    }
+
+    private Guid NewInstallRequest()
+    {
+        var request = Guid.NewGuid();
+        installRequest = request;
+        return request;
+    }
+
+    /// <summary>Marks the step that was running as failed and appends the cancelled outcome to the stepper.</summary>
+    private void MarkInstallCancelled()
+    {
+        if (InstallStepsList.Steps.Count > 0 && InstallStepsList.CurrentIndex < InstallStepsList.Steps.Count
+            && InstallStepsList.Steps[InstallStepsList.CurrentIndex] is { } running)
+            running.Error = "已取消";
+        InstallStepsList.Steps.Add(new StepperStep { Label = "已取消" });
+        InstallStepsList.CurrentIndex = InstallStepsList.Steps.Count;
+    }
+
+    private async void CancelInstall(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (installRequest is not { } request || Servers is not { } servers) return;
+        installCancelled = true;
+        InstallCancelButton.IsEnabled = false;
+        try { await servers.CancelFrameworkInstallAsync(request); }
+        catch (Exception error) when (error is IOException or InvalidOperationException)
+        {
+            Owner?.ShowInstanceNotification("取消未生效", error.Message, ToastKind.Error);
+        }
+        finally { InstallCancelButton.IsEnabled = true; }
     }
 
     /// <summary>

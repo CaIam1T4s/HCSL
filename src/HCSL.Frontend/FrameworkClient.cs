@@ -32,13 +32,30 @@ public sealed class FrameworkClient(IDaemonClient client)
     }
 
     public async Task<FrameworkInstallResult> InstallAsync(FrameworkInstallCommand command, CancellationToken ct = default)
+        => await InstallAsync(command, null, Guid.NewGuid(), ct);
+
+    /// <summary>
+    /// Installs with a caller-chosen request id, so the caller can cancel this very request through
+    /// <see cref="CancelInstallAsync"/> while it is still running.
+    /// </summary>
+    public async Task<FrameworkInstallResult> InstallAsync(FrameworkInstallCommand command, WorkspacePaths? workspace, Guid requestId, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
-        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkInstall,
-            Options: new(hello.Defaults), FrameworkInstallJson: JsonSerializer.Serialize(command)), InstallTimeout, ct);
+        var response = await client.SendAsync(new(LocalProtocol.Version, requestId, RequestKind.FrameworkInstall,
+            Options: new(workspace ?? hello.Defaults), FrameworkInstallJson: JsonSerializer.Serialize(command)), InstallTimeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<FrameworkInstallResult>(response.FrameworkInstallResultJson ?? "null")
             ?? throw new IOException("Missing framework install result.");
+    }
+
+    /// <summary>Asks the host to abort the framework install that was started with this request id.</summary>
+    public async Task CancelInstallAsync(Guid requestId, CancellationToken ct = default)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Cancel,
+            Options: new(hello.Defaults), OperationId: requestId), CheckTimeout, ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
     }
 }

@@ -14,6 +14,8 @@ namespace HCSL.Daemon.Ipc;
 public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operations, TimeSpan? idleTimeout = null, ServerOperations? servers = null)
 {
     private static readonly HCSL.Infrastructure.Frameworks.FrameworkManager Frameworks = new();
+    /// <summary>Running framework installs, keyed by request id, so a later Cancel can abort the download.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, CancellationTokenSource> frameworkInstalls = new();
     private readonly object activity = new();
     private int activeRequests;
     private long lastActivity = Stopwatch.GetTimestamp();
@@ -206,6 +208,17 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var result = await Frameworks.CheckAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command?.Id, ct);
         return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(result));
     }
+    /// <summary>
+    /// Cancels whichever unit of work owns the id: a framework install in flight, otherwise the
+    /// SteamCMD operation. The install's own cleanup runs in its finally block, so a cancelled
+    /// download leaves no partial file behind.
+    /// </summary>
+    private OperationSnapshot CancelWork(Guid? operationId)
+    {
+        if (operationId is { } id && frameworkInstalls.TryRemove(id, out var install)) install.Cancel();
+        return operations.Cancel(operationId);
+    }
+
     private async Task<LocalResponse> FrameworkInstallAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
@@ -214,8 +227,17 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework install command is required.");
         if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
             throw new InstanceException("HCSL-FRAMEWORK-BUSY", "Stop the server/SteamCMD and complete recovery before installing a framework.");
-        var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
-        return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
+        using var install = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        frameworkInstalls[request.Id] = install;
+        try
+        {
+            var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, install.Token);
+            return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
+        }
+        finally
+        {
+            frameworkInstalls.TryRemove(request.Id, out _);
+        }
     }
     private async Task<LocalResponse> AdminAsync(LocalRequest request, CancellationToken ct)
     {
@@ -310,7 +332,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.InstallOrUpdate => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request, installMode: SteamCmdInstallMode.InstallOrUpdate)),
             RequestKind.ValidateContent => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request, installMode: SteamCmdInstallMode.Validate)),
             RequestKind.Recover => new(LocalProtocol.Version, request.Id, true, Snapshot: StartSteam(request, recover: true)),
-            RequestKind.Cancel => new(LocalProtocol.Version, request.Id, true, Snapshot: operations.Cancel(request.OperationId)),
+            RequestKind.Cancel => new(LocalProtocol.Version, request.Id, true, Snapshot: CancelWork(request.OperationId)),
             RequestKind.SubmitInput => new(LocalProtocol.Version, request.Id, true, Snapshot: operations.Submit(request.OperationId, request.ChallengeId, request.Secret)),
             _ => throw new OperationRejected("HCSL-IPC-REQUEST", "Unknown request.")
         };

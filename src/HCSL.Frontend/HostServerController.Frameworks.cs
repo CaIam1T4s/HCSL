@@ -30,12 +30,19 @@ public sealed partial class HostServerController
         return await frameworks.CheckAsync(id);
     }
 
-    public async Task<FrameworkInstallResult> InstallFrameworkAsync(string id, string? version = null)
+    public async Task<FrameworkInstallResult> InstallFrameworkAsync(string id, string? version = null, Guid? requestId = null, CancellationToken ct = default)
     {
         if (!CanInstallFramework || frameworks is null)
             throw new IOException("HCSL-FRAMEWORK-BUSY: Stop the server/SteamCMD and finish recovery before installing a framework.");
         Busy = true; Notify();
-        try { return await frameworks.InstallAsync(new(id, version)); }
+        try { return await frameworks.InstallAsync(new(id, version), null, requestId ?? Guid.NewGuid(), ct); }
         finally { Busy = false; Notify(); }
+    }
+
+    /// <summary>Aborts a running framework install by the request id it was started with.</summary>
+    public async Task CancelFrameworkInstallAsync(Guid requestId)
+    {
+        if (frameworks is null) return;
+        await frameworks.CancelInstallAsync(requestId);
     }
 }

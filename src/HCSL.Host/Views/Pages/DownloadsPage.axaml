@@ -176,7 +176,12 @@
             </arc:MorphBlock>
           </arc:SkeletonMorph>
         </Grid>
-        <TextBlock x:Name="InstallTotalSize" Text="共 -" Classes="muted"/>
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+          <TextBlock x:Name="InstallTotalSize" Text="共 -" Classes="muted" VerticalAlignment="Center"/>
+          <controls:ElevatedSurface Grid.Column="2" Height="32">
+            <arc:Button x:Name="InstallCancelButton" Content="取消" Variant="Ghost" Click="CancelInstall"/>
+          </controls:ElevatedSurface>
+        </Grid>
       </StackPanel>
     </arc:Dialog>
     <arc:Dialog x:Name="ServerDialog" Title="CS2 服务端" Description="由 SteamCMD 获取当前发布版本。下载不会自动启动服务器。">
