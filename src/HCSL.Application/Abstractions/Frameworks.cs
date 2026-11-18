@@ -13,5 +13,6 @@ public interface IFrameworkCatalog
 public interface IFrameworkManager
 {
     Task<FrameworkCheckResult> CheckAsync(WorkspaceRequest workspace, string? frameworkId = null, CancellationToken ct = default);
-    Task<FrameworkInstallResult> InstallAsync(WorkspaceRequest workspace, FrameworkInstallCommand command, CancellationToken ct = default);
+    Task<FrameworkInstallResult> InstallAsync(WorkspaceRequest workspace, FrameworkInstallCommand command, CancellationToken ct = default,
+        IProgress<TransferProgress>? progress = null);
 }

@@ -16,6 +16,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private static readonly HCSL.Infrastructure.Frameworks.FrameworkManager Frameworks = new();
     /// <summary>Running framework installs, keyed by request id, so a later Cancel can abort the download.</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, CancellationTokenSource> frameworkInstalls = new();
+    /// <summary>Latest measured transfer per framework install, read by lightweight progress polls.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, TransferSnapshot> frameworkTransfers = new();
     private readonly object activity = new();
     private int activeRequests;
     private long lastActivity = Stopwatch.GetTimestamp();
@@ -110,6 +112,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                     deadline.CancelAfter(TimeSpan.FromMinutes(5));
                 LocalResponse response;
                 try { response = request.Kind == RequestKind.Baseline ? await BaselineAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.FrameworkProgress ? FrameworkProgress(request)
                     : request.Kind == RequestKind.FrameworkCatalog ? await FrameworkCatalogAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkCheck ? await FrameworkCheckAsync(request, deadline.Token)
                     : request.Kind == RequestKind.FrameworkInstall ? await FrameworkInstallAsync(request, deadline.Token)
@@ -235,15 +238,30 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             throw new InstanceException("HCSL-FRAMEWORK-BUSY", "Stop the server/SteamCMD and complete recovery before installing a framework.");
         using var install = CancellationTokenSource.CreateLinkedTokenSource(ct);
         frameworkInstalls[request.Id] = install;
+        frameworkTransfers[request.Id] = new TransferSnapshot(HCSL.Contracts.TransferPhase.Idle);
+        // Progress<TransferProgress> reports on the thread pool; the dictionary is the only shared state,
+        // so an abandoned poll simply stops reading a stale value.
+        var progress = new Progress<TransferProgress>(value =>
+            frameworkTransfers[request.Id] = new TransferSnapshot(Enum.Parse<HCSL.Contracts.TransferPhase>(value.Phase.ToString()),
+                value.DoneBytes, value.TotalBytes, value.BytesPerSecond, value.Percent));
         try
         {
-            var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, install.Token);
+            var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, install.Token, progress);
             return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
         }
         finally
         {
             frameworkInstalls.TryRemove(request.Id, out _);
+            frameworkTransfers.TryRemove(request.Id, out _);
         }
+    }
+
+    /// <summary>Read-only progress for one framework install; returns nothing once it finished.</summary>
+    private static LocalResponse FrameworkProgress(LocalRequest request)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        var transfer = request.OperationId is { } id && frameworkTransfers.TryGetValue(id, out var value) ? value : null;
+        return new(LocalProtocol.Version, request.Id, true, TransferJson: transfer is null ? null : JsonSerializer.Serialize(transfer));
     }
     private async Task<LocalResponse> AdminAsync(LocalRequest request, CancellationToken ct)
     {

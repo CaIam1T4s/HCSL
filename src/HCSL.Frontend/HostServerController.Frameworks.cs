@@ -1,3 +1,4 @@
+using HCSL.Contracts;
 using HCSL.Core;
 namespace HCSL.Frontend;
 
@@ -38,6 +39,10 @@ public sealed partial class HostServerController
         try { return await frameworks.InstallAsync(new(id, version), null, requestId ?? Guid.NewGuid(), ct); }
         finally { Busy = false; Notify(); }
     }
+
+    /// <summary>One poll of a running framework install's measured transfer; null once it finished.</summary>
+    public async Task<TransferSnapshot?> FrameworkProgressAsync(Guid requestId, CancellationToken ct = default)
+        => frameworks is null ? null : await frameworks.ProgressAsync(requestId, ct);
 
     /// <summary>Aborts a running framework install by the request id it was started with.</summary>
     public async Task CancelFrameworkInstallAsync(Guid requestId)

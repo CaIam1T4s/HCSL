@@ -77,6 +77,12 @@ public partial class DownloadsPage
             }
             catch (Exception e) when (e is IOException or OperationCanceledException) { frameworkLabels[framework.Id].Text = "-"; frameworkUpdates[framework.Id].IsVisible = false; }
     }
+    private async void RetryFrameworkCatalog(object? sender, RoutedEventArgs e)
+    {
+        if (catalogId is not { } id) return;
+        var generation = catalogGeneration;
+        await LoadCatalogAsync(new(id, Refresh: true), generation);
+    }
     private async Task OpenFrameworkCatalogAsync(string id)
     {
         if (held || subscribed is null) return;
@@ -90,12 +96,12 @@ public partial class DownloadsPage
         LoadMoreSurface.IsVisible = false;
         LoadMoreButton.IsHitTestVisible = false;
         LoadMoreButton.Opacity = 0;
+        CatalogEmpty.IsVisible = false;
         ResourceList.IsVisible = false;
         FrameworkCatalogPanel.IsVisible = true;
         CatalogBack.IsVisible = true;
         DownloadsHeading.Text = FrameworkRules.Find(id)!.DisplayName;
         VersionsLoading.IsLoading = true;
-        CatalogStatus.Text = "读取本地缓存…";
         var generation = catalogGeneration;
         await LoadCatalogAsync(new(id, CacheOnly: true), generation);
         if (generation == catalogGeneration && catalogResult?.NeedsRefresh == true)
@@ -124,6 +130,9 @@ public partial class DownloadsPage
             var result = await shell.Servers.FrameworkCatalogAsync(command, CatalogWorkspace);
             if (generation != catalogGeneration) return;
             catalogResult = result;
+            // The installed list is authoritative and re-enumerated by the host: replace it instead of
+            // accumulating, otherwise a package deleted outside the app keeps its "downloaded" badge.
+            downloadedVersions.Clear();
             foreach (var version in result.InstalledVersions) downloadedVersions.Add(version);
             var offset = VersionScroll.Offset;
             var anchorIndex = Math.Min(shownVersions.Count - 1, (int)(offset.Y / 56));
@@ -136,8 +145,16 @@ public partial class DownloadsPage
             RenderCatalog();
             var firstLoad = wasEmpty && result.CheckedAt is null && result.Error is null;
             VersionsLoading.IsLoading = firstLoad;
-            CatalogStatus.Text = result.Error is not null ? "暂时无法刷新，保留已有缓存。" :
-                firstLoad ? "正在获取版本目录…" : shownVersions.Count == 0 ? "暂无可用版本。" : result.FromCache ? "已显示本地缓存。" : "版本目录已更新。";
+            // Progress and results are transient: the toast stack carries them for three seconds
+            // instead of leaving a permanent line under the heading.
+            if (result.Error is not null)
+            {
+                Owner?.ShowInstanceNotification("无法获取版本目录", "已保留本地缓存，可稍后重试", ToastKind.Warning);
+            }
+            else if (!firstLoad)
+                Owner?.ShowInstanceNotification(result.FromCache ? "已显示本地缓存" : "版本目录已更新", null,
+                    result.FromCache ? ToastKind.Info : ToastKind.Success);
+            CatalogEmpty.IsVisible = !firstLoad && shownVersions.Count == 0;
             if (anchor is not null)
             {
                 var index = shownVersions.FindIndex(v => v.Tag == anchor);
@@ -169,8 +186,8 @@ public partial class DownloadsPage
         catch (Exception e) when (e is IOException or OperationCanceledException)
         {
             if (generation != catalogGeneration) return;
-            CatalogStatus.Text = "目录暂不可用，已有缓存不会清除。" + Environment.NewLine + e.Message;
             VersionsLoading.IsLoading = false;
+            Owner?.ShowInstanceNotification("无法获取版本目录", "已有缓存不会被清除，可稍后重试", ToastKind.Error);
         }
         finally
         {

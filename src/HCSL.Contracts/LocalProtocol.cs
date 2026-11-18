@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace HCSL.Contracts;
 
-public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin, ContentStatus, FrameworkCatalog }
+public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin, ContentStatus, FrameworkCatalog, FrameworkProgress }
 public enum ProbeStage
 {
     Idle, Preparing, DownloadingTool, Starting, SelfUpdating, Ready, Authenticating,
@@ -19,17 +19,25 @@ public sealed record WorkspacePaths(string SettingsRoot, string DataRoot, string
 public sealed record ProbeOptions(WorkspacePaths Workspace, string? ExecutablePath = null,
     bool InstallIfMissing = true, string? AccountName = null, int TimeoutSeconds = 600, int InstallTimeoutSeconds = 21600);
 public sealed record Challenge(Guid Id, ChallengeKind Kind);
-public sealed record OperationEvent(long Revision, ProbeStage Stage, string Message, double? Percent = null);
+public sealed record OperationEvent(long Revision, ProbeStage Stage, string Message, double? Percent = null,
+    TransferSnapshot? Transfer = null);
 public sealed record OperationResult(string Code, int? ExitCode);
 public sealed record OperationSnapshot(Guid? Id, long Revision, bool Running, ProbeStage Stage,
-    string Message, Challenge? Challenge, OperationResult? Result, OperationEvent[] Events, double? Percent = null);
+    string Message, Challenge? Challenge, OperationResult? Result, OperationEvent[] Events, double? Percent = null,
+    TransferSnapshot? Transfer = null);
+
+/// <summary>What the bytes of a transfer represent; speed only applies while downloading.</summary>
+public enum TransferPhase { Idle, Downloading, Verifying, Installing }
+
+/// <summary>Measured transfer state. Unknown values stay null so a UI never invents 0 B/s or 0 %.</summary>
+public sealed record TransferSnapshot(TransferPhase Phase, long? DoneBytes = null, long? TotalBytes = null,
+    double? BytesPerSecond = null, double? Percent = null);
 public sealed record LocalRequest(int Version, Guid Id, RequestKind Kind, ProbeOptions? Options = null,
-    Guid? OperationId = null, Guid? ChallengeId = null, string? Secret = null, string? InstanceCommandJson = null, string? ServerCommandJson = null, string? ServerConsoleJson = null, string? PresetCfgJson = null, string? MapPoolJson = null, string? PluginJson = null, string? PluginImportJson = null, string? PluginImportProbeJson = null, string? FrameworkInstallJson = null, string? PluginCfgJson = null, string? FrameworkCheckJson = null, string? BaselineJson = null, string? ServerKickJson = null, string? AdminJson = null, string? FrameworkCatalogJson = null);
-public sealed record LocalResponse(int Version, Guid Id, bool Success, string? Code = null,
+    Guid? OperationId = null, Guid? ChallengeId = null, string? Secret = null, string? InstanceCommandJson = null, string? ServerCommandJson = null, string? ServerConsoleJson = null, string? PresetCfgJson = null, string? MapPoolJson = null, string? PluginJson = null, string? PluginImportJson = null, string? PluginImportProbeJson = null, string? FrameworkInstallJson = null, string? PluginCfgJson = null, string? FrameworkCheckJson = null, string? BaselineJson = null, string? ServerKickJson = null, string? AdminJson = null, string? FrameworkCatalogJson = null);public sealed record LocalResponse(int Version, Guid Id, bool Success, string? Code = null,
     string? Message = null, WorkspacePaths? Defaults = null, OperationSnapshot? Snapshot = null, Guid InstanceId = default, int ProcessId = 0, string? InstanceCatalogJson = null, string? ServerSnapshotJson = null,
     string? DaemonBuild = null, string? ConsoleReceiptJson = null, string? PresetCfgResultJson = null, string? MapPoolResultJson = null, string? PluginResultJson = null, string? DeploymentPlanJson = null, string? PluginImportResultJson = null, string? PluginImportPreviewJson = null, string? ServerKickResultJson = null, string? AdminResultJson = null,
     string? FrameworkCheckJson = null, string? FrameworkInstallResultJson = null, string? PluginCfgResultJson = null, string? BaselineResultJson = null,
-    string? ContentStatusJson = null, string? FrameworkCatalogJson = null);
+    string? ContentStatusJson = null, string? FrameworkCatalogJson = null, string? TransferJson = null);
 
 public static class LocalProtocol
 {

@@ -310,13 +310,23 @@ try
             "Update state (0x5) validating, progress: 75.00 (750 / 1000)\nSuccess! App '730' fully installed.\n";
         for (int split = 0; split <= text.Length; split++)
         {
-            var values = new List<(SteamCmdStage Stage, double? Percent)>();
+            var values = new List<(SteamCmdStage Stage, double? Percent, TransferProgress? Transfer)>();
             var parser = new SteamCmdOutput(Guid.NewGuid(), (_, _) => { }, Channel.CreateBounded<SteamCmdChallenge>(4).Writer,
-                (stage, _, percent) => values.Add((stage, percent)));
+                (stage, _, percent, transfer) => values.Add((stage, percent, transfer)));
             parser.Accept(text.AsSpan(0, split), false); parser.Accept(text.AsSpan(split), false); parser.Finish(false);
             Check(parser.AppInstalled && !parser.Failed, "installation success lost at split " + split);
-            Check(values.Contains((SteamCmdStage.DownloadingContent, 12.5)) && values.Contains((SteamCmdStage.ValidatingContent, 75)), "progress lost");
+            Check(values.Any(v => v is { Stage: SteamCmdStage.DownloadingContent, Percent: 12.5 }),
+                "download progress lost");
+            Check(values.Any(v => v is { Stage: SteamCmdStage.ValidatingContent, Percent: 75 }),
+                "validation progress lost");
             Check(values.All(v => v.Percent is null or 12.5 or 75), "partial numeric token became a percentage");
+            // The byte pair is the only cross-platform source of transfer truth.
+            var downloading = values.First(v => v is { Stage: SteamCmdStage.DownloadingContent, Transfer: not null });
+            Check(downloading.Transfer is { Phase: TransferPhase.Downloading, DoneBytes: 125, TotalBytes: 1000, Percent: 12.5 },
+                "byte counters were not parsed");
+            Check(values.Where(v => v is { Stage: SteamCmdStage.ValidatingContent, Transfer: not null })
+                .All(v => v.Transfer!.Phase == TransferPhase.Verifying && v.Transfer.BytesPerSecond is null),
+                "validation reported a download rate");
         }
         var wrong = Parser(); wrong.Accept("Success! App '740' fully installed.\n", false);
         Check(!wrong.AppInstalled, "wrong application accepted");

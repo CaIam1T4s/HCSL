@@ -29,10 +29,10 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
         IProgress<SteamCmdEvent>? events, ISteamCmdInteraction? interaction, CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid();
-        void Report(SteamCmdStage stage, string message, double? percent = null)
+        void Report(SteamCmdStage stage, string message, double? percent = null, TransferProgress? transfer = null)
         {
             // Observers cannot be allowed to bypass process cleanup or cancel a task implicitly.
-            try { events?.Report(new(id, stage, message, percent)); }
+            try { events?.Report(new(id, stage, message, percent, transfer)); }
             catch (Exception) { /* event delivery is best-effort; operation ownership is independent */ }
         }
         if (request.AccountName is not null && !Regex.IsMatch(request.AccountName, @"\A[A-Za-z0-9_.@-]{1,64}\z"))
@@ -68,7 +68,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
         var challenges = Channel.CreateBounded<SteamCmdChallenge>(new BoundedChannelOptions(4)
         { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
         var parser = new SteamCmdOutput(id, (stage, message) => Report(stage, message), challenges.Writer,
-            (stage, message, percent) => Report(stage, message, percent));
+            (stage, message, percent, transfer) => Report(stage, message, percent, transfer));
         Cs2Installation? installation = null;
         SteamCmdResult Result(SteamCmdStage stage, string code, int? exit = null)
         {

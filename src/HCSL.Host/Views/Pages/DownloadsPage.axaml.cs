@@ -153,6 +153,9 @@ public partial class DownloadsPage : UserControl
             (model.CanCancel && model.LastSnapshot?.Id == operation && model.LastSnapshot?.Stage != ProbeStage.Cancelling ||
              !model.Connected && model.CanConnect);
         if (model.LastSnapshot is not { } snapshot) return;
+        // Speed and bytes come straight from the daemon's measurement; unknown stays a dash.
+        TaskSpeed.Text = model.TransferSpeedText;
+        TaskBytes.Text = model.TransferBytesText;
         if (!model.Connected)
         {
             ProgressRegion.IsVisible = true;

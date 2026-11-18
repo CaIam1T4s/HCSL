@@ -50,7 +50,14 @@ public sealed class FrameworkClient(IDaemonClient client)
     }
 
     /// <summary>Asks the host to abort the framework install that was started with this request id.</summary>
-    public async Task CancelInstallAsync(Guid requestId, CancellationToken ct = default)
+    public async Task<TransferSnapshot?> ProgressAsync(Guid requestId, CancellationToken ct = default)
+    {
+        // Deliberately tiny: the reply carries one transfer record and nothing else.
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkProgress,
+            OperationId: requestId), ct);
+        if (!response.Success || response.TransferJson is null) return null;
+        return JsonSerializer.Deserialize<TransferSnapshot>(response.TransferJson);
+    }    public async Task CancelInstallAsync(Guid requestId, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);

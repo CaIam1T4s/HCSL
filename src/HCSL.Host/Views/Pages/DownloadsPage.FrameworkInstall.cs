@@ -172,17 +172,22 @@ public partial class DownloadsPage
     }
 
     /// <summary>
-    /// Mirrors the server download dialog's readouts: a clock on the right, and the traffic line under
-    /// the bar. The host reports no intermediate bytes, so the transfer figures stay "-" while the
-    /// release's known size supplies the denominator.
+    /// Mirrors the server download dialog's readouts: a clock on the right and the traffic line under
+    /// the bar. The host measures the transfer and answers lightweight polls, so both figures are real;
+    /// until the first measurement arrives they stay a half-width dash.
     /// </summary>
     private void ShowInstallProgress(string name, FrameworkReleaseEntry release)
     {
         installTimer.Tick -= TickInstallElapsed;
         installTimer.Tick += TickInstallElapsed;
         InstallTaskTitle.Text = "正在安装 " + name;
-        InstallTotalSize.Text = "共 " + FormatBytes(release.Bytes);
+        InstallSpeed.Text = "-";
+        InstallBytes.Text = "- / " + FormatBytes(release.Bytes);
         InstallElapsed.Text = "00:00";
+        // Unknown until the host reports bytes: the skeleton stays until a real percentage exists,
+        // exactly like the server download dialog.
+        InstallProgressRegion.IsLoading = true;
+        InstallProgress.Value = 0;
         installElapsed.Restart();
         installTimer.Start();
         InstallProgressDialog.IsOpen = true;
@@ -224,7 +229,14 @@ public partial class DownloadsPage
                 InstallStepsList.CurrentIndex++;
             }
 
-            var result = await servers.InstallFrameworkAsync(id, release.Version, NewInstallRequest());
+            var request = NewInstallRequest();
+            using var tracking = new CancellationTokenSource();
+            var poll = TrackInstallTransferAsync(request, release, tracking.Token);
+            FrameworkInstallResult result;
+            try { result = await servers.InstallFrameworkAsync(id, release.Version, request); }
+            finally { tracking.Cancel(); }
+            await poll;
+            InstallSpeed.Text = "-";
             InstallStepsList.CurrentIndex++;
             if (InstallAddToPreset.IsChecked == true)
                 await AddFrameworkToPresetAsync(id);
@@ -256,6 +268,42 @@ public partial class DownloadsPage
         var request = Guid.NewGuid();
         installRequest = request;
         return request;
+    }
+
+    /// <summary>Polls the host while the install runs. The host owns the measurement; this only reads it.</summary>
+    private async Task TrackInstallTransferAsync(Guid request, FrameworkReleaseEntry release, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(500, ct);
+                if (Servers is not { } servers || installRequest != request) return;
+                var transfer = await servers.FrameworkProgressAsync(request, ct);
+                if (transfer is null) continue;
+                ApplyTransfer(transfer, release);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
+        {
+            // A missed poll must never fail the install; the next tick simply retries.
+        }
+    }
+
+    private void ApplyTransfer(HCSL.Contracts.TransferSnapshot transfer, FrameworkReleaseEntry release)
+    {
+        InstallBytes.Text = (transfer.DoneBytes is { } done ? FormatBytes(done) : "-") + " / "
+            + (transfer.TotalBytes is { } total ? FormatBytes(total) : FormatBytes(release.Bytes));
+        InstallSpeed.Text = transfer is { Phase: HCSL.Contracts.TransferPhase.Downloading, BytesPerSecond: { } rate } && rate > 0
+            ? FormatBytes((long)rate) + "/s" : "-";
+        if (transfer.Percent is { } percent)
+        {
+            // Only a measured percentage replaces the skeleton; the installing phase has none.
+            InstallProgressRegion.IsLoading = false;
+            InstallProgress.Value = percent;
+        }
+        else InstallProgressRegion.IsLoading = true;
     }
 
     /// <summary>Marks the step that was running as failed and appends the cancelled outcome to the stepper.</summary>

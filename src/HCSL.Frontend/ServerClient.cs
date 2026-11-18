@@ -52,8 +52,11 @@ public sealed class ServerClient(IDaemonClient client)
 
     public async Task<ServerSnapshot> SendAsync(ServerCommand command, WorkspacePaths? workspace = null, CancellationToken ct = default)
     {
+        // Status/log polling shares the daemon with deployments and installs; five seconds is shorter
+        // than a legitimate busy period, so polling opts into a longer deadline than mutations.
+        var timeout = command.Action is ServerAction.Status or ServerAction.Logs ? TimeSpan.FromSeconds(15) : TimeSpan.FromSeconds(10);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,
-            Options: workspace == null ? null : new(workspace), ServerCommandJson: JsonSerializer.Serialize(command)), ct);
+            Options: workspace == null ? null : new(workspace), ServerCommandJson: JsonSerializer.Serialize(command)), timeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<ServerSnapshot>(response.ServerSnapshotJson!) ?? throw new IOException("Missing server state.");
     }

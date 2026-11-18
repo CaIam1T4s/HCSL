@@ -46,6 +46,30 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
     public bool ShowIndeterminateProgress => ShowProgress && ProgressIndeterminate;
     public Guid? ChallengeId => snapshot?.Challenge?.Id;
     public OperationSnapshot? LastSnapshot => snapshot;
+    /// <summary>Measured transfer state reported by the daemon; null until it reports one.</summary>
+    public TransferSnapshot? Transfer => snapshot?.Transfer;
+    /// <summary>Rate only while bytes are actually being downloaded; verification and applying report none.</summary>
+    public string TransferSpeedText
+    {
+        get
+        {
+            if (Transfer is not { Phase: TransferPhase.Downloading, BytesPerSecond: { } rate } || rate <= 0) return "-";
+            return FormatBytes((long)rate) + "/s";
+        }
+    }
+    public string TransferBytesText => Transfer switch
+    {
+        { DoneBytes: { } done, TotalBytes: { } total } => FormatBytes(done) + " / " + FormatBytes(total),
+        { DoneBytes: { } done } => FormatBytes(done),
+        _ => "-"
+    };
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1L << 30 => (bytes / (double)(1L << 30)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " GB",
+        >= 1L << 20 => (bytes / (double)(1L << 20)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB",
+        >= 1L << 10 => (bytes / (double)(1L << 10)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " KB",
+        _ => bytes + " B"
+    };
     private string T(string zh, string en) => english ? en : zh;
     public string ConnectionText => connecting ? T("正在连接或启动本机宿主", "Connecting or starting local daemon") : connected ? T("已连接本机宿主", "Local daemon connected")
         : connectionUnknown ? T("连接已断开；任务状态未知", "Disconnected; task state unknown")

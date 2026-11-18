@@ -11,6 +11,7 @@ public sealed class SteamCmdOperations(ISteamCmdService service) : IAsyncDisposa
     private Guid? id;
     private long revision;
     private double? percent;
+    private TransferSnapshot? transfer;
     private bool running;
     private bool stopping;
     private long lastBusy = Stopwatch.GetTimestamp();
@@ -36,7 +37,7 @@ public sealed class SteamCmdOperations(ISteamCmdService service) : IAsyncDisposa
 
     public OperationSnapshot Snapshot()
     {
-        lock (sync) return new(id, revision, running, stage, message, challenge, result, history.ToArray(), percent);
+        lock (sync) return new(id, revision, running, stage, message, challenge, result, history.ToArray(), percent, transfer);
     }
     public OperationSnapshot Start(ProbeOptions options, bool recover = false, SteamCmdInstallMode? installMode = null)
     {
@@ -50,6 +51,7 @@ public sealed class SteamCmdOperations(ISteamCmdService service) : IAsyncDisposa
             running = true;
             result = null;
             percent = null;
+            transfer = null;
             challenge = null;
             history.Clear();
             Publish(ProbeStage.Preparing, recover ? "Checking unfinished SteamCMD sessions." : installMode is null ? "Preparing SteamCMD probe." : "Preparing CS2 installation task.");
@@ -134,20 +136,25 @@ public sealed class SteamCmdOperations(ISteamCmdService service) : IAsyncDisposa
     {
         lock (sync) { result = new(code, exit); Publish(value, detail is null ? code : code + ": " + detail); }
     }
-    private void Publish(ProbeStage value, string text, double? valuePercent = null)
+    private void Publish(ProbeStage value, string text, double? valuePercent = null, TransferSnapshot? valueTransfer = null)
     {
         stage = value;
         percent = valuePercent;
+        transfer = valueTransfer;
         message = text.Length > 512 ? text[..512] : text;
         revision++;
-        history.Enqueue(new(revision, stage, message, percent));
+        history.Enqueue(new(revision, stage, message, percent, valueTransfer));
         while (history.Count > 64) history.Dequeue();
     }
     private sealed class ProgressSink(SteamCmdOperations owner) : IProgress<SteamCmdEvent>
     {
         public void Report(SteamCmdEvent value)
         {
-            lock (owner.sync) owner.Publish(Enum.Parse<ProbeStage>(value.Stage.ToString()), value.Message, value.Percent);
+            var snapshot = value.Transfer is { } t
+                ? new TransferSnapshot(Enum.Parse<HCSL.Contracts.TransferPhase>(t.Phase.ToString()), t.DoneBytes, t.TotalBytes,
+                    t.BytesPerSecond, t.Percent)
+                : null;
+            lock (owner.sync) owner.Publish(Enum.Parse<ProbeStage>(value.Stage.ToString()), value.Message, value.Percent, snapshot);
         }
     }
     private sealed class InputProvider(SteamCmdOperations owner, Guid current) : ISteamCmdInteraction

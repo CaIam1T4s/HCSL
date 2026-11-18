@@ -3,17 +3,19 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using HCSL.Application.Abstractions;
+using HCSL.Infrastructure.Transfer;
 
 namespace HCSL.Infrastructure.Steam;
 
 /// <summary>Parses bounded chunks, including prompts without newline. Raw output never leaves this object.</summary>
 internal sealed class SteamCmdOutput(Guid operation, Action<SteamCmdStage, string> report,
-    ChannelWriter<SteamCmdChallenge> challenges, Action<SteamCmdStage, string, double?>? progress = null)
+    ChannelWriter<SteamCmdChallenge> challenges, Action<SteamCmdStage, string, double?, TransferProgress?>? progress = null)
 {
     private readonly object sync = new();
     private readonly OutputStream stdout = new(), stderr = new();
     private readonly HashSet<SteamCmdStage> stages = [];
-    private (SteamCmdStage Stage, double? Percent)? lastProgress;
+    private readonly TransferMeter meter = new();
+    private (SteamCmdStage Stage, double? Percent, TransferProgress? Transfer)? lastProgress;
     internal bool AppInstalled { get; private set; }
     internal bool Authenticated { get; private set; }
     internal bool Failed { get; private set; }
@@ -76,22 +78,47 @@ internal sealed class SteamCmdOutput(Guid operation, Action<SteamCmdStage, strin
         if (update.Success)
         {
             var state = update.Groups[1].Value;
-            var stage = state.Contains("validat") ? SteamCmdStage.ValidatingContent
+            // Real CS2 lines read "verifying install"/"verifying update", never "validating",
+            // so the verification check must come first and cover both spellings.
+            var verifying = state.Contains("verif") || state.Contains("validat");
+            var idle = state.Contains("unknown") || state.Contains("reconfigur");
+            var stage = verifying ? SteamCmdStage.ValidatingContent
                 : state.Contains("download") ? SteamCmdStage.DownloadingContent : SteamCmdStage.InstallingContent;
             var number = Regex.Match(lower, @"progress:\s*([0-9]+(?:\.[0-9]+)?)\s*(\(|$)");
             double? percent = number.Success && double.TryParse(number.Groups[1].Value, NumberStyles.AllowDecimalPoint,
                 CultureInfo.InvariantCulture, out var parsed) && parsed is >= 0 and <= 100 ? Math.Floor(parsed * 10) / 10 : null;
+            // SteamCMD prints "progress: 12.50 (done / total)"; the pair is the only byte-level truth
+            // available on both Linux and Windows, so derive the rate from it instead of guessing.
+            var bytes = Regex.Match(lower, @"\bprogress:[^(]*\(\s*([0-9]+)\s*/\s*([0-9]+)\s*\)");
+            long? done = null, totalBytes = null;
+            if (bytes.Success)
+            {
+                done = long.TryParse(bytes.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var d) ? d : null;
+                totalBytes = long.TryParse(bytes.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var t) && t > 0 ? t : null;
+            }
+            var phase = idle ? TransferPhase.Idle
+                : stage switch
+                {
+                    SteamCmdStage.DownloadingContent => TransferPhase.Downloading,
+                    SteamCmdStage.ValidatingContent => TransferPhase.Verifying,
+                    _ => TransferPhase.Installing
+                };
+            if (done is null && lastProgress is { Transfer: { } previous } && previous.Phase != phase) meter.Reset();
+            var rate = done is { } current ? meter.Sample(current, totalBytes) : null;
+            var transfer = done is null && totalBytes is null
+                ? new TransferProgress(phase, Percent: percent)
+                : TransferProgress.Measure(phase, done, totalBytes, rate);
             // Ignore partial numeric tokens until the line/progress delimiter arrives.
             if (complete || number.Success && number.Groups[2].Value == "(")
-                if (lastProgress != (stage, percent))
+                if (lastProgress != (stage, percent, transfer))
                 {
-                    lastProgress = (stage, percent);
+                    lastProgress = (stage, percent, transfer);
                     progress?.Invoke(stage, stage switch
                     {
                         SteamCmdStage.DownloadingContent => "Downloading CS2 server content.",
                         SteamCmdStage.ValidatingContent => "Validating CS2 server content.",
                         _ => "Preparing or applying CS2 server content."
-                    }, percent);
+                    }, percent, transfer);
                 }
         }
         if (lower.Contains("checking for available updates") || lower.Contains("downloading update") || lower.Contains("installing update"))

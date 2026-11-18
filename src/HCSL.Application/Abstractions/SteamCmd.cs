@@ -10,7 +10,8 @@ public enum SteamCmdInstallMode { InstallOrUpdate, Validate }
 public sealed record SteamCmdInstallRequest(SteamCmdProbeRequest Session, SteamCmdInstallMode Mode = SteamCmdInstallMode.InstallOrUpdate);
 public enum SteamCmdChallengeKind { Password, GuardCode }
 public sealed record SteamCmdChallenge(Guid OperationId, Guid ChallengeId, SteamCmdChallengeKind Kind);
-public sealed record SteamCmdEvent(Guid OperationId, SteamCmdStage Stage, string Message, double? Percent = null);
+public sealed record SteamCmdEvent(Guid OperationId, SteamCmdStage Stage, string Message, double? Percent = null,
+    TransferProgress? Transfer = null);
 public sealed record SteamCmdProbeRequest(WorkspaceRequest Workspace, string? ExecutablePath = null,
     bool InstallIfMissing = false, string? AccountName = null, TimeSpan? Timeout = null);
 public sealed record SteamCmdResult(Guid OperationId, SteamCmdStage Stage, string Code, int? ExitCode = null);

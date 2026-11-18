@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Storage;
+using HCSL.Infrastructure.Transfer;
 namespace HCSL.Infrastructure.Frameworks;
 
 /// <summary>
@@ -72,7 +74,8 @@ public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCata
         return new([.. results]);
     }
 
-    public async Task<FrameworkInstallResult> InstallAsync(WorkspaceRequest workspace, FrameworkInstallCommand command, CancellationToken ct = default)
+    public async Task<FrameworkInstallResult> InstallAsync(WorkspaceRequest workspace, FrameworkInstallCommand command, CancellationToken ct = default,
+        IProgress<TransferProgress>? progress = null)
     {
         var framework = FrameworkRules.Find(command.Id)
             ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Unknown framework; only the built-in catalog can be installed.");
@@ -117,7 +120,7 @@ public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCata
         var temp = Path.Combine(downloadRoot, framework.Id + "-" + Guid.NewGuid().ToString("N") + extension);
         try
         {
-            var actual = await Download(file.Url, temp, file.Size, ct);
+            var actual = await Download(file.Url, temp, file.Size, ct, progress);
             var expected = file.Digest["sha256:".Length..].Trim();
             if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
                 throw new InstanceException("HCSL-FRAMEWORK-HASH", "Downloaded file hash does not match the release digest.");
@@ -135,7 +138,8 @@ public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCata
         }
     }
 
-    private async Task<string> Download(string url, string path, long expectedSize, CancellationToken ct)
+    private async Task<string> Download(string url, string path, long expectedSize, CancellationToken ct,
+        IProgress<TransferProgress>? progress = null)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps
             || uri.Host is not ("github.com" or "objects.githubusercontent.com" or "api.github.com" or "raw.githubusercontent.com"))
@@ -157,13 +161,22 @@ public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCata
         var buffer = new byte[128 * 1024];
         long total = 0;
         int read;
+        var meter = new TransferMeter();
+        var lastReport = Stopwatch.StartNew();
         while ((read = await input.ReadAsync(buffer, ct)) > 0)
         {
             total += read;
             if (total > FrameworkRules.MaxDownloadBytes) throw new InstanceException("HCSL-FRAMEWORK-LIMIT", "Release download is too large.");
             sha.AppendData(buffer, 0, read);
             await output.WriteAsync(buffer.AsMemory(0, read), ct);
+            // Report at most every 250 ms: an IPC frame per 128 KiB buffer would flood the channel.
+            if (progress is null || lastReport.ElapsedMilliseconds < 250) continue;
+            lastReport.Restart();
+            progress.Report(TransferProgress.Measure(TransferPhase.Downloading, total,
+                length is > 0 ? length : null, meter.Sample(total, length)));
         }
+        if (progress is not null)
+            progress.Report(TransferProgress.Measure(TransferPhase.Installing, total, length is > 0 ? length : null, null));
         if (expectedSize > 0 && total != expectedSize)
             throw new InstanceException("HCSL-FRAMEWORK-SIZE", "Downloaded size does not match the release metadata.");
         await output.FlushAsync(ct);
