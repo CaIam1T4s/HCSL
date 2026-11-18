@@ -6,8 +6,9 @@ namespace HCSL.Host.Services;
 
 public static class ServerBadgePresentation
 {
-    public static (string Text, BadgeTone Tone, LucideIconKind Icon) For(ServerState state, bool connected = true) =>
-        !connected ? ("状态未知", BadgeTone.Neutral, LucideIconKind.CircleAlert) : state switch
+    public static (string Text, BadgeTone Tone, LucideIconKind Icon) For(ServerState state, bool connected = true, bool reconnecting = false) =>
+        reconnecting ? ("重连中", BadgeTone.Info, LucideIconKind.LoaderCircle)
+        : !connected ? ("状态未知", BadgeTone.Neutral, LucideIconKind.CircleAlert) : state switch
         {
             ServerState.Preparing => ("准备中", BadgeTone.Info, LucideIconKind.PackageOpen),
             ServerState.Starting => ("启动中", BadgeTone.Info, LucideIconKind.LoaderCircle),

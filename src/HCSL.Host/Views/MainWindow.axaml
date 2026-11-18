@@ -58,7 +58,7 @@
           <pages:SettingsPage x:Name="SettingsPageView" IsVisible="{Binding IsSettings}"/>
         </Grid>
       </Grid>
-    <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight"/>
+    <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight" Duration="0:0:3"/>
   </Grid>
   <controls:WindowModalLayer.Content>
     <Border x:Name="DialogOverlay" IsVisible="False" Background="{arc:ArcDesignTokenResource Scrim}"

@@ -22,15 +22,27 @@ public partial class MainWindow
         ShellTitleBar.Title = Title;
         DataContextChanged += (_, _) =>
         {
-            if (shellServers is not null) shellServers.PropertyChanged -= ShellServerChanged;
+            if (shellServers is not null)
+            {
+                shellServers.PropertyChanged -= ShellServerChanged;
+                shellServers.Server.ConnectionNotice -= ServerConnectionNotice;
+            }
             shellServers = (DataContext as ShellViewModel)?.Servers;
-            if (shellServers is not null) shellServers.PropertyChanged += ShellServerChanged;
+            if (shellServers is not null)
+            {
+                shellServers.PropertyChanged += ShellServerChanged;
+                shellServers.Server.ConnectionNotice += ServerConnectionNotice;
+            }
             UpdateShellStatus();
         };
         ActualThemeVariantChanged += (_, _) => UpdateThemeText();
         Closed += (_, _) =>
         {
-            if (shellServers is not null) shellServers.PropertyChanged -= ShellServerChanged;
+            if (shellServers is not null)
+            {
+                shellServers.PropertyChanged -= ShellServerChanged;
+                shellServers.Server.ConnectionNotice -= ServerConnectionNotice;
+            }
             shellServers = null;
         };
         UpdateThemeText();
@@ -43,15 +55,25 @@ public partial class MainWindow
         InstanceNotifications.Show(new ToastOptions { Title = title, Description = detail, Kind = kind });
 
     private void ShellServerChanged(object? sender, PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(UpdateShellStatus);
+
+    /// <summary>Link state changes are transient results, so they use the 3-second toast stack.</summary>
+    private void ServerConnectionNotice(string message) => Dispatcher.UIThread.Post(() =>
+        InstanceNotifications.Show(new ToastOptions
+        {
+            Title = message,
+            Kind = message.Contains("重新连接", StringComparison.Ordinal) ? ToastKind.Success : ToastKind.Warning
+        }));
     private void UpdateShellStatus()
     {
         var server = shellServers?.Server;
-        var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true);
+        var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true, server?.Reconnecting == true);
         if (badgeState == next) return;
         badgeState = next;
         ServerStatusBadge.Content = next.Item1;
         ServerStatusBadge.Tone = next.Item2;
-        ServerStatusBadge.Icon = new LucideIcon { Kind = next.Item3 };
+        ServerStatusBadge.Icon = server?.Reconnecting == true
+            ? new MorphLoader { Size = 12, Variant = MorphLoaderVariant.Bars, Status = MorphLoaderStatus.Loading, IsDecorative = true }
+            : new LucideIcon { Kind = next.Item3 };
     }
 
     private void UpdateThemeText() => SidebarThemeSwitcher.Text = ActualThemeVariant == ThemeVariant.Dark
