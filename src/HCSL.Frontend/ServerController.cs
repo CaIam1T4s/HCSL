@@ -21,10 +21,14 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private long logCursor;
     private Guid? logRun;
     private bool logsVisible, logsTruncated;
+    // Smallest Sequence currently held; 0 while the view is empty.
+    private long logFirst;
+    // The daemon's ring no longer holds anything older, or the local view is full: stop asking.
+    private bool logHistoryExhausted;
+    private int backfillBusy;
     private const int LogCapacity = 2000;
-    // Opening the console on a run that already produced output must land on the newest lines at once:
-    // the daemon ring keeps 2048 lines but one page is only 128.
-    private const int LogTailLines = 512;
+    /// <summary>Lines requested for the first paint and for every "load earlier" step.</summary>
+    private const int LogTailLines = 256;
     private static long TailCursor(long nextSequence) => Math.Max(0, nextSequence - LogTailLines);
     private static readonly TimeSpan LogPoll = TimeSpan.FromMilliseconds(250);
     private Guid? rosterRun, rosterPollRun;
@@ -66,6 +70,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     {
         logLines.Clear(); ConsoleStatus = "";
         logsTruncated = false;
+        logFirst = 0;
+        logHistoryExhausted = false;
         Notify();
     }
     /// <summary>Engine lines only. The host no longer injects "&gt; command" rows or its own receipts:
@@ -144,6 +150,11 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public bool LogsTruncated => logsTruncated || HistoryTruncated || logLines.Count > LogCapacity;
     /// <summary>Next sequence to ask for; also the cursor the daemon validates against the run.</summary>
     public long LogCursor => logCursor;
+    /// <summary>Smallest Sequence held locally; 0 when nothing is loaded.</summary>
+    public long LogFirst => logFirst;
+    /// <summary>Whether asking for older lines can still return something. The view never guesses history.</summary>
+    public bool CanLoadEarlier => connected && !disposed && logLines.Count > 0
+        && logLines.Count < LogCapacity && !logHistoryExhausted && logFirst > 1;
     public ServerSeverity Severity => ServerStatusText.Severity(State);
     public bool Connected => connected;
     public bool ConnectionUnknown => connectionUnknown;
@@ -262,6 +273,82 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         if (!logsVisible || !connected || snapshot?.RunId is not { } run) return Task.FromResult(false);
         var cursor = run == logRun ? logCursor : TailCursor(snapshot.NextSequence);
         return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, cursor), false, "", 500);
+    }
+
+    /// <summary>
+    /// Reads lines older than the oldest one held and prepends them. The daemon only pages forward, so this
+    /// asks from a cursor behind the first known line and keeps what is new. The forward cursor never moves
+    /// back, older reads never duplicate or reorder, and a failed read keeps the existing view intact.
+    /// </summary>
+    public async Task<int> LoadEarlierAsync()
+    {
+        if (disposed || !connected || !logsVisible || !CanLoadEarlier) return 0;
+        if (Interlocked.CompareExchange(ref backfillBusy, 1, 0) != 0) return 0;
+        var current = generation;
+        try
+        {
+            var run = snapshot?.RunId;
+            if (run is not { } targetRun || targetRun != logRun) return 0;
+            var instance = snapshot?.InstanceId ?? attached;
+            var first = logFirst;
+            if (first <= 1) return 0;
+            var guard = life.Token;
+            // Share the single in-flight slot with polling so a status poll cannot interleave mid-backfill.
+            if (Interlocked.CompareExchange(ref requestInFlight, 1, 0) != 0) return 0;
+            var batch = new List<ServerLogLine>();
+            var exhausted = false;
+            try
+            {
+                var cursor = Math.Max(0, first - LogTailLines);
+                var wanted = Math.Max(1, (int)Math.Ceiling((first - 1 - cursor) / 128.0));
+                for (var page = 0; page < wanted && cursor < first - 1; page++)
+                {
+                    var result = await server.SendAsync(new(ServerAction.Logs, instance, targetRun, cursor), null, guard);
+                    if (result.RunId != targetRun) return 0;
+                    if (result.HistoryTruncated) exhausted = true;
+                    var older = result.Lines.Where(l => l.Sequence < first).OrderBy(l => l.Sequence).ToArray();
+                    if (older.Length == 0) { exhausted = true; break; }
+                    batch.AddRange(older);
+                    cursor = result.Lines[^1].Sequence;
+                }
+            }
+            catch (OperationCanceledException) when (guard.IsCancellationRequested) { return 0; }
+            catch (Exception e) when (e is IOException or System.Text.Json.JsonException or DaemonProtocolException or UnauthorizedAccessException)
+            {
+                // A failed older read must not fake history, and must not mark the ring as consumed.
+                return 0;
+            }
+            finally { Interlocked.Exchange(ref requestInFlight, 0); }
+
+            var added = 0;
+            Post(() =>
+            {
+                if (disposed || current != generation || logRun != targetRun) return;
+                if (exhausted) logHistoryExhausted = true;
+                var ceiling = logLines.Count > 0 ? logLines[0].Sequence : long.MaxValue;
+                var merge = batch.Where(l => l.Sequence < ceiling)
+                    .GroupBy(l => l.Sequence).Select(g => g.First()).OrderBy(l => l.Sequence).ToList();
+                var room = LogCapacity - logLines.Count;
+                if (merge.Count > room)
+                {
+                    // Keep the lines closest to what is already shown, and say the rest was dropped.
+                    merge.RemoveRange(0, merge.Count - Math.Max(0, room));
+                    logsTruncated = true;
+                }
+                if (merge.Count > 0)
+                {
+                    logLines.InsertRange(0, merge);
+                    logFirst = logLines[0].Sequence;
+                    added = merge.Count;
+                }
+                if (logLines.Count >= LogCapacity) logHistoryExhausted = true;
+                Notify();
+            }, current);
+            // The view updates on the dispatcher, so report what was requested; callers react to the
+            // LogFirst/CanLoadEarlier notifications rather than to this number.
+            return Math.Max(added, batch.Count);
+        }
+        finally { Interlocked.Exchange(ref backfillBusy, 0); }
     }
 
     public Task<bool> StartAsync(int timeoutSeconds = 120, bool autoDeploy = false, bool allowLowMemory = false) =>
@@ -558,6 +645,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             logRun = value.RunId;
             logLines.Clear();
             logCursor = 0;
+            logFirst = 0;
+            logHistoryExhausted = false;
             logsTruncated = false;
         }
         if (value.HistoryTruncated) logsTruncated = true;
@@ -572,6 +661,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             logLines.RemoveRange(0, logLines.Count - LogCapacity);
             logsTruncated = true;
         }
+        logFirst = logLines.Count > 0 ? logLines[0].Sequence : 0;
     }
 
     private void Post(Action action, int current)

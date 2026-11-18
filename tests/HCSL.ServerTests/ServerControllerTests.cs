@@ -351,6 +351,45 @@ public static class ServerControllerTests
             Check(controller.LogsTruncated, "dropping old lines must mark the log as truncated");
         });
 
+        await Test("controller.logs.tail-first-then-earlier", async () =>
+        {
+            const int total = 1000, ringStart = 200, pageSize = 128;
+            var cursors = new List<long>();
+            var daemon = new StaticDaemon(command =>
+            {
+                if (command.Action != ServerAction.Logs) return Running(total, []);
+                lock (cursors) cursors.Add(command.AfterSequence);
+                var from = (int)Math.Max(ringStart, command.AfterSequence + 1);
+                var truncated = from > command.AfterSequence + 1;
+                var page = Enumerable.Range(from, Math.Max(0, Math.Min(pageSize, total - from + 1)))
+                    .Select(s => new ServerLogLine(s, "line " + s)).ToArray();
+                return Running(total, page) with { HistoryTruncated = truncated };
+            });
+            using var controller = new ServerController(daemon, action => action(),
+                null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+            controller.Attach(Instance);
+            await controller.ConnectAsync();
+            controller.SetLogsVisible(true);
+            Check(await WaitFor(() => controller.LogLineCount > 0), "the first page must arrive without polling");
+            Check(controller.LogFirst == 745, $"the first request must start at the tail, got {controller.LogFirst}");
+            Check(controller.LogCursor == 872, $"the forward cursor must follow the tail page, got {controller.LogCursor}");
+            Check(controller.CanLoadEarlier, "earlier lines must still be reachable");
+
+            await controller.LoadEarlierAsync();
+            Check(controller.LogFirst == 490, $"loading earlier must move the first line back, got {controller.LogFirst}");
+            var sequences = controller.LogLines.Select(line => line.Sequence).ToArray();
+            Check(sequences.SequenceEqual(sequences.OrderBy(s => s)), "earlier lines must stay ordered");
+            Check(sequences.Distinct().Count() == sequences.Length, "earlier lines must not be duplicated");
+            Check(controller.LogCursor == 872, "reading older lines must not move the forward cursor");
+
+            for (var step = 0; step < 10 && controller.CanLoadEarlier; step++) await controller.LoadEarlierAsync();
+            Check(controller.LogFirst == ringStart, $"the view must stop at the ring start, got {controller.LogFirst}");
+            Check(!controller.CanLoadEarlier, "an exhausted ring must not offer more history");
+            Check(controller.LogLines.Select(line => line.Sequence).Distinct().Count() == controller.LogLines.Count,
+                "repeated older reads must not duplicate lines");
+            Check(cursors.All(cursor => cursor >= 0 && cursor <= total), "older reads must stay inside the run's sequence range");
+        });
+
         await Test("controller.dispose.stops-polling", async () =>
         {
             var daemon = new StaticDaemon(_ => Snapshot(ServerState.Running, "", true, Run));
