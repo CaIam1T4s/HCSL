@@ -12,11 +12,13 @@ public static class MonospaceFont
         if (cached is not null) return cached;
         string[] candidates =
         [
-            "Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Liberation Mono",
-            "Noto Sans Mono", "Ubuntu Mono", "Menlo", "Monaco", "Courier New"
+            "JetBrains Mono", "JetBrainsMono Nerd Font", "Cascadia Mono", "Consolas",
+            "Source Code Pro", "Adwaita Mono", "DejaVu Sans Mono", "Liberation Mono",
+            "Noto Sans Mono", "Ubuntu Mono", "Nimbus Mono PS", "Menlo", "Monaco", "Courier New"
         ];
         var installed = FontManager.Current.SystemFonts.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var name = candidates.FirstOrDefault(installed.Contains) ?? FontFamily.Default.Name;
+        // "monospace" is a fontconfig alias on Linux and resolves even when no family above is installed.
+        var name = candidates.FirstOrDefault(installed.Contains) ?? "monospace";
         return cached = new FontFamily(name);
     }
 }

@@ -207,6 +207,42 @@
     <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
     <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
   </Style>
+  <!-- The console log is a flat surface: no field frame, no radius, no border.
+       FieldFrame is the element that paints the frame; its properties are Template-bound into PART_Border. -->
+  <Style Selector="arc|Textarea.console-log /template/ arc|FieldFrame">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="0"/>
+  </Style>
+  <Style Selector="arc|Textarea.console-log">
+    <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}"/>
+  </Style>
+  <Style Selector="Border.console-placeholder">
+    <Setter Property="Padding" Value="{DynamicResource PanelPadding}"/>
+  </Style>
+  <!-- The console action group shows one label at rest; it must not read as hovered until pointed at. -->
+  <Style Selector="arc|ExpandingButtonGroup.console-actions">
+    <Setter Property="ClipToBounds" Value="False"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroup.console-actions /template/ Panel">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="ClipToBounds" Value="False"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroup.console-actions /template/ Border#PART_Pill">
+    <Setter Property="HorizontalAlignment" Value="Right"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <!-- The pill floats over the log, so it carries Arc's elevation token, not a hand-written shadow. -->
+    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroup.console-actions:focus-within /template/ Border#PART_Pill">
+    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroup.console-actions arc|ExpandingButtonGroupItem:expanded:not(:pointerover) /template/ Border#PART_Body">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroup.console-actions arc|ExpandingButtonGroupItem:pointerover:not(:unavailable) /template/ Border#PART_Body">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}"/>
+  </Style>
   <Style Selector="arc|Select">
     <Setter Property="MinHeight" Value="36"/>
     <Setter Property="HorizontalAlignment" Value="Stretch"/>

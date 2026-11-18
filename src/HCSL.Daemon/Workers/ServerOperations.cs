@@ -292,7 +292,7 @@ public sealed class ServerOperations : IAsyncDisposable
                 if (e.Log != null)
                 {
                     var line = e.Log.Length > 512 ? e.Log[..512] : e.Log;
-                    owner.logs.Enqueue(new(++owner.sequence, line));
+                    owner.logs.Enqueue(new(++owner.sequence, line, e.LogReceivedAt ?? DateTimeOffset.UtcNow));
                     while (owner.logs.Count > LogCapacity) owner.logs.Dequeue();
                     // The map name only ever appears once, in the launch log; keep it so later status
                     // replies and log pages can still name the running map.

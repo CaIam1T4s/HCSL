@@ -1,6 +1,11 @@
 namespace HCSL.Frontend;
 
-public sealed record ConsoleLogRow(string Id, string Text);
+public sealed record ConsoleLogRow(string Id, string Text, DateTimeOffset? ReceivedAt = null)
+{
+    public string DisplayText => ReceivedAt is { } time
+        ? "[" + time.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + "] " + Text
+        : Text;
+}
 /// <summary>Stable row anchors survive bounded-ring eviction without guessing by text content.</summary>
 public sealed class ConsoleLogViewport
 {

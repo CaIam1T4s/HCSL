@@ -35,7 +35,7 @@ public static class ServerConsoleTests
         await controller.SendConsoleAsync(fake.Run, "sv_password secret");
         if (fake.Sends != 1 || controller.ConsoleHistory.Count != 0 || controller.ConsoleRows.Any(r => r.Text.Contains("secret"))) throw new Exception("Sensitive command display/history leaked.");
         await controller.SendConsoleAsync(fake.Run, "mp_roundtime 60; exec practice.cfg");
-        if (fake.Sends != 2 || controller.ConsoleHistory.Count != 1 || fake.Last!.ConfirmMutation || !controller.ConsoleRows.Any(r => r.Text == "> mp_roundtime 60; exec practice.cfg")) throw new Exception("General input/history/marker not supported.");
+        if (fake.Sends != 2 || controller.ConsoleHistory.Count != 1 || fake.Last!.ConfirmMutation || controller.ConsoleRows.Any(r => r.Text.Contains("mp_roundtime 60"))) throw new Exception("General input/history not supported, or the host echoed the input into the log.");
         controller.ConsoleHistoryEnabled = false;
         await controller.SendConsoleAsync(fake.Run, "status");
         if (controller.ConsoleHistory.Count != 0) throw new Exception("Disabled history recorded text.");
@@ -48,8 +48,8 @@ public static class ServerConsoleTests
         if (controller.ConsoleRows.Count != 0 || controller.ConsoleStatus.Length != 0) throw new Exception("Run change retained input.");
         await controller.SendConsoleAsync(fake.Run, "status");
         controller.Dispose();
-        if (controller.ConsoleHistory.Count != 0 || controller.ConsoleRows.Any(r => r.Id.StartsWith("input:")))
-            throw new Exception("Dispose retained command history or input markers.");
+        if (controller.ConsoleHistory.Count != 0 || controller.ConsoleRows.Any(r => r.Id.StartsWith("input:") || r.Id.StartsWith("feedback:")))
+            throw new Exception("Dispose retained command history or host-generated console rows.");
         // Status may be newer than the UI snapshot while dispatch is queued. Log paging must use
         // that returned status identity, not the old UI RunId/cursor.
         var queued = new System.Collections.Concurrent.ConcurrentQueue<Action>();

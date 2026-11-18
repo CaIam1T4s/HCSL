@@ -4,46 +4,57 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using HCSL.Frontend;
 using ArcWindow = TKCode.Arc.ArcWindow;
-using ArcTitleBar = TKCode.Arc.TitleBar;
 using Avalonia.VisualTree;
 using Avalonia.Threading;
+using TKCode.Arc;
+using TKCode.Arc.DesignTokens;
 
 namespace HCSL.Host.Views;
 
 /// <summary>View of the existing bounded, sanitized IPC log ring; no runtime ownership.</summary>
-public sealed class ServerLogWindow : ArcWindow
+public sealed partial class ServerLogWindow : ArcWindow
 {
     private readonly HostServerController model;
     private readonly MainWindow owner;
     private bool hiddenForPrompt;
-    private readonly TextBlock summary = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-    private readonly TextBlock detail = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-    private readonly TextBlock history = new();
+    private bool positionLostNotified;
+    // Arc Textarea keeps a real, virtualized text view: a plain TextBlock reformatted the whole
+    // buffer on every poll and made dragging the scrollbar stutter. The frame is flattened by styles.
     private readonly TKCode.Arc.Textarea text = new()
     {
         IsReadOnly = true, TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
         IsResizable = false, FrameMinHeight = 0, MinHeight = 0, ClipToBounds = true
     };
-    private readonly TKCode.Arc.Button follow = new() { Content = "暂停跟随", Variant = TKCode.Arc.ButtonVariant.Secondary };
-    private bool following = true, closed, projecting, updateQueued;
+    private bool following = true, closed, projecting, updateQueued, pinPending;
     private ScrollViewer? scroll;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
     private readonly ConsoleLogViewport reading = new();
     private Guid? displayedRun;
-    private readonly TKCode.Arc.Input query = new() { PlaceholderText = "通用 CS2 单行命令；exec / alias / 命令链；↑↓历史" };
-    private readonly TKCode.Arc.Button sendQuery = new() { Content = "发送命令" };
-    private readonly TextBlock consoleStatus = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-    private int historyIndex = -1;
+    private readonly TKCode.Arc.Input query = new() { Label = "服务器命令", IsLabelVisible = false,
+        PlaceholderText = "输入服务器命令 · Enter 发送 · ↑↓历史" };    private int historyIndex = -1;
     private async Task SendQueryAsync()
     {
         if (displayedRun is not { } run || !model.Server.CanSendConsole) return;
         var text = query.Text ?? "";
-        HCSL.Core.ParsedConsoleCommand parsed;
-        try { parsed = HCSL.Core.ServerConsoleRules.Parse(text); }
-        catch (HCSL.Core.ServerException) { await model.Server.SendConsoleAsync(run, text); return; }
         JumpLatest(); // Explicit submission resumes following; ordinary output respects the reader.
-        await model.Server.SendConsoleAsync(run, parsed.Text);
-        if (displayedRun == run && query.Text == text) query.Text = "";
+        var receipt = await model.Server.SendConsoleAsync(run, text);
+        if (closed || displayedRun != run) return;
+        if (receipt is null)
+        {
+            notifications.Show(new ToastOptions { Title = "命令未发送",
+                Description = model.Server.ConsoleStatus, Kind = ToastKind.Error });
+            return;
+        }
+        notifications.Show(receipt.Delivery switch
+        {
+            HCSL.Core.ConsoleDelivery.Rejected => new ToastOptions { Title = "命令被拒绝，未发送",
+                Description = receipt.Code, Kind = ToastKind.Error },
+            HCSL.Core.ConsoleDelivery.Written => new ToastOptions { Title = "已写入服务器输入通道",
+                Description = "写入不代表执行成功，请以日志输出为准", Kind = ToastKind.Info },
+            _ => new ToastOptions { Title = "投递结果未知",
+                Description = "未自动重发；请检查日志确认是否生效", Kind = ToastKind.Warning }
+        });
+        if (receipt.Delivery == HCSL.Core.ConsoleDelivery.Written && query.Text == text) query.Text = "";
         historyIndex = -1;
     }
     public ServerLogWindow(HostServerController model, MainWindow owner)
@@ -52,31 +63,30 @@ public sealed class ServerLogWindow : ArcWindow
         this.owner = owner;
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
-        Title = "HCSL · 启动进度 / 服务器日志"; Width = 960; Height = 620; MinWidth = 600; MinHeight = 400;
-        TitleBar = new ArcTitleBar { Height = 44, Title = Title, CaptionButtons = TKCode.Arc.TitleBarCaptionButtons.Auto };
-        text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
-        var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,Auto,*,Auto,Auto") };
-        grid.Children.Add(summary);
-        Grid.SetRow(detail, 1); grid.Children.Add(detail);
-        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 8) };
-        follow.Content = "跳到最新";
-        follow.Click += (_, _) => JumpLatest();
-        var remember = new TKCode.Arc.Checkbox { Content = "↑↓命令历史（仅内存）", IsChecked = model.Server.ConsoleHistoryEnabled };
-        remember.IsCheckedChanged += (_, _) => { model.Server.ConsoleHistoryEnabled = remember.IsChecked == true; historyIndex = -1; };
-        var clear = new TKCode.Arc.Button { Content = "清空历史" };
-        clear.Click += (_, _) => { model.Server.ClearConsoleHistory(); historyIndex = -1; };
-        tools.Children.Add(follow); tools.Children.Add(remember); tools.Children.Add(clear); tools.Children.Add(history);
-        history.MaxWidth = 280; history.TextWrapping = Avalonia.Media.TextWrapping.Wrap;
+        Title = "服务器控制台"; Width = 1100; Height = 700; MinWidth = 600; MinHeight = 400;
+        var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,*,Auto") };
+        TKCode.Arc.ArcTokens.Bind(grid, Grid.RowSpacingProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Space2);
+        grid.Children.Add(BuildConsoleToolbar());
+        Grid.SetRow(findBar, 1); grid.Children.Add(findBar);
         query.MaxLength = 4096;
+        text.Classes.Add("console-log");
+        text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         text.AddHandler(KeyDownEvent, (_, e) => { if (e.Key == Avalonia.Input.Key.End) { e.Handled = true; JumpLatest(); } }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Opened += (_, _) =>
         {
             scroll = text.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
             if (scroll is not null)
             {
+                // Arc's Textarea template hard-codes Disabled here, so a style cannot enable it (a local
+                // value does). NoWrap log lines are wider than the viewport and must stay reachable.
+                scroll.HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
+                // The horizontal bar overlays the viewport's last 12px, so the scrollable text itself
+                // needs bottom room; padding on the Textarea only shrinks the frame, not the content.
+                if (text.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.TextPresenter>().FirstOrDefault() is { } presenter)
+                    presenter.Margin = new Thickness(0, 0, 0, 14);
                 scroll.ScrollChanged += (_, e) =>
                 {
-                    if (closed || projecting) return;
+                    if (closed || projecting || pinPending || !text.IsEffectivelyVisible) return;
                     // Pure content growth changes Extent only and is not reader intent; a user scroll
                     // (or a layout clamp) always moves the offset or the viewport.
                     if (e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
@@ -87,21 +97,16 @@ public sealed class ServerLogWindow : ArcWindow
                 // inertial scrolling (that already cleared `following` through ScrollChanged).
                 scroll.LayoutUpdated += (_, _) =>
                 {
-                    if (!closed && following && !projecting && !IsAtBottom(scroll)) ApplyBottom();
+                    if (!closed && text.IsEffectivelyVisible && following && !projecting && !IsAtBottom(scroll)) ApplyBottom();
                 };
             }
             Update();
         };
-        Grid.SetRow(tools, 2); grid.Children.Add(tools);
         // Arc's frame has its own height; stretching the outer control alone does
         // not constrain its internal editor. Size it from a finite, clipped viewport.
         var viewport = new Border { ClipToBounds = true, Child = text };
         viewport.SizeChanged += (_, e) => text.FrameHeight = Math.Max(0, e.NewSize.Height);
-        text.Classes.Add("server-log");
-        Grid.SetRow(viewport, 3); grid.Children.Add(viewport);
-        var commandRow = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), Margin = new Thickness(0, 8, 0, 0) };
-        Grid.SetColumn(sendQuery, 1); commandRow.Children.Add(query); commandRow.Children.Add(sendQuery);
-        sendQuery.Click += async (_, _) => await SendQueryAsync();
+        Grid.SetRow(viewport, 2); grid.Children.Add(viewport);
         query.AddHandler(KeyDownEvent, async (_, e) =>
         {
             if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; await SendQueryAsync(); }
@@ -126,14 +131,13 @@ public sealed class ServerLogWindow : ArcWindow
                 e.Handled = true;
             }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        Grid.SetRow(commandRow, 4); grid.Children.Add(commandRow);
-        Grid.SetRow(consoleStatus, 5); grid.Children.Add(consoleStatus);
-        Content = grid;
+        Grid.SetRow(query, 3); grid.Children.Add(query);
+        Content = BuildShell(grid);
         model.PropertyChanged += Changed;
         model.OpenLogs();
         Closed += (_, _) =>
         {
-            closed = true; owner.PromptVisibilityChanged -= PromptChanged;
+            closed = true; CloseConsoleMenus(); owner.PromptVisibilityChanged -= PromptChanged;
             owner.Closed -= OwnerClosed;
             model.PropertyChanged -= Changed;
             if (!hiddenForPrompt) model.CloseLogs();
@@ -173,6 +177,7 @@ public sealed class ServerLogWindow : ArcWindow
         if (visible && IsVisible)
         {
             hiddenForPrompt = true;
+            CloseConsoleMenus();
             model.CloseLogs();
             Hide();
         }
@@ -186,17 +191,22 @@ public sealed class ServerLogWindow : ArcWindow
     private void Changed(object? sender, PropertyChangedEventArgs e) { if (!closed) ScheduleUpdate(); }
     private void Update()
     {
-        summary.Text = model.Header;
-        detail.Text = model.Server.DetailText;
-        history.Text = reading.ReadingPositionLost ? "较早日志已移出缓冲区；已定位最早保留记录。可跳到最新。"
-            : model.Server.LogsTruncated ? "日志已截断：仅显示最近记录" : "最近记录；非完整磁盘日志";
+        UpdateShellHeader();
+        UpdateCertificateBadge();
+        UpdateStatusBadgeTip();
+        if (reading.ReadingPositionLost && !positionLostNotified)
+        {
+            positionLostNotified = true;
+            notifications.Show(new ToastOptions { Title = "较早日志已移出缓冲区",
+                Description = "已定位到最早保留的记录，可在查看中选择跳到最新。", Kind = ToastKind.Warning });
+        }
+        else if (!reading.ReadingPositionLost) positionLostNotified = false;
         if (displayedRun != model.Server.RunId) { displayedRun = model.Server.RunId; text.Text = ""; query.Text = ""; historyIndex = -1; rows = Array.Empty<ConsoleLogRow>(); reading.Reset(); following = true; }
         // Keep input focused/editable while a command is in flight; only sending is gated.
         query.IsEnabled = model.Server.CanInputConsole;
-        sendQuery.IsEnabled = model.Server.CanSendConsole;
-        consoleStatus.Text = model.Server.ConsoleStatus + "\n↑↓历史仅存本前端内存，可能含秘密；插件回显仍可能进入服务器日志。";
-        var nextRows = model.Server.ConsoleRows;
-        var next = string.Join(Environment.NewLine, nextRows.Select(r => r.Text));
+        if (!text.IsEffectivelyVisible) return;
+        var nextRows = model.Server.ConsoleRows.TakeLast(displayLimit).ToArray();
+        var next = string.Join(Environment.NewLine, nextRows.Select(r => showTimestamps ? r.DisplayText : r.Text));
         if (text.Text == next && rows.Select(r => r.Id).SequenceEqual(nextRows.Select(r => r.Id))) return;
         var wasFollowing = following;
         double position = 0;
@@ -207,18 +217,24 @@ public sealed class ServerLogWindow : ArcWindow
             reading.Capture(rows, (int)Math.Round(position));
         }
         projecting = true;
-        try { text.Text = next; }
+        pinPending = wasFollowing;
+        try { text.Text = next; RestoreFindSelection(next); }
         finally { projecting = false; }
         rows = nextRows;
         if (wasFollowing)
         {
             // Extent is stale until the new text is measured: apply now, then again after layout.
             ApplyBottom();
-            Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Loaded);
+            Dispatcher.UIThread.Post(() =>
+            {
+                pinPending = false;
+                if (!closed && following) ApplyBottom();
+            }, DispatcherPriority.Loaded);
             return;
         }
+        pinPending = false;
         var restored = reading.Restore(rows);
-        if (reading.ReadingPositionLost) history.Text = "较早日志已移出缓冲区；已定位最早保留记录。可跳到最新。";
+        if (reading.ReadingPositionLost) reading.Reset();
         Dispatcher.UIThread.Post(() =>
         {
             if (closed || scroll is null || following) return;

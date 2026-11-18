@@ -129,6 +129,7 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
         using var disk = new StreamWriter(LocalPaths.CreateFile(logPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
         void Line(string raw)
         {
+            var receivedAt = DateTimeOffset.UtcNow;
             lock (parserLock)
             {
                 if (raw.StartsWith("HCSL_CONSOLE_ACK:", StringComparison.Ordinal)
@@ -158,7 +159,7 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                 var emptyChange = maps.ObserveEmptyChangeLevel(protocolText);
                 if (maps.Progress.Phase == ServerMapPhase.DownloadObserved) downloadSince = downloadSince == 0 ? Stopwatch.GetTimestamp() : downloadSince;
                 else downloadSince = 0;
-                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text, NetworkReadiness: networkReadiness, MapProgress: maps.Progress));
+                events.Report(new(ServerState.Starting, "HCSL-SERVER-LOG", text, NetworkReadiness: networkReadiness, MapProgress: maps.Progress, LogReceivedAt: receivedAt));
                 if (emptyChange is not null)
                 {
                     // CS2 may queue Changelevel () after printing the intended map when the

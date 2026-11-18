@@ -36,6 +36,8 @@ public static class ThemeCatalog
     public static ResourceDictionary CreateResources() => new()
     {
         ["PillRadius"] = new CornerRadius(999),
+        // Thickness resource for surfaces whose padding cannot take Arc's double spacing tokens.
+        ["PanelPadding"] = new Thickness(24),
         ThemeDictionaries =
         {
             [ThemeVariant.Light] = CreatePaletteResources(Light),

@@ -22,13 +22,28 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private Guid? logRun;
     private bool logsVisible, logsTruncated;
     private const int LogCapacity = 2000;
+    // Opening the console on a run that already produced output must land on the newest lines at once:
+    // the daemon ring keeps 2048 lines but one page is only 128.
+    private const int LogTailLines = 512;
+    private static long TailCursor(long nextSequence) => Math.Max(0, nextSequence - LogTailLines);
     private static readonly TimeSpan LogPoll = TimeSpan.FromMilliseconds(250);
+    private Guid? rosterRun, rosterPollRun;
+    private PlayerRoster? livePlayerRoster;
+    private long lastRosterPoll;
+    private int rosterRequestInFlight;
+    /// <summary>Read-only roster for the actual run, never the currently selected instance.</summary>
+    public PlayerRoster? LivePlayerRoster => connected && logsVisible && snapshot is { Active: true, State: ServerState.Running }
+        && snapshot.RunId == rosterRun && livePlayerRoster is { } roster
+        && DateTimeOffset.UtcNow - roster.QueriedAt < TimeSpan.FromSeconds(15) ? roster : null;
     private WorkspacePaths? workspace;
     private Guid attached;
     private string error = "", pending = "";
-    private bool connected, connectionUnknown, english, disposed, connecting;
+    private bool connected, connectionUnknown, english, disposed, connecting, reconnecting;
     private int generation, requestInFlight;
     private long issued, applied;
+    private string lastKind = "-";
+    /// <summary>Raised with a short, already-localized sentence when the link is lost or restored.</summary>
+    public event Action<string>? ConnectionNotice;
 
     public ServerController(IDaemonClient client, Action<Action> dispatch, IDaemonBootstrapper? bootstrapper = null,
         TimeSpan? activeInterval = null, TimeSpan? idleInterval = null)
@@ -47,18 +62,16 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private bool historyEnabled = true;
     public bool ConsoleHistoryEnabled { get => historyEnabled; set { historyEnabled = value; if (!value) consoleHistory.Clear(); Notify(); } }
     public void ClearConsoleHistory() { consoleHistory.Clear(); Notify(); }
-    private readonly List<(Guid Id, long Anchor, string Text)> inputMarkers = new();
-    public IReadOnlyList<ConsoleLogRow> ConsoleRows
+    public void ClearConsoleDisplay()
     {
-        get
-        {
-            var first = logLines.FirstOrDefault()?.Sequence ?? 0;
-            inputMarkers.RemoveAll(m => m.Anchor < first - 1);
-            return logLines.Select(l => (Order: l.Sequence, Kind: 0, Row: new ConsoleLogRow("log:" + l.Sequence, l.Text)))
-                .Concat(inputMarkers.Select(m => (Order: m.Anchor, Kind: 1, Row: new ConsoleLogRow("input:" + m.Id, "> " + m.Text))))
-                .OrderBy(x => x.Order).ThenBy(x => x.Kind).Select(x => x.Row).TakeLast(2000).ToArray();
-        }
+        logLines.Clear(); ConsoleStatus = "";
+        logsTruncated = false;
+        Notify();
     }
+    /// <summary>Engine lines only. The host no longer injects "&gt; command" rows or its own receipts:
+    /// CS2 echoes what it received, and a locally generated sentence cannot be told apart from engine output.</summary>
+    public IReadOnlyList<ConsoleLogRow> ConsoleRows =>
+        logLines.Select(l => new ConsoleLogRow("log:" + l.Sequence, l.Text, l.ReceivedAt)).TakeLast(2000).ToArray();
     public string ConsoleStatus { get; private set; } = "";
     /// <summary>The PTY exists once the run is active; commands such as host_workshop_collection may be
     /// needed before a map is published as ready. A map change still requires Running.</summary>
@@ -72,7 +85,6 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         if (!CanSendConsole || RunId != expectedRun || Interlocked.CompareExchange(ref consoleBusy, 1, 0) != 0)
         { ConsoleStatus = "HCSL-CONSOLE-STATE: 当前运行不可发送 / run changed or unavailable."; Notify(); return null; }
         var current = generation;
-        var anchor = logCursor;
         ConsoleStatus = "发送中 / Sending"; Notify();
         var receipt = await server.SendConsoleAsync(new(expectedRun, Guid.NewGuid(), query, confirmMutation), life.Token);
         Interlocked.Exchange(ref consoleBusy, 0);
@@ -86,8 +98,6 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 _ => English ? "Delivery unknown. Not retried automatically." : "结果未知；未自动重发。"
             });
             var display = receipt.DisplayText ?? "[命令显示未获确认 / command display unavailable]";
-            inputMarkers.Add((receipt.CommandId, anchor, display));
-            if (inputMarkers.Count > 200) inputMarkers.RemoveAt(0);
             if (receipt.Delivery != ConsoleDelivery.Rejected && ConsoleHistoryEnabled && display == query && !ServerConsoleRules.IsSensitive(query))
             {
                 consoleHistory.Add(query);
@@ -131,13 +141,15 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// <summary>Newest lines the daemon returned, oldest first. Bounded so a chatty server cannot grow the UI.</summary>
     public IReadOnlyList<ServerLogLine> LogLines => logLines;
     /// <summary>True when the daemon dropped history, or when the local ring dropped lines.</summary>
-    public bool LogsTruncated => logsTruncated || HistoryTruncated || logLines.Count + inputMarkers.Count > LogCapacity;
+    public bool LogsTruncated => logsTruncated || HistoryTruncated || logLines.Count > LogCapacity;
     /// <summary>Next sequence to ask for; also the cursor the daemon validates against the run.</summary>
     public long LogCursor => logCursor;
     public ServerSeverity Severity => ServerStatusText.Severity(State);
     public bool Connected => connected;
     public bool ConnectionUnknown => connectionUnknown;
     public bool Connecting => connecting;
+    /// <summary>True while the frontend is actively trying to reopen the link after a timeout or exit.</summary>
+    public bool Reconnecting => reconnecting;
     public string Code => snapshot?.Code ?? "";
     public string ErrorText => error;
     public string? Pending => pending.Length == 0 ? null : pending;
@@ -204,6 +216,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
             if (bootstrapper is not null) await bootstrapper.EnsureRunningAsync(ct);
             var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
             if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+            HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc", "connected to daemon pid=" + hello.ProcessId);
+            SetDaemonPid(hello.ProcessId);
             var ticket = Interlocked.Increment(ref issued);
             var status = await server.SendAsync(new(ServerAction.Status, attached), null, ct);
             Post(() =>
@@ -218,9 +232,10 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
         }
         catch (DaemonStartupException ex)
         {
+            HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc", "startup failed " + ex.Code);
             Post(() => { connected = false; connectionUnknown = true; error = ex.Code + ": " + ex.Message; Notify(); }, current);
         }
-        catch (Exception) { Disconnected(current); }
+        catch (Exception e) { Disconnected(current, "connect", e); }
         finally
         {
             Interlocked.Exchange(ref requestInFlight, 0);
@@ -245,7 +260,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public Task<bool> RefreshLogsAsync()
     {
         if (!logsVisible || !connected || snapshot?.RunId is not { } run) return Task.FromResult(false);
-        return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, logCursor), false, "", 500);
+        var cursor = run == logRun ? logCursor : TailCursor(snapshot.NextSequence);
+        return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, cursor), false, "", 500);
     }
 
     public Task<bool> StartAsync(int timeoutSeconds = 120, bool autoDeploy = false, bool allowLowMemory = false) =>
@@ -339,6 +355,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
 
     private async Task PollAsync(int current, CancellationToken ct)
     {
+        var timeouts = 0;
         try
         {
             while (!ct.IsCancellationRequested && current == generation && !disposed)
@@ -352,41 +369,180 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 try
                 {
                     var ticket = Interlocked.Increment(ref issued);
+                    lastKind = "Status";
                     var result = await server.SendAsync(new(ServerAction.Status), null, ct);
+                    timeouts = 0; // One answered request proves the link is alive.
                     Post(() =>
                     {
                         Apply(result, ticket);
                         if (error.Contains("Log cursor belongs to another run.", StringComparison.Ordinal)) error = "";
                         Notify();
                     }, current);
+                    // Refresh player counts independently of the UI selection and without the host's Busy gate.
+                    // Ordinary status/log snapshots do not contain a roster. Never disconnect log polling on RCON failure.
+                    if (logsVisible && result is { Active: true, State: ServerState.Running, RunId: { } rosterId, InstanceId: { } target }
+                        && (rosterPollRun != rosterId || System.Diagnostics.Stopwatch.GetElapsedTime(lastRosterPoll) >= TimeSpan.FromSeconds(5))
+                        && Interlocked.CompareExchange(ref rosterRequestInFlight, 1, 0) == 0)
+                    {
+                        rosterPollRun = rosterId;
+                        lastRosterPoll = System.Diagnostics.Stopwatch.GetTimestamp();
+                        _ = RefreshPlayerRosterAsync(current, rosterId, target, ct);
+                    }
                     // Page the log only while the operator is looking at it; the cursor keeps it incremental.
                     if (logsVisible && result.RunId is { } run && !ct.IsCancellationRequested)
                     {
                         var pageTicket = Interlocked.Increment(ref issued);
-                        var page = await server.SendAsync(new(ServerAction.Logs, result.InstanceId ?? attached, run, run == logRun ? logCursor : 0), null, ct);
+                        lastKind = "Logs";
+                        var page = await server.SendAsync(new(ServerAction.Logs, result.InstanceId ?? attached, run,
+                            run == logRun ? logCursor : TailCursor(result.NextSequence)), null, ct);
                         Post(() => { Apply(page, pageTicket); Notify(); }, current);
                     }
+                }
+                catch (DaemonTimeoutException e)
+                {
+                    // A busy daemon is not a missing daemon: keep polling and only escalate after
+                    // several consecutive unanswered requests.
+                    if (++timeouts < 3) continue;
+                    if (await TryReconnectAsync(current, ct)) { timeouts = 0; continue; }
+                    Disconnected(current, "poll", e);
+                    return;
+                }
+                catch (Exception e) when (e is IOException or DaemonProtocolException or System.Text.Json.JsonException)
+                {
+                    // Liveness decides the path: a live process with a broken pipe only needs a retry,
+                    // a dead process needs the bootstrapper to start it again.
+                    if (DaemonAlive()) { await Task.Delay(300, ct); timeouts = 0; continue; }
+                    if (await TryReconnectAsync(current, ct)) { timeouts = 0; continue; }
+                    Disconnected(current, "poll", e);
+                    return;
                 }
                 finally { Interlocked.Exchange(ref requestInFlight, 0); }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-        catch (Exception) { Disconnected(current); }
+        catch (Exception e) { Disconnected(current, "poll", e); }
     }
 
-    private void Disconnected(int current) => Post(() =>
+    /// <summary>Re-open the link with a bounded backoff. The daemon may have exited or been replaced;
+    /// the bootstrapper reuses a healthy daemon and only replaces a stale build.</summary>
+    private async Task<bool> TryReconnectAsync(int current, CancellationToken ct)
     {
+        // Try at once (the daemon may only need starting), then back off.
+        var delays = new[] { 0, 1, 2, 5 };
+        Post(() => { reconnecting = true; Notify(); }, current);
+        try
+        {
+            return await AttemptReconnectAsync(current, ct, delays);
+        }
+        finally
+        {
+            Post(() => { reconnecting = false; Notify(); }, current);
+        }
+    }
+
+    private async Task<bool> AttemptReconnectAsync(int current, CancellationToken ct, int[] delays)
+    {
+        for (var attempt = 0; attempt < delays.Length && !ct.IsCancellationRequested && current == generation && !disposed; attempt++)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(delays[attempt]), ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return false; }
+            try
+            {
+                if (bootstrapper is not null) await bootstrapper.EnsureRunningAsync(ct);
+                var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+                if (!hello.Success || hello.Defaults is null) continue;
+                var ticket = Interlocked.Increment(ref issued);
+                var status = await server.SendAsync(new(ServerAction.Status, attached), null, ct);
+                Post(() =>
+                {
+                    workspace = hello.Defaults;
+                    connected = true;
+                    connectionUnknown = false;
+                    error = "";
+                    Apply(status, ticket);
+                    Notify();
+                }, current);
+                HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc", "reconnected attempt=" + (attempt + 1) + " pid=" + hello.ProcessId);
+                SetDaemonPid(hello.ProcessId);
+                ConnectionNotice?.Invoke(english ? "Reconnected to the local daemon." : "已重新连接本机宿主。");
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return false; }
+            catch (Exception e)
+            {
+                HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc", "reconnect attempt=" + (attempt + 1) + " failed cause=" + e.GetType().Name + Describe(e));
+            }
+        }
+        return false;
+    }
+
+    private int daemonPid;
+    private void SetDaemonPid(int pid) => daemonPid = pid;
+    /// <summary>Cheap, deterministic alternative to guessing from timeouts. Unknown pid means unknown.</summary>
+    private bool DaemonAlive()
+    {
+        if (daemonPid <= 0) return false;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(daemonPid);
+            return !process.HasExited;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { return false; }
+    }
+
+    private async Task RefreshPlayerRosterAsync(int current, Guid run, Guid target, CancellationToken ct)
+    {
+        try
+        {
+            PlayerRoster? roster = null;
+            try
+            {
+                var response = await server.SendAsync(new(ServerAction.Players, target, run), null, ct);
+                if (response.RunId == run) roster = response.PlayerRoster;
+            }
+            catch (Exception e) when (e is IOException or System.Text.Json.JsonException or DaemonProtocolException or UnauthorizedAccessException) { }
+            Post(() =>
+            {
+                if (!logsVisible || snapshot?.RunId != run || snapshot.Active != true) return;
+                rosterRun = run;
+                livePlayerRoster = roster;
+                Notify();
+            }, current);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        finally { Interlocked.Exchange(ref rosterRequestInFlight, 0); }
+    }
+
+    /// <summary>Record why the frontend stopped trusting the link, so a later read can tell a busy daemon
+    /// from a dead one without guessing.</summary>
+    private static string Describe(Exception? cause) => cause switch
+    {
+        null => "",
+        ServerException server => " code=" + server.Code,
+        DaemonProtocolException => " protocol-mismatch",
+        OperationCanceledException => " cancelled-or-timeout",
+        IOException => " io",
+        _ => ""
+    };
+
+    private void Disconnected(int current, string phase, Exception? cause = null) => Post(() =>
+    {
+        HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc", "unreachable phase=" + phase
+            + " cause=" + (cause?.GetType().Name ?? "none") + Describe(cause)
+            + " during kind=" + lastKind);
         connected = false;
         connectionUnknown = true;
         error = english ? "Cannot reach the local daemon; server state is unknown." : "无法连接本机宿主，服务器状态未知。";
-        Notify();
+        ConnectionNotice?.Invoke(cause is DaemonTimeoutException
+            ? (english ? "The local daemon is not responding." : "本机宿主多次未响应，已停止刷新。")
+            : (english ? "The local daemon exited. Reconnect to continue." : "本机宿主已退出，请重新连接。"));        Notify();
     }, current);
 
     private void Apply(ServerSnapshot value, long ticket)
     {
         if (ticket < applied) return;
         applied = ticket;
-        if (snapshot?.RunId != value.RunId) { consoleHistory.Clear(); inputMarkers.Clear(); ConsoleStatus = ""; }
+        if (snapshot?.RunId != value.RunId) { consoleHistory.Clear(); ConsoleStatus = ""; }
         snapshot = value;
         AppendLogs(value);
     }
@@ -430,7 +586,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     {
         if (disposed) return;
         disposed = true;
-        consoleHistory.Clear(); inputMarkers.Clear(); ConsoleStatus = "";
+        consoleHistory.Clear(); ConsoleStatus = "";
         Interlocked.Increment(ref generation);
         life.Cancel();
         life.Dispose();
