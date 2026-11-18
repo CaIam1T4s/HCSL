@@ -29,6 +29,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var clients = new List<Task>();
         using var slots = new SemaphoreSlim(8);
         NamedPipeServerStream listener = CreateListener();
+        HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "listening pipe=" + pipeName + " maxClients=8");
         var idle = WatchIdleAsync(lifetime);
         try
         {
@@ -85,6 +86,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 }
                 if (exit)
                 {
+                    HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "idle exit: no requests for " + timeout.TotalSeconds + "s");
                     lifetime.Cancel();
                     return;
                 }
@@ -127,12 +129,15 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 catch (InstanceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (WorkspaceException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (OperationRejected ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
-                catch (Exception) { response = new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-ERROR", "Local request failed."); }
+                catch (Exception) { response = new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-ERROR", "Local request failed."); HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "request failed kind=" + request.Kind); }
                 response = response with { InstanceId = instance, ProcessId = Environment.ProcessId, DaemonBuild = build };
                 await LocalProtocol.WriteAsync(pipe, response, deadline.Token);
             }
             catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or InvalidDataException or ArgumentException)
-            { /* Broken/oversized clients are closed; request contents, especially secrets, are never logged. */ }
+            {
+                // Broken/oversized clients are closed; request contents, especially secrets, are never logged.
+                HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "client closed: " + ex.GetType().Name + (deadline.IsCancellationRequested ? " (request deadline)" : ""));
+            }
             finally
             {
                 lock (activity) { activeRequests--; lastActivity = Stopwatch.GetTimestamp(); }

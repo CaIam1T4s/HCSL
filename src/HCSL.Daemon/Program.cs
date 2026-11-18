@@ -32,6 +32,8 @@ try
     }
     if (background) BackgroundConsole.Detach();
     var pipe = LocalProtocol.PipeName(requestedPipe);
+    HCSL.Application.Diagnostics.DiagnosticsLog.Configure(Path.Combine(LocalPaths.Defaults().DataRoot, "logs"), "daemon.log");
+    HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "start pid=" + Environment.ProcessId + " pipe=" + pipe + " idle-seconds=" + idleSeconds + " background=" + background);
     var state = OperatingSystem.IsWindows()
         ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HCSL", "daemon")
         : Path.Combine(AbsoluteStateHome(), "hcsl", "daemon");
@@ -50,6 +52,7 @@ try
         Path.Combine(LocalPaths.Defaults().DataRoot, "instances"));
     Console.WriteLine("HCSL daemon ready: " + pipe);
     await new LocalDaemonServer(pipe, operations, TimeSpan.FromSeconds(idleSeconds), servers).RunAsync(stop.Token);
+    HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "exit reason=" + (stop.IsCancellationRequested ? "cancelled" : "completed"));
     return 0;
 }
 catch (HCSL.Core.ServerException ex)

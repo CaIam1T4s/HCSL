@@ -23,13 +23,20 @@ public partial class App : Avalonia.Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
+            HCSL.Application.Diagnostics.DiagnosticsLog.Configure(
+                System.IO.Path.Combine(HCSL.Infrastructure.Storage.LocalPaths.Defaults().DataRoot, "logs"), "host.log");
+            HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "start pid=" + Environment.ProcessId + " v" + ProductVersion.Current);
             var daemon = new DaemonClient();
             var baseline = new BaselineController(new BaselineClient(daemon,
                 () => new(steamCmd.SettingsRoot, steamCmd.DataRoot, steamCmd.LibraryRoot)));
             var servers = new HostServerController(
                 new ServerController(daemon, action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
                 new InstanceClient(daemon), new HCSL.Infrastructure.Storage.LocalDirectoryOpener(), daemon);
-            desktop.Exit += (_, _) => { servers.Dispose(); steamCmd.Dispose(); baseline.Dispose(); };
+            desktop.Exit += (_, _) =>
+            {
+                HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "exit");
+                servers.Dispose(); steamCmd.Dispose(); baseline.Dispose();
+            };
             desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers, baseline) };
             desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); _ = baseline.RefreshStatusAsync(); };
         }
