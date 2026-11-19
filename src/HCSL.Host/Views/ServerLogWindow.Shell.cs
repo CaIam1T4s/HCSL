@@ -14,7 +14,6 @@ namespace HCSL.Host.Views;
 
 public sealed partial class ServerLogWindow
 {
-    private readonly Badge certificateBadge = new() { Size = BadgeSize.Medium, IsVisible = false };
     private (string Text, BadgeTone Tone, LucideIconKind Icon)? lastCertificateState;
     private string? lastStatusTip;
     private (string, BadgeTone, LucideIconKind)? lastBadgeState;

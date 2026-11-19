@@ -11,6 +11,7 @@
       <arc:TitleBar.LeftContent>
         <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
           <arc:Badge x:Name="statusBadge" Size="Medium"/>
+          <arc:Badge x:Name="certificateBadge" Size="Medium" IsVisible="False"/>
           <arc:Badge x:Name="mapBadge" Size="Medium" Tone="Neutral"/>
           <arc:Badge x:Name="playersBadge" Size="Medium" Tone="Neutral"/>
         </StackPanel>

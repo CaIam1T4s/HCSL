@@ -64,10 +64,9 @@ public sealed partial class ServerLogWindow : ArcWindow
         InitializeComponent();
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
-        var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,*,Auto") };
+        var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,*,Auto") };
         TKCode.Arc.ArcTokens.Bind(grid, Grid.RowSpacingProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Space2);
         grid.Children.Add(BuildConsoleToolbar());
-        Grid.SetRow(findBar, 1); grid.Children.Add(findBar);
         query.MaxLength = 4096;
         text.Classes.Add("console-log");
         text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
@@ -117,7 +116,7 @@ public sealed partial class ServerLogWindow : ArcWindow
         // not constrain its internal editor. Size it from a finite, clipped viewport.
         var viewport = new Border { ClipToBounds = true, Child = text };
         viewport.SizeChanged += (_, e) => text.FrameHeight = Math.Max(0, e.NewSize.Height);
-        Grid.SetRow(viewport, 2); grid.Children.Add(viewport);
+        Grid.SetRow(viewport, 1); grid.Children.Add(viewport);
         query.AddHandler(KeyDownEvent, async (_, e) =>
         {
             if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; await SendQueryAsync(); }
@@ -142,7 +141,7 @@ public sealed partial class ServerLogWindow : ArcWindow
                 e.Handled = true;
             }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        Grid.SetRow(query, 3); grid.Children.Add(query);
+        Grid.SetRow(query, 2); grid.Children.Add(query);
         InitializeShell(grid);
         model.PropertyChanged += Changed;
         model.OpenLogs();

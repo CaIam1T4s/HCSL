@@ -6,10 +6,11 @@ using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using HCSL.Frontend;
+using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Icons.Lucide;
-using ArcInput = TKCode.Arc.Input;
+using ArcSearchField = TKCode.Arc.SearchField;
 
 namespace HCSL.Host.Views;
 
@@ -18,10 +19,9 @@ public sealed partial class ServerLogWindow
     private GlassMenu? consoleMenu;
     private bool showTimestamps = true;
     private int displayLimit = 2000, findIndex = -1;
-    private readonly ArcInput findInput = new() { Label = "查找日志", IsLabelVisible = false,
-        PlaceholderText = "查找日志 · Enter 下一处 · Shift+Enter 上一处 · Esc 关闭" };
+    private readonly ArcSearchField findInput = new() { Label = "查找日志", IsLabelVisible = false,
+        Placeholder = "查找日志", Size = ControlSize.Small };
     private readonly TextBlock findResult = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly Grid findBar = new() { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto"), IsVisible = false };
 
     private Control BuildConsoleToolbar()
     {
@@ -34,26 +34,38 @@ public sealed partial class ServerLogWindow
         share.Click += (_, _) => OpenShareDialog();
         options.Click += (_, _) => OpenOptionsMenu(options);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto") };
-        certificateBadge.VerticalAlignment = VerticalAlignment.Center;
-        toolbar.Children.Add(certificateBadge);
-        Grid.SetColumn(group, 1); toolbar.Children.Add(group);
-        findBar.Children.Add(findInput);
-        Grid.SetColumn(findResult, 1); findBar.Children.Add(findResult);
-        ArcTokens.Bind(findBar, Grid.ColumnSpacingProperty, ArcDesignTokenKind.Space2);
+        // Find sits where the console actions start, the way the instance list keeps search at its top left.
+        var search = new ElevatedSurface(findInput)
+        {
+            Classes = { "console-search" },
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        ArcTokens.Bind(search, Layoutable.MaxWidthProperty, ArcDesignTokenKind.ContentMaxWidthSM);
+        ArcTokens.Bind(search, Layoutable.MinWidthProperty, ArcDesignTokenKind.MediaSizeXL);
         ArcTokens.Bind(findResult, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
+        var searchRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
+            Children = { search, findResult }
+        };
+        ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
+        toolbar.Children.Add(searchRow);
+        Grid.SetColumn(group, 1); toolbar.Children.Add(group);
         findInput.TextChanged += (_, _) => FindNext(restart: true);
-        findInput.KeyDown += (_, e) =>
+        // Tunnel first: the field would otherwise swallow Enter as SearchSubmitted and Escape as a clear.
+        findInput.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Enter) { e.Handled = true; FindNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); }
-            else if (e.Key == Key.Escape) { e.Handled = true; findBar.IsVisible = false; text.Focus(); }
-        };
+            else if (e.Key == Key.Escape) { e.Handled = true; findInput.Text = ""; findIndex = -1; findResult.Text = ""; text.Focus(); }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
             if (!text.IsEffectivelyVisible) return;
             if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             { e.Handled = true; OpenFind(); }
             else if (e.Key == Key.F3)
-            { e.Handled = true; if (!findBar.IsVisible) OpenFind(); else FindNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); }
+            { e.Handled = true; FindNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         return toolbar;
     }
@@ -149,7 +161,6 @@ public sealed partial class ServerLogWindow
         MenuEntry(menu, "自动跟随", () => { if (following) { following = false; Update(); } else JumpLatest(); }, following);
         MenuEntry(menu, "跳到最新", JumpLatest);
         MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier);
-        MenuEntry(menu, "查找日志 · Ctrl+F", OpenFind);
         menu.Open(anchor);
     }
     private void OpenOptionsMenu(Control anchor)
@@ -197,12 +208,11 @@ public sealed partial class ServerLogWindow
     }
     private void OpenFind()
     {
-        findBar.IsVisible = true;
         Dispatcher.UIThread.Post(() => { if (!closed) { findInput.Focus(); findInput.SelectAll(); } }, DispatcherPriority.Loaded);
     }
     private void RestoreFindSelection(string body)
     {
-        if (!findBar.IsVisible || findIndex < 0) return;
+        if (string.IsNullOrEmpty(findInput.Text) || findIndex < 0) return;
         var needle = findInput.Text ?? "";
         if (needle.Length == 0 || findIndex + needle.Length > body.Length
             || !body.AsSpan(findIndex, needle.Length).Equals(needle.AsSpan(), StringComparison.OrdinalIgnoreCase))

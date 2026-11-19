@@ -357,6 +357,18 @@
     <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusSurface}"/>
     <Setter Property="ClipToBounds" Value="True"/>
   </Style>
+  <!-- Console search sits on the log gradient like the instance list's search sits on its page. -->
+  <Style Selector="Grid.console-search arc|SearchField /template/ arc|FieldFrame#PART_Frame">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}"/>
+  </Style>
+  <Style Selector="Grid.console-search arc|SearchField /template/ arc|FieldFrame#PART_Frame:pointerover:not(:invalid)">
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector="Grid.console-search arc|SearchField /template/ arc|FieldFrame#PART_Frame:focus-active:not(:invalid)">
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
   <!-- Invisible square the popovers anchor to, placed at the context menu's origin. -->
   <Style Selector="Border.popover-anchor">
     <Setter Property="Width" Value="{arc:ArcDesignTokenResource Space1}"/>
