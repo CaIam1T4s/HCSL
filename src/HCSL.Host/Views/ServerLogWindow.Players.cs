@@ -165,8 +165,7 @@ public sealed partial class ServerLogWindow
         // (and the action buttons) when the window narrows instead of scrolling.
         playersTable.Columns.Add(new DataTableColumn("玩家", row => ((PlayerRow)row).Name)
         {
-            // The flexible column: it takes the space left over once the fixed columns are placed.
-            Width = new GridLength(1, GridUnitType.Star)
+            Width = ColumnWidth("ConsoleTablePlayerWidth")
         });
         playersTable.Columns.Add(new DataTableColumn("身份", row => ((PlayerRow)row).Identity)
         {
@@ -218,23 +217,16 @@ public sealed partial class ServerLogWindow
             foreach (var row in playerRows) row.AdvanceSecond();
         };
         playerClock.Start();
-        // The table fills the page when there is room (the player column absorbs it) and keeps a minimum
-        // width so a narrow window scrolls horizontally instead of squeezing headers and cells.
+        // Plan A: no outer scroller. Every column has a fixed width, so the table's own ScrollViewer scrolls
+        // its content horizontally while the rounded frame stays in place.
         playersTable.HorizontalAlignment = HorizontalAlignment.Stretch;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
-        playersTable.MinWidth = TableMinWidth();
         playersTable.AddHandler(InputElement.PointerPressedEvent, OnPlayerPointerPressed,
             Avalonia.Interactivity.RoutingStrategies.Tunnel);
-        var scroller = new ScrollViewer
-        {
-            Content = playersTable,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
-        };
         var surface = new Border
         {
             // Same material as the console log: the page background stays the window's own gradient.
-            Child = new Grid { Children = { scroller } },
+            Child = new Grid { Children = { playersTable } },
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
@@ -537,24 +529,6 @@ public sealed partial class ServerLogWindow
     private static GridLength ColumnWidth(string key) =>
         Avalonia.Application.Current?.TryFindResource(key, out var value) == true && value is double width
             ? new GridLength(width) : GridLength.Auto;
-
-    /// <summary>Sum of the fixed columns plus the player column's own minimum; below it the page scrolls.</summary>
-    private static double TableMinWidth()
-    {
-        string[] keys =
-        [
-            "ConsoleTablePlayerWidth", "ConsoleTableIdentityWidth", "ConsoleTableSteamIdWidth",
-            "ConsoleTableAddressWidth", "ConsoleTableStateWidth", "ConsoleTablePingWidth",
-            "ConsoleTableConnectedWidth"
-        ];
-        var total = 0d;
-        foreach (var key in keys)
-        {
-            if (Avalonia.Application.Current?.TryFindResource(key, out var value) != true || value is not double width) return double.NaN;
-            total += width;
-        }
-        return total;
-    }
 
     /// <summary>Admin groups and the preset hash the write must match; one page is enough to label the roster.</summary>
     private async Task RefreshAdminListAsync()
