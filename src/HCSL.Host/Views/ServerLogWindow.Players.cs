@@ -130,6 +130,9 @@ public sealed partial class ServerLogWindow
     private readonly ObservableCollection<PlayerRow> playerRows = [];
     /// <summary>Host for the per-open popovers; they are recreated so each one gets a fresh anchor.</summary>
     private Grid? shellHost;
+    /// <summary>Canvas the popovers are anchored through, positioned at the context menu's own origin.</summary>
+    private Canvas? popoverLayer;
+    private Border? popoverAnchor;
     private readonly ArcDialog grantDialog = new() { Title = "授予管理员", Size = ControlSize.Small, ShowCloseButton = true };
     private readonly ArcSelect grantGroup = new() { Placeholder = "选择管理组" };
     private readonly TextBlock grantPrompt = new() { TextWrapping = TextWrapping.Wrap };
@@ -202,8 +205,9 @@ public sealed partial class ServerLogWindow
         playersTable.HorizontalAlignment = HorizontalAlignment.Left;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
         playersTable.Width = TableWidth();
-        // Released, not pressed: PlacementMode.Pointer needs the pointer position that ContextRequested also uses.
-        playersTable.AddHandler(InputElement.PointerReleasedEvent, OnPlayerPointerReleased,
+        // Menu at the pointer, like the instance list: ContextRequested is raised after release, so the
+        // pointer position is available for PlacementMode.Pointer.
+        playersTable.AddHandler(InputElement.ContextRequestedEvent, OnPlayerContextRequested,
             Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         var scroller = new ScrollViewer
         {
@@ -353,11 +357,10 @@ public sealed partial class ServerLogWindow
     private GlassMenu? playerMenu;
 
     /// <summary>Row actions live in a context menu so the table needs no action column. BOT rows get none.</summary>
-    private void OnPlayerPointerReleased(object? sender, PointerReleasedEventArgs e)
+    private void OnPlayerContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (e.InitialPressMouseButton != MouseButton.Right) return;
         // Cell text is not hit-testable everywhere, so the row is found by position rather than by the event source.
-        var point = e.GetPosition(playersTable);
+        var point = e.TryGetPosition(playersTable, out var position) ? position : default;
         // Row containers have no data context, so the pointer is mapped to the container band first and the
         // player is then read from any cell that lives inside it.
         double? bandTop = null, bandBottom = null;
@@ -386,18 +389,30 @@ public sealed partial class ServerLogWindow
         if (rowControl is null || row is null || row.IsBot) return;
         e.Handled = true;
         playerMenu?.Close();
-        var menu = playerMenu = new GlassMenu { Name = "PlayerRowMenu", Placement = PlacementMode.Pointer };
+        var menu = playerMenu = new GlassMenu
+        {
+            Name = "PlayerRowMenu",
+            // Same rule as the instance list: at the pointer when we know it, otherwise aligned to the row.
+            Placement = e.TryGetPosition(rowControl, out _) ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedRight
+        };
         AutomationProperties.SetName(menu, "玩家操作");
+        // The popovers anchor where the menu opened, so the confirm appears under the command, not the row.
+        Point? menuOrigin = null;
+        menu.LayoutUpdated += (_, _) =>
+        {
+            if (menu.IsOpen && popoverLayer is not null)
+                menuOrigin = popoverLayer.PointToClient(menu.PointToScreen(default));
+        };
         void Entry(string title, LucideIconKind icon, Action action, bool danger = false)
         {
             var item = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(icon), IsDestructive = danger };
             item.Click += (_, _) => { menu.Close(); action(); };
             menu.Items.Add(item);
         }
-        Entry("踢出玩家", LucideIconKind.UserRoundMinus, () => OpenKick(row, rowControl), danger: true);
+        Entry("踢出玩家", LucideIconKind.UserRoundMinus, () => OpenKick(row, rowControl, menuOrigin), danger: true);
         Entry(row.IsAdmin ? "移除管理员" : "授予管理员",
             row.IsAdmin ? LucideIconKind.ShieldMinus : LucideIconKind.ShieldPlus,
-            () => OpenAdminAction(row, rowControl));
+            () => OpenAdminAction(row, rowControl, menuOrigin));
         menu.Open(rowControl);
     }
 
@@ -405,10 +420,10 @@ public sealed partial class ServerLogWindow
     /// A Popover keeps the anchor of its first show, so a fresh instance is created for every open; it is
     /// removed again when it closes. The hold button is new too, which also clears its done state.
     /// </summary>
-    private void ShowHoldPopover(Control anchor, string prompt, string label, string confirmedLabel,
+    private void ShowHoldPopover(Point? menuOrigin, Control container, string label, string confirmedLabel,
         LucideIconKind icon, Func<Task> confirmed)
     {
-        if (shellHost is null) return;
+        if (shellHost is null || popoverLayer is null || popoverAnchor is null) return;
         var hold = new HoldToConfirm
         {
             Label = label,
@@ -417,14 +432,12 @@ public sealed partial class ServerLogWindow
             Tone = HoldToConfirmTone.Danger,
             Icon = Lucide.Geometry(icon)
         };
-        var body = new StackPanel { Children = { new TextBlock { Text = prompt, TextWrapping = TextWrapping.Wrap }, hold } };
-        ArcTokens.Bind(body, StackPanel.SpacingProperty, ArcDesignTokenKind.Space3);
         var popover = new Popover
         {
             TriggerMode = PopoverTriggerMode.Manual,
             Placement = PopoverPlacement.Bottom,
             Alignment = PopoverAlignment.Start,
-            Content = body
+            Content = hold
         };
         popover.Styles.Add(new Style(x => x.OfType<PopoverSurface>())
         {
@@ -435,25 +448,30 @@ public sealed partial class ServerLogWindow
         popover.ZIndex = 20;
         popover.Closed += (_, _) => shellHost.Children.Remove(popover);
         hold.Confirmed += async (_, _) => { popover.IsOpen = false; await confirmed(); };
+        // Anchor the panel at the menu origin, exactly like the instance list does.
+        var origin = menuOrigin ?? container.TranslatePoint(default, popoverLayer) ?? default;
+        Canvas.SetLeft(popoverAnchor, origin.X);
+        Canvas.SetTop(popoverAnchor, origin.Y - popoverAnchor.Height);
+        popoverLayer.UpdateLayout();
         shellHost.Children.Add(popover);
-        popover.ShowAt(anchor);
+        popover.ShowAt(popoverAnchor);
     }
 
-    private void OpenKick(PlayerRow? row, Control anchor)
+    private void OpenKick(PlayerRow? row, Control anchor, Point? menuOrigin)
     {
         if (row is null) return;
         kickTarget = row;
-        ShowHoldPopover(anchor, "踢出 " + row.Name + "？", "长按踢出", "已请求踢出",
+        ShowHoldPopover(menuOrigin, anchor, "长按踢出", "已请求踢出",
             LucideIconKind.UserRoundMinus, KickAsync);
     }
 
-    private void OpenAdminAction(PlayerRow? row, Control anchor)
+    private void OpenAdminAction(PlayerRow? row, Control anchor, Point? menuOrigin)
     {
         if (row is null || row.IsBot) return;
         if (row.IsAdmin)
         {
             revokeTarget = row;
-            ShowHoldPopover(anchor, "移除 " + row.Name + " 的管理员身份？", "长按移除管理员", "已移除",
+            ShowHoldPopover(menuOrigin, anchor, "长按移除管理员", "已移除",
                 LucideIconKind.ShieldMinus, RevokeAdminAsync);
             return;
         }

@@ -74,6 +74,13 @@ public sealed partial class ServerLogWindow
         Grid.SetColumnSpan(notifications, 2);
         notifications.ZIndex = 10; // Above the content: toasts must not be hidden under the log viewport or the command input.
         shell.Children.Add(notifications);
+        // Popovers anchor through this layer, at the context menu's own origin (same approach as the instance list).
+        popoverLayer = new Canvas { IsHitTestVisible = false };
+        Grid.SetColumnSpan(popoverLayer, 2);
+        popoverLayer.ZIndex = 19;
+        popoverAnchor = new Border();
+        popoverLayer.Children.Add(popoverAnchor);
+        shell.Children.Add(popoverLayer);
         shell.Children.Add(grantDialog);
         Grid.SetColumn(pages, 1);
         shell.Children.Add(pages);
