@@ -25,11 +25,10 @@ public sealed partial class ServerLogWindow : ArcWindow
         IsReadOnly = true, TextWrapping = Avalonia.Media.TextWrapping.NoWrap,
         IsResizable = false, FrameMinHeight = 0, MinHeight = 0, ClipToBounds = true
     };
-    private bool following = true, closed, projecting, updateQueued, pinPending;
+    private bool following = true, closed, projecting, updateQueued, pinPending, bandsQueued;
     private ScrollViewer? scroll;
-    /// <summary>Bands behind the log text marking lines the console itself wrote; one layer, no selection.</summary>
-    private readonly Canvas echoBands = new() { IsHitTestVisible = false };
-    private Canvas? echoLayer;
+    /// <summary>Bands behind the log text marking lines the engine echoed from a written command.</summary>
+    private readonly EchoBandLayer echoBands = new() { IsHitTestVisible = false, IsVisible = false };
     /// <summary>Measured lines of the log view: bands are placed on the presenter, never on a guessed row height.</summary>
     private Avalonia.Controls.Presenters.TextPresenter? textPresenter;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
@@ -95,7 +94,11 @@ public sealed partial class ServerLogWindow : ArcWindow
                     textPresenter = presenter;
                 }
                 // Layout settles after a text change; the bands follow the measured lines, not a stale extent.
-                scroll.LayoutUpdated += (_, _) => PaintEchoBands();
+                // The repaint is posted (never run inside layout) because the layer draws instead of hosting children.
+                scroll.LayoutUpdated += (_, _) =>
+                {
+                    if (!bandsQueued) { bandsQueued = true; Dispatcher.UIThread.Post(RepaintEchoBands, DispatcherPriority.Loaded); }
+                };
                 scroll.ScrollChanged += (_, e) =>
                 {
                     PaintEchoBands();
@@ -130,10 +133,12 @@ public sealed partial class ServerLogWindow : ArcWindow
         // not constrain its internal editor. Size it from a finite, clipped viewport.
         var viewport = new Border { ClipToBounds = true, Child = text };
         viewport.SizeChanged += (_, e) => { text.FrameHeight = Math.Max(0, e.NewSize.Height); PaintEchoBands(); };
-        // The command echo is painted behind the text with plain bands, which keeps the Textarea's own
-        // virtualization and cross-line selection; a selection can only hold one range, a layer holds many.
+        // The echo tint is drawn behind the text, which keeps the Textarea's own virtualization and cross-line
+        // selection; a selection can only hold one range, a drawn layer can hold many.
+        TKCode.Arc.ArcTokens.Bind(echoBands, EchoBandLayer.FillProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentSubtle);
+        echoBands.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        echoBands.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
         var logLayers = new Grid { ClipToBounds = true };
-        echoLayer = echoBands;
         logLayers.Children.Add(echoBands);
         logLayers.Children.Add(viewport);
         Grid.SetRow(logLayers, 1); grid.Children.Add(logLayers);
@@ -183,36 +188,40 @@ public sealed partial class ServerLogWindow : ArcWindow
         Update();
     }
     /// <summary>
-    /// Paints a tinted band behind every line the engine echoed from a command the console wrote. Positions come
+    /// Positions the tinted bands behind the lines the engine echoed from a command the console wrote. Positions come
     /// from the measured text layout (line height, presenter origin), so wrapping, padding or a stale extent cannot
-    /// shift them; the layer is repainted on new rows, on scroll, on resize and after layout.
+    /// shift them. The layer only invalidates visuals, which keeps this safe inside layout callbacks.
     /// </summary>
-    private void PaintEchoBands()
+    /// <summary>Coalesced repaint after layout has measured the new text.</summary>
+    private void ScheduleEchoRepaint()
     {
-        if (echoLayer is null) return;
-        // Cheap guard: most repaints (every layout pass) have nothing to draw.
-        var echoCount = 0;
-        for (var i = 0; i < rows.Count; i++) if (rows[i].Echo) echoCount++;
-        echoLayer.Children.Clear();
-        if (echoCount == 0 || textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout) return;
-        var lineHeight = layout.TextLines[0].Height;
-        if (!double.IsFinite(lineHeight) || lineHeight <= 0) return;
-        // The presenter moves with the scroll offset, so row zero is wherever its origin is now.
-        if (textPresenter.TranslatePoint(default, echoLayer) is not { } origin) return;
-        var width = echoLayer.Bounds.Width;
-        var visible = echoLayer.Bounds.Height;
-        if (width <= 0 || visible <= 0) return;
-        for (var i = 0; i < rows.Count; i++)
+        if (bandsQueued) return;
+        bandsQueued = true;
+        Dispatcher.UIThread.Post(RepaintEchoBands, DispatcherPriority.Loaded);
+    }
+
+    private void RepaintEchoBands()
+    {
+        bandsQueued = false;
+        if (closed) return;
+        PaintEchoBands();
+    }
+
+    private void PaintEchoBands()    {
+        var echoed = new List<int>();
+        for (var i = 0; i < rows.Count; i++) if (rows[i].Echo) echoed.Add(i);
+        if (echoed.Count == 0 || textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout)
         {
-            if (!rows[i].Echo) continue;
-            var top = origin.Y + i * lineHeight;
-            if (top + lineHeight < 0 || top > visible) continue;
-            var band = new Border { Width = width, Height = lineHeight };
-            TKCode.Arc.ArcTokens.Bind(band, Border.BackgroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentSubtle);
-            Canvas.SetLeft(band, 0);
-            Canvas.SetTop(band, top);
-            echoLayer.Children.Add(band);
+            echoBands.IsVisible = false;
+            echoBands.SetBands([], 0, 0);
+            return;
         }
+        var lineHeight = layout.TextLines[0].Height;
+        if (!double.IsFinite(lineHeight) || lineHeight <= 0) { echoBands.IsVisible = false; return; }
+        // The presenter moves with the scroll offset, so row zero is wherever its origin is now.
+        if (textPresenter.TranslatePoint(default, echoBands) is not { } origin) { echoBands.IsVisible = false; return; }
+        echoBands.IsVisible = true;
+        echoBands.SetBands(echoed, lineHeight, origin.Y);
     }
 
     private static bool IsAtBottom(ScrollViewer viewer) =>
@@ -287,6 +296,7 @@ public sealed partial class ServerLogWindow : ArcWindow
         finally { projecting = false; }
         rows = nextRows;
         PaintEchoBands();
+        ScheduleEchoRepaint();
         if (wasFollowing)
         {
             // Extent is stale until the new text is measured: apply now, then again after layout.
