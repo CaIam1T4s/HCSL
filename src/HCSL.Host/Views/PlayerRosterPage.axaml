@@ -52,11 +52,11 @@
                     </DataTemplate>
                   </arc:DataTableColumn.CellTemplate>
                 </arc:DataTableColumn>
-                <arc:DataTableColumn Header="地址" Binding="{Binding Address}"
+                <arc:DataTableColumn Header="地址" Binding="{Binding AddressText}"
                                     Width="{DynamicResource ConsoleTableAddressWidth}">
                   <arc:DataTableColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:PlayerRow">
-                      <TextBlock Text="{Binding Address}" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding AddressText}" VerticalAlignment="Center"/>
                     </DataTemplate>
                   </arc:DataTableColumn.CellTemplate>
                 </arc:DataTableColumn>

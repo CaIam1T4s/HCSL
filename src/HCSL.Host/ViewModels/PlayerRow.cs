@@ -30,6 +30,8 @@ public sealed class PlayerRow : INotifyPropertyChanged
     public string? SteamId { get; }
     public string Address { get; }
     public string SteamIdText => SteamId ?? "-";
+    /// <summary>Bots have no network address, so the column keeps the same placeholder as a missing SteamID.</summary>
+    public string AddressText => IsBot || Address.Length == 0 ? "-" : Address;
     public string PingText => Ping > 0 ? Ping + " ms" : "-";
     public bool IsAdmin => adminGroup is { Length: > 0 };
     public string? AdminGroup => adminGroup;
