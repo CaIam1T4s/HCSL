@@ -23,6 +23,34 @@ public static class DaemonPayload
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
     }
 
+    /// <summary>
+    /// Content hash of the bundled daemon assembly. The daemon reports the same hash of the file it runs, so a
+    /// rebuild that changes nothing compares equal even though the file was written again.
+    /// </summary>
+    public static string? BundledHash(string? payloadDirectory = null)
+    {
+        try
+        {
+            var assembly = Path.Combine(Directory(payloadDirectory), "HCSL.Daemon.dll");
+            if (!File.Exists(assembly)) return null;
+            using var stream = File.OpenRead(assembly);
+            return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>
+    /// Compares the running daemon's reported identity with the payload this frontend would launch. Hash
+    /// identities are compared exactly; a timestamp from an older daemon keeps the previous rule.
+    /// </summary>
+    public static bool IsStale(string? runningBuild, string? payloadDirectory = null)
+    {
+        if (runningBuild is { Length: > 0 } && runningBuild.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+            return BundledHash(payloadDirectory) is { } bundled
+                && !string.Equals(runningBuild, bundled, StringComparison.OrdinalIgnoreCase);
+        return IsStale(Parse(runningBuild), Bundled(payloadDirectory));
+    }
+
     public static DateTime? Parse(string? stamp) =>
         DateTime.TryParse(stamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var value)
             ? value.ToUniversalTime() : null;

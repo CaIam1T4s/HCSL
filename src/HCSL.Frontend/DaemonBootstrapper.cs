@@ -80,7 +80,7 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
         return false;
     }
     private bool IsStale(LocalResponse hello) =>
-        DaemonPayload.IsStale(DaemonPayload.Parse(hello.DaemonBuild), DaemonPayload.Bundled(payload));
+        DaemonPayload.IsStale(hello.DaemonBuild, payload);
     /// <summary>Stop an old daemon so the next launch uses the rebuilt payload. Never trades away a running
     /// server or an in-flight SteamCMD task: the operator stops those, the frontend does not guess.</summary>
     private async Task ReplaceAsync(LocalResponse hello, CancellationToken ct)

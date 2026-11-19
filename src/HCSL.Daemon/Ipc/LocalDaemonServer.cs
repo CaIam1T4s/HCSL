@@ -488,13 +488,18 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     /// <summary>Write time of the running daemon assembly. A frontend compares it with the payload it would
     /// launch, so an old process left over from a previous build can be replaced instead of silently used.</summary>
     private static readonly string? build = BuildStamp();
+    /// <summary>
+    /// Identity of the running daemon: a hash of its own assembly. A rebuild that changes nothing produces the
+    /// same hash, so a file timestamp is no longer mistaken for new code.
+    /// </summary>
     private static string? BuildStamp()
     {
         try
         {
             var path = typeof(LocalDaemonServer).Assembly.Location;
-            return string.IsNullOrEmpty(path) || !File.Exists(path) ? null
-                : File.GetLastWriteTimeUtc(path).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+            using var stream = File.OpenRead(path);
+            return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
     }

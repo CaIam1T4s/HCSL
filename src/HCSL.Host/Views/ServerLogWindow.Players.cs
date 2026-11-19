@@ -255,6 +255,8 @@ public sealed partial class ServerLogWindow
         ArcTokens.Bind(frame, Border.BackgroundProperty, ArcDesignTokenKind.Surface);
         ArcTokens.Bind(frame, Border.BorderBrushProperty, ArcDesignTokenKind.Border);
         ArcTokens.Bind(frame, Border.BorderThicknessProperty, ArcDesignTokenKind.EdgeThickness);
+        // Inset the scrolling content by the stroke so it cannot paint over the rounded corners.
+        ArcTokens.Bind(frame, Border.PaddingProperty, ArcDesignTokenKind.EdgeThickness);
         ArcTokens.BindCornerRadius(frame, ArcDesignTokenKind.RadiusSurface);
         var surface = new Border
         {
@@ -384,16 +386,28 @@ public sealed partial class ServerLogWindow
         if (!e.GetCurrentPoint(playersTable).Properties.IsRightButtonPressed) return;
         // Cell text is not hit-testable everywhere, so the row is found by position rather than by the event source.
         var point = e.GetPosition(playersTable);
-        Control? rowControl = null;
-        PlayerRow? row = null;
+        // Cells are vertically centred and leave gaps between columns, so the row is resolved from the
+        // vertical band between its neighbours rather than from the control under the pointer.
+        var perRow = new Dictionary<PlayerRow, (double Top, double Bottom, Control Cell, double Center)>();
         foreach (var candidate in playersTable.GetVisualDescendants().OfType<Control>())
         {
             if (candidate.DataContext is not PlayerRow found) continue;
             if (candidate.TranslatePoint(default, playersTable) is not { } origin) continue;
-            // The first control that holds a player and covers the point is the cell/row under the pointer.
-            if (!new Rect(origin, candidate.Bounds.Size).Contains(point)) continue;
-            rowControl = candidate;
-            row = found;
+            if (candidate.Bounds.Height <= 0) continue;
+            var center = origin.Y + candidate.Bounds.Height / 2;
+            perRow[found] = (origin.Y, origin.Y + candidate.Bounds.Height, candidate, center);
+        }
+        PlayerRow? row = null;
+        Control? rowControl = null;
+        var centers = perRow.Values.Select(v => v.Center).OrderBy(v => v).ToArray();
+        foreach (var (player, band) in perRow)
+        {
+            var index = Array.IndexOf(centers, band.Center);
+            var upper = index > 0 ? (centers[index - 1] + band.Center) / 2 : band.Top;
+            var lower = index < centers.Length - 1 ? (centers[index + 1] + band.Center) / 2 : band.Bottom;
+            if (point.Y < upper || point.Y >= lower) continue;
+            row = player;
+            rowControl = band.Cell;
             break;
         }
         if (rowControl is null || row is null || row.IsBot) return;
