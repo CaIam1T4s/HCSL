@@ -161,19 +161,29 @@ public sealed partial class ServerLogWindow
 
     private Control BuildPlayersPage()
     {
-        // Content-sized columns: fixed pixel widths would be guesses, and star columns shrink the cells
-        // (and the action buttons) when the window narrows instead of scrolling.
+        // Every column uses a template that binds to the row, so a cell anywhere in the row carries the player
+        // in its DataContext. Arc's built-in text cells do not, which is why context actions only worked on
+        // the templated badge before.
         playersTable.Columns.Add(new DataTableColumn("玩家", row => ((PlayerRow)row).Name)
         {
-            Width = ColumnWidth("ConsoleTablePlayerWidth")
+            Width = ColumnWidth("ConsoleTablePlayerWidth"),
+            CellTemplate = new FuncDataTemplate<PlayerRow>((_, _) => Cell("Name"))
         });
         playersTable.Columns.Add(new DataTableColumn("身份", row => ((PlayerRow)row).Identity)
         {
             Width = ColumnWidth("ConsoleTableIdentityWidth"),
             CellTemplate = new FuncDataTemplate<PlayerRow>((_, _) => new IdentityCell())
         });
-        playersTable.Columns.Add(new DataTableColumn("SteamID", row => ((PlayerRow)row).SteamIdText) { Width = ColumnWidth("ConsoleTableSteamIdWidth") });
-        playersTable.Columns.Add(new DataTableColumn("地址", row => ((PlayerRow)row).Address) { Width = ColumnWidth("ConsoleTableAddressWidth") });
+        playersTable.Columns.Add(new DataTableColumn("SteamID", row => ((PlayerRow)row).SteamIdText)
+        {
+            Width = ColumnWidth("ConsoleTableSteamIdWidth"),
+            CellTemplate = new FuncDataTemplate<PlayerRow>((_, _) => Cell("SteamIdText"))
+        });
+        playersTable.Columns.Add(new DataTableColumn("地址", row => ((PlayerRow)row).Address)
+        {
+            Width = ColumnWidth("ConsoleTableAddressWidth"),
+            CellTemplate = new FuncDataTemplate<PlayerRow>((_, _) => Cell("Address"))
+        });
         playersTable.Columns.Add(new DataTableColumn("状态", row => ((PlayerRow)row).State)
         {
             Width = ColumnWidth("ConsoleTableStateWidth"),
@@ -217,11 +227,16 @@ public sealed partial class ServerLogWindow
             foreach (var row in playerRows) row.AdvanceSecond();
         };
         playerClock.Start();
-        // Arc's Table clips overflowing columns instead of scrolling them, so the page owns horizontal
-        // scrolling. The table frame is squared here so a scroll does not cut its rounded corners.
+        // The rounded frame stays put and only the rows scroll inside it: the table's own frame is made
+        // transparent and the page Border draws the frame with Arc's surface and radius tokens.
         playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Frame"))
         {
-            Setters = { new Setter(Border.CornerRadiusProperty, new CornerRadius(0)) }
+            Setters =
+            {
+                new Setter(Border.BackgroundProperty, Brushes.Transparent),
+                new Setter(Border.BorderThicknessProperty, new Thickness(0)),
+                new Setter(Border.CornerRadiusProperty, new CornerRadius(0))
+            }
         });
         playersTable.HorizontalAlignment = HorizontalAlignment.Left;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
@@ -234,10 +249,13 @@ public sealed partial class ServerLogWindow
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
         };
+        var frame = new Border { Child = scroller, ClipToBounds = true };
+        ArcTokens.Bind(frame, Border.BackgroundProperty, ArcDesignTokenKind.Surface);
+        ArcTokens.BindCornerRadius(frame, ArcDesignTokenKind.RadiusSurface);
         var surface = new Border
         {
             // Same material as the console log: the page background stays the window's own gradient.
-            Child = new Grid { Children = { scroller } },
+            Child = new Grid { Children = { frame } },
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
@@ -255,10 +273,17 @@ public sealed partial class ServerLogWindow
     private Control BuildGrantBody()
     {
         var cancel = new ArcButton { Content = "取消", Variant = ButtonVariant.Secondary, Size = ControlSize.Small, MinHeight = 32 };
-        var confirm = new ArcButton { Content = "授予", Variant = ButtonVariant.Primary, Size = ControlSize.Small, MinHeight = 32 };
+        var confirm = new ArcButton { Content = "确定", Variant = ButtonVariant.Primary, Size = ControlSize.Small, MinHeight = 32 };
         cancel.Click += (_, _) => grantDialog.IsOpen = false;
         confirm.Click += async (_, _) => { grantDialog.IsOpen = false; await GrantAdminAsync(); };
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { cancel, confirm } };
+        // Footer matches the other dialogs: right-aligned cancel plus an accent-coloured confirm.
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { cancel, confirm }
+        };
+        ArcTokens.Bind(actions, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
         var body = new StackPanel { Children = { grantPrompt, grantGroup, actions } };
         ArcTokens.Bind(body, StackPanel.SpacingProperty, ArcDesignTokenKind.Space3);
         return body;
@@ -391,6 +416,7 @@ public sealed partial class ServerLogWindow
         kickTarget = row;
         kickPrompt.Text = "踢出 " + row.Name + "？";
         kickHold.CancelHold();
+        kickHold.IsConfirmed = false;
         kickPopover.ShowAt(anchor);
     }
 
@@ -402,6 +428,8 @@ public sealed partial class ServerLogWindow
             revokeTarget = row;
             revokePrompt.Text = "移除 " + row.Name + " 的管理员身份？";
             revokeHold.CancelHold();
+            // The done state is sticky; reset it so the next removal can be held again.
+            revokeHold.IsConfirmed = false;
             revokePopover.ShowAt(anchor);
             return;
         }
