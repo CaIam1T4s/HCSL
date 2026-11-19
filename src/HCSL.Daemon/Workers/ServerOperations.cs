@@ -249,8 +249,26 @@ public sealed class ServerOperations : IAsyncDisposable
             if (closing || !active || state is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running) || cancellation?.IsCancellationRequested == true)
                 return Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-STATE"));
             // Admission is synchronous up to the runtime's first await; stop marks cancellation before any later write.
-            return service.SendConsoleAsync(command, ct);
+            return SendAndRecordAsync(command, ct);
         }
+    }
+
+    /// <summary>
+    /// Writes the command and records it in the log ring. The server does not echo standard input, so the written
+    /// line has to come from here to appear (and be highlighted) in the console at the right place.
+    /// </summary>
+    private async Task<ServerConsoleReceipt> SendAndRecordAsync(ServerConsoleCommand command, CancellationToken ct)
+    {
+        var receipt = await service.SendConsoleAsync(command, ct);
+        if (receipt.Delivery != ConsoleDelivery.Written) return receipt;
+        var text = ConsoleEcho.Line(ServerConsoleRules.Display(command.Text));
+        lock (sync)
+        {
+            if (command.RunId != runId || !active) return receipt;
+            logs.Enqueue(new(++sequence, text, DateTimeOffset.UtcNow));
+            while (logs.Count > LogCapacity) logs.Dequeue();
+        }
+        return receipt;
     }
     public ServerSnapshot Stop(Guid? expected)
     {

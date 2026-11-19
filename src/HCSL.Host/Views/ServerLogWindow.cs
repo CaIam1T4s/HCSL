@@ -27,6 +27,9 @@ public sealed partial class ServerLogWindow : ArcWindow
     };
     private bool following = true, closed, projecting, updateQueued, pinPending;
     private ScrollViewer? scroll;
+    /// <summary>Bands behind the log text marking lines the console itself wrote; one layer, no selection.</summary>
+    private readonly Canvas echoBands = new() { IsHitTestVisible = false };
+    private Canvas? echoLayer;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
     private readonly ConsoleLogViewport reading = new();
     private Guid? displayedRun;
@@ -88,6 +91,7 @@ public sealed partial class ServerLogWindow : ArcWindow
                     presenter.Margin = new Thickness(0, 0, 0, 14);
                 scroll.ScrollChanged += (_, e) =>
                 {
+                    PaintEchoBands();
                     if (closed || projecting || pinPending || !text.IsEffectivelyVisible) return;
                     // Pure content growth changes Extent only and is not reader intent; a user scroll
                     // (or a layout clamp) always moves the offset or the viewport.
@@ -118,8 +122,14 @@ public sealed partial class ServerLogWindow : ArcWindow
         // Arc's frame has its own height; stretching the outer control alone does
         // not constrain its internal editor. Size it from a finite, clipped viewport.
         var viewport = new Border { ClipToBounds = true, Child = text };
-        viewport.SizeChanged += (_, e) => text.FrameHeight = Math.Max(0, e.NewSize.Height);
-        Grid.SetRow(viewport, 1); grid.Children.Add(viewport);
+        viewport.SizeChanged += (_, e) => { text.FrameHeight = Math.Max(0, e.NewSize.Height); PaintEchoBands(); };
+        // The command echo is painted behind the text with plain bands, which keeps the Textarea's own
+        // virtualization and cross-line selection; a selection can only hold one range, a layer holds many.
+        var logLayers = new Grid { ClipToBounds = true };
+        echoLayer = echoBands;
+        logLayers.Children.Add(echoBands);
+        logLayers.Children.Add(viewport);
+        Grid.SetRow(logLayers, 1); grid.Children.Add(logLayers);
         query.AddHandler(KeyDownEvent, async (_, e) =>
         {
             if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; await SendQueryAsync(); }
@@ -159,13 +169,40 @@ public sealed partial class ServerLogWindow : ArcWindow
         };
         Update();
     }
-    private void JumpLatest()
-    {
+    private void JumpLatest()    {
         following = true; reading.Reset();
         ApplyBottom();
         Dispatcher.UIThread.Post(() => { if (!closed && following) ApplyBottom(); }, DispatcherPriority.Loaded);
         Update();
     }
+    /// <summary>
+    /// Paints a tinted band behind every line the console wrote itself. Rows are one visual line each (NoWrap), so
+    /// a row index maps straight to a vertical offset; the layer is repainted on new rows, scroll and resize.
+    /// </summary>
+    private void PaintEchoBands()
+    {
+        if (echoLayer is null) return;
+        echoLayer.Children.Clear();
+        if (scroll is null || rows.Count == 0) return;
+        var rowHeight = scroll.Extent.Height / rows.Count;
+        if (!double.IsFinite(rowHeight) || rowHeight <= 0) return;
+        var width = echoLayer.Bounds.Width;
+        if (width <= 0) return;
+        var offset = scroll.Offset.Y;
+        var visible = scroll.Viewport.Height;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (!HCSL.Core.ConsoleEcho.IsEcho(rows[i].Text)) continue;
+            var top = i * rowHeight - offset;
+            if (top + rowHeight < 0 || top > visible) continue;
+            var band = new Border { Width = width, Height = rowHeight };
+            TKCode.Arc.ArcTokens.Bind(band, Border.BackgroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentSubtle);
+            Canvas.SetLeft(band, 0);
+            Canvas.SetTop(band, top);
+            echoLayer.Children.Add(band);
+        }
+    }
+
     private static bool IsAtBottom(ScrollViewer viewer) =>
         viewer.Offset.Y >= Math.Max(0, viewer.Extent.Height - viewer.Viewport.Height) - 1;
     /// <summary>Programmatic scroll to the end; ScrollChanged must not read this as user intent.</summary>
@@ -237,6 +274,7 @@ public sealed partial class ServerLogWindow : ArcWindow
         try { text.Text = next; RestoreFindSelection(next); }
         finally { projecting = false; }
         rows = nextRows;
+        PaintEchoBands();
         if (wasFollowing)
         {
             // Extent is stale until the new text is measured: apply now, then again after layout.

@@ -216,6 +216,8 @@
   </Style>
   <Style Selector="arc|Textarea.console-log">
     <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}"/>
+    <!-- The log sits on its own gradient, so the command-echo bands below it stay visible. -->
+    <Setter Property="Background" Value="Transparent"/>
   </Style>
   <!-- Console player table: the page frame draws the only outline, so both template borders go away.
        Template parts need the /template/ selector; a style on the control alone does not reach them. -->
