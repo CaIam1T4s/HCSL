@@ -78,7 +78,10 @@ public sealed partial class ServerLogWindow
         popoverLayer = new Canvas { IsHitTestVisible = false };
         Grid.SetColumnSpan(popoverLayer, 2);
         popoverLayer.ZIndex = 19;
+        // Same anchor the instance list uses: a Space1 square placed at the menu origin.
         popoverAnchor = new Border();
+        ArcTokens.Bind(popoverAnchor, Layoutable.WidthProperty, ArcDesignTokenKind.Space1);
+        ArcTokens.Bind(popoverAnchor, Layoutable.HeightProperty, ArcDesignTokenKind.Space1);
         popoverLayer.Children.Add(popoverAnchor);
         shell.Children.Add(popoverLayer);
         shell.Children.Add(grantDialog);

@@ -440,6 +440,8 @@ public sealed partial class ServerLogWindow
             TriggerMode = PopoverTriggerMode.Manual,
             Placement = PopoverPlacement.Bottom,
             Alignment = PopoverAlignment.Start,
+            // Offset 0 like the instance list, so the panel starts exactly at the anchor without a gap.
+            Offset = 0,
             // The hold button is the surface: no panel shadow behind it.
             HasShadow = false,
             Content = hold
