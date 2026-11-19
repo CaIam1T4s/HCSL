@@ -75,6 +75,7 @@ public sealed partial class ServerLogWindow
         shell.Children.Add(notifications);
         Grid.SetColumn(pages, 1);
         shell.Children.Add(pages);
+        shell.Children.Add(BuildShareDialog());
 
         var badges = new StackPanel { Orientation = Orientation.Horizontal,
             Children = { statusBadge, mapBadge, playersBadge } };

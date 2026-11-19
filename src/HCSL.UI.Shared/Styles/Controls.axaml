@@ -220,6 +220,11 @@
   <Style Selector="Border.console-placeholder">
     <Setter Property="Padding" Value="{DynamicResource PanelPadding}"/>
   </Style>
+  <!-- Share dialog body: Arc's header is fixed, so the body carries the rhythm instead. -->
+  <Style Selector="StackPanel.share-body">
+    <Setter Property="Spacing" Value="{arc:ArcDesignTokenResource Space3}"/>
+    <Setter Property="Margin" Value="{DynamicResource DialogBodyInset}"/>
+  </Style>
   <!-- The console action group shows one label at rest; it must not read as hovered until pointed at. -->
   <Style Selector="arc|ExpandingButtonGroup.console-actions">
     <Setter Property="ClipToBounds" Value="False"/>

@@ -41,11 +41,11 @@ public sealed partial class ServerLogWindow : ArcWindow
         if (closed || displayedRun != run) return;
         if (receipt is null)
         {
-            notifications.Show(new ToastOptions { Title = "命令未发送",
+            if (showCommandReceipts) notifications.Show(new ToastOptions { Title = "命令未发送",
                 Description = model.Server.ConsoleStatus, Kind = ToastKind.Error });
             return;
         }
-        notifications.Show(receipt.Delivery switch
+        if (showCommandReceipts) notifications.Show(receipt.Delivery switch
         {
             HCSL.Core.ConsoleDelivery.Rejected => new ToastOptions { Title = "命令被拒绝，未发送",
                 Description = receipt.Code, Kind = ToastKind.Error },
@@ -205,6 +205,7 @@ public sealed partial class ServerLogWindow : ArcWindow
         UpdateShellHeader();
         UpdateCertificateBadge();
         UpdateStatusBadgeTip();
+        SyncShareDialog();
         if (reading.ReadingPositionLost && !positionLostNotified)
         {
             positionLostNotified = true;

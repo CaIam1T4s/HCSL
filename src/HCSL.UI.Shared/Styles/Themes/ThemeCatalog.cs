@@ -38,6 +38,8 @@ public static class ThemeCatalog
         ["PillRadius"] = new CornerRadius(999),
         // Thickness resource for surfaces whose padding cannot take Arc's double spacing tokens.
         ["PanelPadding"] = new Thickness(24),
+        // Breathing room above a dialog body whose header already carries its own padding.
+        ["DialogBodyInset"] = new Thickness(0, 8, 0, 8),
         ThemeDictionaries =
         {
             [ThemeVariant.Light] = CreatePaletteResources(Light),

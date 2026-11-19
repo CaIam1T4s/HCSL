@@ -26,10 +26,12 @@ public sealed partial class ServerLogWindow
     private Control BuildConsoleToolbar()
     {
         var view = new ExpandingButtonGroupItem { Label = "查看", Icon = Lucide.Geometry(LucideIconKind.Eye) };
+        var share = new ExpandingButtonGroupItem { Label = "分享", Icon = Lucide.Geometry(LucideIconKind.Send) };
         var options = new ExpandingButtonGroupItem { Label = "选项", Icon = Lucide.Geometry(LucideIconKind.Settings) };
         var group = new ExpandingButtonGroup { Label = "控制台操作", Size = ControlSize.Small, DefaultExpandedItem = view };
-        group.Items.Add(view); group.Items.Add(options);
+        group.Items.Add(view); group.Items.Add(share); group.Items.Add(options);
         group.Classes.Add("console-actions");        view.Click += (_, _) => OpenViewMenu(view);
+        share.Click += (_, _) => OpenShareDialog();
         options.Click += (_, _) => OpenOptionsMenu(options);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto") };
         certificateBadge.VerticalAlignment = VerticalAlignment.Center;
@@ -57,6 +59,8 @@ public sealed partial class ServerLogWindow
     }
 
     private bool loadingEarlier, historyNoticeShown, limitNoticeShown;
+    /// <summary>Delivery receipts for sent commands; off means the console stays quiet about them.</summary>
+    private bool showCommandReceipts = true;
     private long nextEarlierLoadAt;
 
     /// <summary>
@@ -141,6 +145,7 @@ public sealed partial class ServerLogWindow
             MenuEntry(menu, "显示最近 " + limit + " 行", () => { displayLimit = limit; limitNoticeShown = false; nextEarlierLoadAt = 0; Update(); }, displayLimit == limit);
         menu.Items.Add(new GlassMenuSeparator());
         MenuEntry(menu, "显示采集时间", () => { showTimestamps = !showTimestamps; Update(); }, showTimestamps);
+        MenuEntry(menu, "显示命令回执", () => { showCommandReceipts = !showCommandReceipts; }, showCommandReceipts);
         MenuEntry(menu, "自动跟随", () => { if (following) { following = false; Update(); } else JumpLatest(); }, following);
         MenuEntry(menu, "跳到最新", JumpLatest);
         MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier);
