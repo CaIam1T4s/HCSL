@@ -217,16 +217,27 @@ public sealed partial class ServerLogWindow
             foreach (var row in playerRows) row.AdvanceSecond();
         };
         playerClock.Start();
-        // Plan A: no outer scroller. Every column has a fixed width, so the table's own ScrollViewer scrolls
-        // its content horizontally while the rounded frame stays in place.
-        playersTable.HorizontalAlignment = HorizontalAlignment.Stretch;
+        // Arc's Table clips overflowing columns instead of scrolling them, so the page owns horizontal
+        // scrolling. The table frame is squared here so a scroll does not cut its rounded corners.
+        playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Frame"))
+        {
+            Setters = { new Setter(Border.CornerRadiusProperty, new CornerRadius(0)) }
+        });
+        playersTable.HorizontalAlignment = HorizontalAlignment.Left;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
+        playersTable.Width = TableWidth();
         playersTable.AddHandler(InputElement.PointerPressedEvent, OnPlayerPointerPressed,
-            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        var scroller = new ScrollViewer
+        {
+            Content = playersTable,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
+        };
         var surface = new Border
         {
             // Same material as the console log: the page background stays the window's own gradient.
-            Child = new Grid { Children = { playersTable } },
+            Child = new Grid { Children = { scroller } },
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
@@ -529,6 +540,24 @@ public sealed partial class ServerLogWindow
     private static GridLength ColumnWidth(string key) =>
         Avalonia.Application.Current?.TryFindResource(key, out var value) == true && value is double width
             ? new GridLength(width) : GridLength.Auto;
+
+    /// <summary>Sum of every column, so the table keeps its widths and the page scrolls instead of clipping.</summary>
+    private static double TableWidth()
+    {
+        string[] keys =
+        [
+            "ConsoleTablePlayerWidth", "ConsoleTableIdentityWidth", "ConsoleTableSteamIdWidth",
+            "ConsoleTableAddressWidth", "ConsoleTableStateWidth", "ConsoleTablePingWidth",
+            "ConsoleTableConnectedWidth"
+        ];
+        var total = 0d;
+        foreach (var key in keys)
+        {
+            if (Avalonia.Application.Current?.TryFindResource(key, out var value) != true || value is not double width) return double.NaN;
+            total += width;
+        }
+        return total;
+    }
 
     /// <summary>Admin groups and the preset hash the write must match; one page is enough to label the roster.</summary>
     private async Task RefreshAdminListAsync()
