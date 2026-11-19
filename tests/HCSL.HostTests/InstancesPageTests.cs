@@ -83,6 +83,14 @@ internal static class InstancesPageTests
             Wait(() => Math.Abs(hold.PointToScreen(default).X - origin.X) <= 2 && Math.Abs(hold.PointToScreen(default).Y - origin.Y) <= 2);
         }
         void Toolbar(string name) { Pump(actions.ActivateAsync(page.FindControl<ExpandingButtonGroupItem>(name)!)); Layout(); }
+        // A closing menu keeps its light-dismiss overlay over the toolbar, and a loaded machine processes the
+        // pointer move a tick later; both made the hover checks below read the previous expansion.
+        void Hover(Point point)
+        {
+            owner.MouseMove(point); Layout();
+            Wait(() => owner.GetVisualAt(point)?.GetType().Name != "LightDismissOverlayLayer");
+            Layout();
+        }
         try
         {
             Wait(() => Rows().Length == 2 && choices.GetVisualDescendants().OfType<RadioGroupItem>().Count() == 2 && model.CanCreate);
@@ -277,14 +285,16 @@ internal static class InstancesPageTests
                 foreach (var level in new[] { ArcMotionLevel.Off, ArcMotionLevel.Reduced, ArcMotionLevel.Full })
                 {
                     ArcMotion.SetLevel(actions, level);
-                    search.Focus(); owner.MouseMove(new Point(1, 1)); Layout();
+                    search.Focus(); Hover(new Point(1, 1));
                     foreach (var name in new[] { "RefreshButton", "CreateButton", "SortButton" })
                     {
                         var item = page.FindControl<ExpandingButtonGroupItem>(name)!;
                         var icon = item.GetVisualDescendants().OfType<Panel>().Single(p => p.Name == "PART_IconBox");
                         var point = icon.TranslatePoint(new Point(icon.Bounds.Width / 2, icon.Bounds.Height / 2), owner)!.Value;
-                        owner.MouseMove(point); Layout();
+                        Hover(point);
                         Pump(server.RefreshAsync());
+                        // The hover must land before geometry is sampled; the ticks below then prove it holds.
+                        Wait(() => actions.ExpandedItem == item);
                         for (var tick = 0; tick < (level == ArcMotionLevel.Full ? 40 : 4); tick++)
                         {
                             Layout(); Thread.Sleep(8);
