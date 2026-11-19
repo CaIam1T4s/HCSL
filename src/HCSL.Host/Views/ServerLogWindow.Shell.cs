@@ -191,9 +191,9 @@ public sealed partial class ServerLogWindow
                 ? new MorphLoader { Size = 12, Variant = MorphLoaderVariant.Bars, Status = MorphLoaderStatus.Loading, IsDecorative = true }
                 : new LucideIcon { Kind = next.Item3 };
         }
-        mapBadge.Content = server.Active && server.Snapshot is { MapLoaded: true, MapHistorical: false, Map: { } map } ? map : "地图 —";
+        mapBadge.Content = server.Active && server.Snapshot is { MapLoaded: true, MapHistorical: false, Map: { } map } ? map : "地图 -";
         // Frontend refreshes the actual run's roster while the log window is open; stale/failing queries stay unknown.
         var roster = server.LivePlayerRoster;
-        playersBadge.Content = roster is not null ? roster.Humans + " 人在线" : "人数 —";
+        playersBadge.Content = roster is not null ? roster.Humans + " 人在线" : "人数 -";
     }
 }

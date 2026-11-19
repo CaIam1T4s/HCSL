@@ -92,7 +92,18 @@ public sealed partial class ServerLogWindow : ArcWindow
                     if (e.OffsetDelta.Y == 0 && e.ViewportDelta.Y == 0) return;
                     following = IsAtBottom(scroll);
                     if (following) reading.Reset();
+                    else _ = TryLoadEarlierAsync();
                 };
+                // Already at the top, a further wheel turn or a paging key changes no offset, so
+                // ScrollChanged never fires; those gestures are the only way to ask for more.
+                text.AddHandler(PointerWheelChangedEvent, (_, e) =>
+                {
+                    if (e.Delta.Y > 0) _ = TryLoadEarlierAsync();
+                }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+                text.AddHandler(KeyDownEvent, (_, e) =>
+                {
+                    if (e.Key is Avalonia.Input.Key.PageUp or Avalonia.Input.Key.Home) _ = TryLoadEarlierAsync();
+                }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
                 // Layout can finish after the dispatcher posts below; pin again without fighting
                 // inertial scrolling (that already cleared `following` through ScrollChanged).
                 scroll.LayoutUpdated += (_, _) =>
@@ -201,7 +212,7 @@ public sealed partial class ServerLogWindow : ArcWindow
                 Description = "已定位到最早保留的记录，可在查看中选择跳到最新。", Kind = ToastKind.Warning });
         }
         else if (!reading.ReadingPositionLost) positionLostNotified = false;
-        if (displayedRun != model.Server.RunId) { displayedRun = model.Server.RunId; text.Text = ""; query.Text = ""; historyIndex = -1; rows = Array.Empty<ConsoleLogRow>(); reading.Reset(); following = true; }
+        if (displayedRun != model.Server.RunId) { displayedRun = model.Server.RunId; text.Text = ""; query.Text = ""; historyIndex = -1; rows = Array.Empty<ConsoleLogRow>(); reading.Reset(); following = true; historyNoticeShown = false; limitNoticeShown = false; }
         // Keep input focused/editable while a command is in flight; only sending is gated.
         query.IsEnabled = model.Server.CanInputConsole;
         if (!text.IsEffectivelyVisible) return;

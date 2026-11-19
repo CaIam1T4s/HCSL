@@ -4,6 +4,19 @@ using HCSL.Core;
 
 namespace HCSL.Frontend;
 
+/// <summary>Outcome of asking the daemon for lines older than the ones already held.</summary>
+public enum LogBackfillResult
+{
+    /// <summary>Older lines arrived.</summary>
+    Loaded,
+    /// <summary>The ring holds nothing older, or the local view is full.</summary>
+    Exhausted,
+    /// <summary>Nothing was asked: another request is in flight, or the run no longer matches.</summary>
+    Busy,
+    /// <summary>The read failed; the view keeps what it had.</summary>
+    Failed
+}
+
 /// <summary>
 /// Presentation state for the daemon-owned server lifecycle. Sends commands over IPC only;
 /// it never launches processes and never invents a state the daemon did not report.
@@ -271,7 +284,9 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public Task<bool> RefreshLogsAsync()
     {
         if (!logsVisible || !connected || snapshot?.RunId is not { } run) return Task.FromResult(false);
-        var cursor = run == logRun ? logCursor : TailCursor(snapshot.NextSequence);
+        // A status snapshot already binds logRun, so the cursor decides: 0 means nothing was fetched for
+        // this run yet and the tail is the right place to start.
+        var cursor = run == logRun && logCursor > 0 ? logCursor : TailCursor(snapshot.NextSequence);
         return SendAsync(new(ServerAction.Logs, snapshot.InstanceId ?? attached, run, cursor), false, "", 500);
     }
 
@@ -279,22 +294,25 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// Reads lines older than the oldest one held and prepends them. The daemon only pages forward, so this
     /// asks from a cursor behind the first known line and keeps what is new. The forward cursor never moves
     /// back, older reads never duplicate or reorder, and a failed read keeps the existing view intact.
+    /// The result is decided from the fetched pages: the merge itself is applied on the dispatcher, so
+    /// reading LogFirst right after the await would see stale state.
     /// </summary>
-    public async Task<int> LoadEarlierAsync()
+    public async Task<LogBackfillResult> LoadEarlierAsync()
     {
-        if (disposed || !connected || !logsVisible || !CanLoadEarlier) return 0;
-        if (Interlocked.CompareExchange(ref backfillBusy, 1, 0) != 0) return 0;
+        if (disposed || !connected || !logsVisible) return LogBackfillResult.Busy;
+        if (!CanLoadEarlier) return logFirst <= 1 || logHistoryExhausted ? LogBackfillResult.Exhausted : LogBackfillResult.Busy;
+        if (Interlocked.CompareExchange(ref backfillBusy, 1, 0) != 0) return LogBackfillResult.Busy;
         var current = generation;
         try
         {
             var run = snapshot?.RunId;
-            if (run is not { } targetRun || targetRun != logRun) return 0;
+            if (run is not { } targetRun || targetRun != logRun) return LogBackfillResult.Busy;
             var instance = snapshot?.InstanceId ?? attached;
             var first = logFirst;
-            if (first <= 1) return 0;
+            if (first <= 1) return LogBackfillResult.Exhausted;
             var guard = life.Token;
             // Share the single in-flight slot with polling so a status poll cannot interleave mid-backfill.
-            if (Interlocked.CompareExchange(ref requestInFlight, 1, 0) != 0) return 0;
+            if (Interlocked.CompareExchange(ref requestInFlight, 1, 0) != 0) return LogBackfillResult.Busy;
             var batch = new List<ServerLogLine>();
             var exhausted = false;
             try
@@ -304,7 +322,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 for (var page = 0; page < wanted && cursor < first - 1; page++)
                 {
                     var result = await server.SendAsync(new(ServerAction.Logs, instance, targetRun, cursor), null, guard);
-                    if (result.RunId != targetRun) return 0;
+                    if (result.RunId != targetRun) return LogBackfillResult.Busy;
                     if (result.HistoryTruncated) exhausted = true;
                     var older = result.Lines.Where(l => l.Sequence < first).OrderBy(l => l.Sequence).ToArray();
                     if (older.Length == 0) { exhausted = true; break; }
@@ -312,11 +330,11 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                     cursor = result.Lines[^1].Sequence;
                 }
             }
-            catch (OperationCanceledException) when (guard.IsCancellationRequested) { return 0; }
+            catch (OperationCanceledException) when (guard.IsCancellationRequested) { return LogBackfillResult.Busy; }
             catch (Exception e) when (e is IOException or System.Text.Json.JsonException or DaemonProtocolException or UnauthorizedAccessException)
             {
                 // A failed older read must not fake history, and must not mark the ring as consumed.
-                return 0;
+                return LogBackfillResult.Failed;
             }
             finally { Interlocked.Exchange(ref requestInFlight, 0); }
 
@@ -344,9 +362,10 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 if (logLines.Count >= LogCapacity) logHistoryExhausted = true;
                 Notify();
             }, current);
-            // The view updates on the dispatcher, so report what was requested; callers react to the
-            // LogFirst/CanLoadEarlier notifications rather than to this number.
-            return Math.Max(added, batch.Count);
+            // Decided from the fetched pages, not from the dispatcher-applied view: an empty batch is the
+            // only proof that the ring holds nothing older. A failure was reported above.
+            if (batch.Count > 0) return LogBackfillResult.Loaded;
+            return exhausted ? LogBackfillResult.Exhausted : LogBackfillResult.Failed;
         }
         finally { Interlocked.Exchange(ref backfillBusy, 0); }
     }
@@ -481,7 +500,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                         var pageTicket = Interlocked.Increment(ref issued);
                         lastKind = "Logs";
                         var page = await server.SendAsync(new(ServerAction.Logs, result.InstanceId ?? attached, run,
-                            run == logRun ? logCursor : TailCursor(result.NextSequence)), null, ct);
+                            run == logRun && logCursor > 0 ? logCursor : TailCursor(result.NextSequence)), null, ct);
                         Post(() => { Apply(page, pageTicket); Notify(); }, current);
                     }
                 }

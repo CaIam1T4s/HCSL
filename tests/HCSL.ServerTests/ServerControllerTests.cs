@@ -346,8 +346,13 @@ public static class ServerControllerTests
             controller.Attach(Instance);
             await controller.ConnectAsync();
             controller.SetLogsVisible(true);
-            Check(await WaitFor(() => controller.LogLineCount == 2000, 6000), "the ring must stop at its capacity");
-            Check(controller.LogCursor == 2100, $"the cursor must still reach the newest line, got {controller.LogCursor}");
+            Check(await WaitFor(() => controller.LogCursor == 2100, 6000), "the cursor must reach the newest line");
+            Check(controller.LogLineCount <= 2000, "the local ring must never exceed its capacity");
+            // The view starts at the tail, so older lines only arrive when asked for; filling the ring
+            // is exactly what the local cap has to bound.
+            for (var step = 0; step < 20 && controller.CanLoadEarlier; step++) await controller.LoadEarlierAsync();
+            Check(controller.LogLineCount == 2000, $"the ring must stop at its capacity, got {controller.LogLineCount}");
+            Check(controller.LogFirst == 101, $"the cap keeps the newest lines, got {controller.LogFirst}");
             Check(controller.LogsTruncated, "dropping old lines must mark the log as truncated");
         });
 

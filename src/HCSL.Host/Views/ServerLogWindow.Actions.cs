@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using HCSL.Frontend;
 using TKCode.Arc;
 using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Icons.Lucide;
@@ -55,6 +56,69 @@ public sealed partial class ServerLogWindow
         return toolbar;
     }
 
+    private bool loadingEarlier, historyNoticeShown, limitNoticeShown;
+    private long nextEarlierLoadAt;
+
+    /// <summary>
+    /// Reaching the top asks the controller for older lines. The view keeps its reading row because the
+    /// text update path restores the captured row id, so the newly inserted lines appear above it.
+    /// </summary>
+    private async Task TryLoadEarlierAsync()
+    {
+        if (closed || loadingEarlier || scroll is null) return;
+        if (scroll.Extent.Height <= scroll.Viewport.Height) return;
+        if (scroll.Offset.Y > 24) return;
+        // One load per pause: without this a short content window fires again on the same gesture.
+        if (Environment.TickCount64 < nextEarlierLoadAt) return;
+        if (!model.Server.CanLoadEarlier) { NotifyHistoryEnd(); return; }
+        // The buffer may already hold more than the chosen display window: the top of the view is then
+        // the display limit, not the start of history, so say so instead of reading more lines the
+        // window would hide again.
+        if (model.Server.LogLineCount > rows.Count) { NotifyDisplayLimit(); return; }
+        loadingEarlier = true;
+        nextEarlierLoadAt = Environment.TickCount64 + 400;
+        try
+        {
+            // The merge lands on the dispatcher after the await, so only the returned result can
+            // tell whether the daemon actually had older lines.
+            var result = await model.Server.LoadEarlierAsync();
+            if (closed) return;
+            if (result == LogBackfillResult.Exhausted) NotifyHistoryEnd();
+            else if (result == LogBackfillResult.Failed) notifications.Show(new ToastOptions
+            {
+                Title = "加载更早的日志失败",
+                Description = "当前内容保持不变，稍后可再试",
+                Kind = ToastKind.Warning
+            });
+        }
+        finally { loadingEarlier = false; }
+    }
+
+    /// <summary>Only states that stopped the view from going further; a normal load stays silent.</summary>
+    private void NotifyDisplayLimit()
+    {
+        if (limitNoticeShown) return;
+        limitNoticeShown = true;
+        notifications.Show(new ToastOptions
+        {
+            Title = "已到达显示上限",
+            Description = "在查看中调大显示行数即可继续向上查看",
+            Kind = ToastKind.Info
+        });
+    }
+
+    private void NotifyHistoryEnd()
+    {
+        if (historyNoticeShown) return;
+        historyNoticeShown = true;
+        notifications.Show(new ToastOptions
+        {
+            Title = "没有更早的日志",
+            Description = "已到达缓冲区起点，完整记录请导出日志文件",
+            Kind = ToastKind.Warning
+        });
+    }
+
     private void CloseConsoleMenus() { consoleMenu?.Close(); consoleMenu = null; }
     private GlassMenu NewConsoleMenu(string name)
     {
@@ -74,11 +138,12 @@ public sealed partial class ServerLogWindow
     {
         var menu = NewConsoleMenu("日志查看");
         foreach (var limit in new[] { 500, 1000, 2000 })
-            MenuEntry(menu, "显示最近 " + limit + " 行", () => { displayLimit = limit; Update(); }, displayLimit == limit);
+            MenuEntry(menu, "显示最近 " + limit + " 行", () => { displayLimit = limit; limitNoticeShown = false; nextEarlierLoadAt = 0; Update(); }, displayLimit == limit);
         menu.Items.Add(new GlassMenuSeparator());
         MenuEntry(menu, "显示采集时间", () => { showTimestamps = !showTimestamps; Update(); }, showTimestamps);
         MenuEntry(menu, "自动跟随", () => { if (following) { following = false; Update(); } else JumpLatest(); }, following);
         MenuEntry(menu, "跳到最新", JumpLatest);
+        MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier);
         MenuEntry(menu, "查找日志 · Ctrl+F", OpenFind);
         menu.Open(anchor);
     }
@@ -88,7 +153,7 @@ public sealed partial class ServerLogWindow
         MenuEntry(menu, "导出当前显示日志…", async () => await ExportConsoleAsync(), enabled: rows.Count > 0);
         MenuEntry(menu, "清空显示（不删除文件）", () =>
         {
-            model.Server.ClearConsoleDisplay(); reading.Reset(); findIndex = -1; JumpLatest();
+            model.Server.ClearConsoleDisplay(); reading.Reset(); findIndex = -1; historyNoticeShown = false; limitNoticeShown = false; JumpLatest();
         }, enabled: rows.Count > 0);
         menu.Items.Add(new GlassMenuSeparator());
         MenuEntry(menu, "命令历史（仅内存）", () =>
