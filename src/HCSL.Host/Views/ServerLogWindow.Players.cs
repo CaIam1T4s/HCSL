@@ -437,12 +437,21 @@ public sealed partial class ServerLogWindow
             TriggerMode = PopoverTriggerMode.Manual,
             Placement = PopoverPlacement.Bottom,
             Alignment = PopoverAlignment.Start,
+            // The hold button is the surface: no panel shadow behind it.
+            HasShadow = false,
             Content = hold
         };
         popover.Styles.Add(new Style(x => x.OfType<PopoverSurface>())
         {
-            // The surface has a 12rem minimum by default; these confirms only need their own text width.
-            Setters = { new Setter(Layoutable.MinWidthProperty, 0d) }
+            // Arc documents this combination for showing content on its own: no material, no border, no
+            // minimum width that would pad the pill.
+            Setters =
+            {
+                new Setter(Border.BackgroundProperty, Brushes.Transparent),
+                new Setter(Border.BorderThicknessProperty, new Thickness(0)),
+                new Setter(Border.PaddingProperty, new Thickness(0)),
+                new Setter(Layoutable.MinWidthProperty, 0d)
+            }
         });
         Grid.SetColumnSpan(popover, 2);
         popover.ZIndex = 20;
