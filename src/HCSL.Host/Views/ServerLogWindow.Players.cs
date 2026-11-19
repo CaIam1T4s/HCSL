@@ -253,9 +253,9 @@ public sealed partial class ServerLogWindow
     {
         var cancel = new ArcButton { Content = "取消", Variant = ButtonVariant.Secondary, Size = ControlSize.Small, MinHeight = 32 };
         var confirm = new ArcButton { Content = "确定", Variant = ButtonVariant.Primary, Size = ControlSize.Small, MinHeight = 32 };
-        // Pin the accent explicitly: the page's button styles otherwise leave this one looking neutral.
-        ArcTokens.Bind(confirm, BackgroundProperty, ArcDesignTokenKind.Accent);
-        ArcTokens.Bind(confirm, ForegroundProperty, ArcDesignTokenKind.AccentForeground);
+        // Arc's Primary variant renders neutral in this theme; the accent comes from a style, applied after
+        // the control is themed (a code-side token bind runs too early and is silently ignored).
+        confirm.Classes.Add("accent-confirm");
         cancel.Click += (_, _) => grantDialog.IsOpen = false;
         confirm.Click += async (_, _) => { grantDialog.IsOpen = false; await GrantAdminAsync(); };
         // Footer matches the other dialogs: right-aligned cancel plus an accent-coloured confirm.

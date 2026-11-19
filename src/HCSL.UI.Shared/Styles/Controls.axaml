@@ -339,6 +339,12 @@
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
   </Style>
+  <!-- Arc's Primary variant stays neutral in this theme; the accent fill is opt-in per button, like the
+       instance editor's save button. -->
+  <Style Selector="arc|Button.accent-confirm">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
+  </Style>
   <Style Selector="Border.dialog-surface">
     <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
     <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusSurface}"/>
