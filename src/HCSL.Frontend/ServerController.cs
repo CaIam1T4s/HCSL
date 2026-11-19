@@ -51,6 +51,15 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private bool rosterFailed;
     /// <summary>True only after a roster query actually failed; a roster that was never fetched is not a failure.</summary>
     public bool RosterFailed => connected && rosterFailed;
+
+    /// <summary>Ask the daemon for the roster now instead of waiting for the next poll (used after a kick).</summary>
+    public Task RefreshRosterAsync()
+    {
+        if (disposed || !connected || snapshot is not { Active: true, State: ServerState.Running, RunId: { } run, InstanceId: { } instance })
+            return Task.CompletedTask;
+        if (Interlocked.CompareExchange(ref rosterRequestInFlight, 1, 0) != 0) return Task.CompletedTask;
+        return RefreshPlayerRosterAsync(generation, run, instance, life.Token);
+    }
     /// <summary>Read-only roster for the actual run, never the currently selected instance.</summary>
     public PlayerRoster? LivePlayerRoster => connected && logsVisible && snapshot is { Active: true, State: ServerState.Running }
         && snapshot.RunId == rosterRun && livePlayerRoster is { } roster

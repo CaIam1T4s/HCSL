@@ -228,25 +228,9 @@ public sealed partial class ServerLogWindow
             foreach (var row in playerRows) row.AdvanceSecond();
         };
         playerClock.Start();
-        // Both themed borders of the table are hidden: the page frame draws the only outline.
-        playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Frame"))
-        {
-            Setters =
-            {
-                new Setter(Border.BackgroundProperty, Brushes.Transparent),
-                new Setter(Border.BorderThicknessProperty, new Thickness(0)),
-                new Setter(Border.CornerRadiusProperty, new CornerRadius(0))
-            }
-        });
-        playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Outline"))
-        {
-            Setters =
-            {
-                new Setter(Border.BackgroundProperty, Brushes.Transparent),
-                new Setter(Border.BorderThicknessProperty, new Thickness(0)),
-                new Setter(Border.CornerRadiusProperty, new CornerRadius(0))
-            }
-        });
+        // Both themed borders of the table are hidden by Controls.axaml (`arc|Table.console-players`),
+        // so the page frame below is the only outline.
+        playersTable.Classes.Add("console-players");
         playersTable.HorizontalAlignment = HorizontalAlignment.Left;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
         playersTable.Width = TableWidth();
@@ -288,6 +272,9 @@ public sealed partial class ServerLogWindow
     {
         var cancel = new ArcButton { Content = "取消", Variant = ButtonVariant.Secondary, Size = ControlSize.Small, MinHeight = 32 };
         var confirm = new ArcButton { Content = "确定", Variant = ButtonVariant.Primary, Size = ControlSize.Small, MinHeight = 32 };
+        // Pin the accent explicitly: the page's button styles otherwise leave this one looking neutral.
+        ArcTokens.Bind(confirm, BackgroundProperty, ArcDesignTokenKind.Accent);
+        ArcTokens.Bind(confirm, ForegroundProperty, ArcDesignTokenKind.AccentForeground);
         cancel.Click += (_, _) => grantDialog.IsOpen = false;
         confirm.Click += async (_, _) => { grantDialog.IsOpen = false; await GrantAdminAsync(); };
         // Footer matches the other dialogs: right-aligned cancel plus an accent-coloured confirm.
@@ -444,6 +431,8 @@ public sealed partial class ServerLogWindow
         kickPrompt.Text = "踢出 " + row.Name + "？";
         kickHold.CancelHold();
         kickHold.IsConfirmed = false;
+        // Re-anchoring an open popover keeps its previous origin, so close it first to place it at this row.
+        kickPopover.IsOpen = false;
         kickPopover.ShowAt(anchor);
     }
 
@@ -457,6 +446,7 @@ public sealed partial class ServerLogWindow
             revokeHold.CancelHold();
             // The done state is sticky; reset it so the next removal can be held again.
             revokeHold.IsConfirmed = false;
+            revokePopover.IsOpen = false;
             revokePopover.ShowAt(anchor);
             return;
         }
@@ -480,6 +470,8 @@ public sealed partial class ServerLogWindow
         try
         {
             await model.KickAsync(instance, run, row.UserId, row.SteamId, "HCSL console");
+            // Refresh immediately instead of waiting for the next poll.
+            await model.Server.RefreshRosterAsync();
             notifications.Show(new ToastOptions
             {
                 Title = "已发送踢出请求",
@@ -530,6 +522,8 @@ public sealed partial class ServerLogWindow
             foreach (var existing in playerRows)
                 if (string.Equals(existing.SteamId, steamId, StringComparison.OrdinalIgnoreCase))
                     existing.SetAdminGroup(remove ? null : group);
+            // The file hash changed, so the next write must be planned against the new content.
+            await RefreshAdminListAsync();
             notifications.Show(new ToastOptions
             {
                 Title = remove ? "已移除管理员" : "已授予管理员",
@@ -639,9 +633,6 @@ public sealed partial class ServerLogWindow
             var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in snapshot.Entries)
                 if (entry.Groups.Length > 0) map[entry.SteamId64] = entry.Groups[0];
-            if (map.Count == adminGroupBySteamId.Count
-                && map.All(pair => adminGroupBySteamId.TryGetValue(pair.Key, out var existing) && existing == pair.Value))
-                return;
             adminGroupBySteamId.Clear();
             foreach (var pair in map) adminGroupBySteamId[pair.Key] = pair.Value;
             foreach (var row in playerRows)

@@ -217,6 +217,18 @@
   <Style Selector="arc|Textarea.console-log">
     <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeSM}"/>
   </Style>
+  <!-- Console player table: the page frame draws the only outline, so both template borders go away.
+       Template parts need the /template/ selector; a style on the control alone does not reach them. -->
+  <Style Selector="arc|Table.console-players /template/ Border#PART_Frame">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="0"/>
+  </Style>
+  <Style Selector="arc|Table.console-players /template/ Border#PART_Outline">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="CornerRadius" Value="0"/>
+  </Style>
   <Style Selector="Border.console-placeholder">
     <Setter Property="Padding" Value="{DynamicResource PanelPadding}"/>
   </Style>
