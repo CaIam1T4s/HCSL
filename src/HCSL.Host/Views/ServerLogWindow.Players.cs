@@ -396,17 +396,20 @@ public sealed partial class ServerLogWindow
             Placement = e.TryGetPosition(rowControl, out _) ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedRight
         };
         AutomationProperties.SetName(menu, "玩家操作");
-        // The popovers anchor where the menu opened, so the confirm appears under the command, not the row.
+        // The popovers anchor where the menu opened, so the confirm appears at the menu, not at the row.
+        // The origin is read when the command is clicked: by then the popup is placed (LayoutUpdated alone
+        // can fire before placement and would yield the panel's unpositioned origin).
         Point? menuOrigin = null;
-        menu.LayoutUpdated += (_, _) =>
+        void CaptureOrigin()
         {
-            if (menu.IsOpen && popoverLayer is not null)
+            if (menu.IsAttachedToVisualTree() && popoverLayer is not null)
                 menuOrigin = popoverLayer.PointToClient(menu.PointToScreen(default));
-        };
+        }
+        menu.LayoutUpdated += (_, _) => { if (menu.IsOpen) CaptureOrigin(); };
         void Entry(string title, LucideIconKind icon, Action action, bool danger = false)
         {
             var item = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(icon), IsDestructive = danger };
-            item.Click += (_, _) => { menu.Close(); action(); };
+            item.Click += (_, _) => { CaptureOrigin(); menu.Close(); action(); };
             menu.Items.Add(item);
         }
         Entry("踢出玩家", LucideIconKind.UserRoundMinus, () => OpenKick(row, rowControl, menuOrigin), danger: true);
