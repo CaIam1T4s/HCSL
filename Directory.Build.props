@@ -3,5 +3,11 @@
     <Version>0.1.0</Version>
     <Product>Hello Counter Strike Launcher</Product>
     <Company>HCSL</Company>
+    <!-- The daemon identifies itself by the hash of its own assembly (see DaemonPayload), so a rebuild that
+         changes nothing must produce the same bytes. Two SDK defaults broke that: the git commit appended to
+         AssemblyInformationalVersion, and the source-control queries that embed repository data. Every commit
+         therefore changed every assembly and made an unchanged daemon look stale. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
   </PropertyGroup>
 </Project>
