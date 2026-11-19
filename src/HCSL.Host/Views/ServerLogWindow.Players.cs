@@ -246,9 +246,21 @@ public sealed partial class ServerLogWindow
         // The outer frame owns the stroke and the corner radius; the table's own frame stays invisible.
         ArcTokens.Bind(frame, Border.BackgroundProperty, ArcDesignTokenKind.Surface);
         ArcTokens.Bind(frame, Border.BorderBrushProperty, ArcDesignTokenKind.Border);
-        ArcTokens.Bind(frame, Border.BorderThicknessProperty, ArcDesignTokenKind.EdgeThickness);
-        // Inset the scrolling content by the stroke so it cannot paint over the rounded corners.
-        ArcTokens.Bind(frame, Border.PaddingProperty, ArcDesignTokenKind.EdgeThickness);
+        // Arc's edge token plus 1px: the console frame reads better one pixel heavier than the default rule.
+        frame.AttachedToVisualTree += (_, _) =>
+        {
+            try
+            {
+                var edge = ArcTokens.Get<Thickness>(frame, ArcDesignTokenKind.EdgeThickness);
+                var stroke = new Thickness(edge.Left + 1, edge.Top + 1, edge.Right + 1, edge.Bottom + 1);
+                frame.BorderThickness = stroke;
+                frame.Padding = stroke;
+            }
+            catch (InvalidOperationException)
+            {
+                // Not themed yet: the defaults still draw a frame.
+            }
+        };
         ArcTokens.BindCornerRadius(frame, ArcDesignTokenKind.RadiusSurface);
         var surface = new Border
         {
@@ -424,6 +436,27 @@ public sealed partial class ServerLogWindow
         menu.Open(rowControl);
     }
 
+    /// <summary>
+    /// A popover anchors once; showing an already open one keeps its first origin. Close it and re-show on the
+    /// dispatcher after the exit starts, so a second row gets a panel at its own position.
+    /// </summary>
+    private static void ShowAnchored(Popover popover, Control anchor)
+    {
+        if (!popover.IsOpen)
+        {
+            popover.ShowAt(anchor);
+            return;
+        }
+        void Reopen(object? sender, EventArgs args)
+        {
+            popover.Closed -= Reopen;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => popover.ShowAt(anchor),
+                Avalonia.Threading.DispatcherPriority.Background);
+        }
+        popover.Closed += Reopen;
+        popover.Close();
+    }
+
     private void OpenKick(PlayerRow? row, Control anchor)
     {
         if (row is null) return;
@@ -431,9 +464,7 @@ public sealed partial class ServerLogWindow
         kickPrompt.Text = "踢出 " + row.Name + "？";
         kickHold.CancelHold();
         kickHold.IsConfirmed = false;
-        // Re-anchoring an open popover keeps its previous origin, so close it first to place it at this row.
-        kickPopover.IsOpen = false;
-        kickPopover.ShowAt(anchor);
+        ShowAnchored(kickPopover, anchor);
     }
 
     private void OpenAdminAction(PlayerRow? row, Control anchor)
@@ -446,8 +477,7 @@ public sealed partial class ServerLogWindow
             revokeHold.CancelHold();
             // The done state is sticky; reset it so the next removal can be held again.
             revokeHold.IsConfirmed = false;
-            revokePopover.IsOpen = false;
-            revokePopover.ShowAt(anchor);
+            ShowAnchored(revokePopover, anchor);
             return;
         }
         grantTarget = row;
@@ -522,6 +552,9 @@ public sealed partial class ServerLogWindow
             foreach (var existing in playerRows)
                 if (string.Equals(existing.SteamId, steamId, StringComparison.OrdinalIgnoreCase))
                     existing.SetAdminGroup(remove ? null : group);
+            // Ask the host to re-apply the list now: a plugin that caches admins keeps the old set otherwise.
+            try { await model.ReloadAdminsAsync(); }
+            catch (Exception e) when (e is IOException or ServerException or InvalidOperationException or UnauthorizedAccessException) { }
             // The file hash changed, so the next write must be planned against the new content.
             await RefreshAdminListAsync();
             notifications.Show(new ToastOptions
