@@ -228,9 +228,17 @@ public sealed partial class ServerLogWindow
             foreach (var row in playerRows) row.AdvanceSecond();
         };
         playerClock.Start();
-        // The rounded frame stays put and only the rows scroll inside it: the table's own frame is made
-        // transparent and the page Border draws the frame with Arc's surface and radius tokens.
+        // Both themed borders of the table are hidden: the page frame draws the only outline.
         playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Frame"))
+        {
+            Setters =
+            {
+                new Setter(Border.BackgroundProperty, Brushes.Transparent),
+                new Setter(Border.BorderThicknessProperty, new Thickness(0)),
+                new Setter(Border.CornerRadiusProperty, new CornerRadius(0))
+            }
+        });
+        playersTable.Styles.Add(new Style(x => x.OfType<Border>().Name("PART_Outline"))
         {
             Setters =
             {
@@ -386,28 +394,29 @@ public sealed partial class ServerLogWindow
         if (!e.GetCurrentPoint(playersTable).Properties.IsRightButtonPressed) return;
         // Cell text is not hit-testable everywhere, so the row is found by position rather than by the event source.
         var point = e.GetPosition(playersTable);
-        // Cells are vertically centred and leave gaps between columns, so the row is resolved from the
-        // vertical band between its neighbours rather than from the control under the pointer.
-        var perRow = new Dictionary<PlayerRow, (double Top, double Bottom, Control Cell, double Center)>();
+        // Row containers have no data context, so the pointer is mapped to the container band first and the
+        // player is then read from any cell that lives inside it.
+        double? bandTop = null, bandBottom = null;
+        foreach (var candidate in playersTable.GetVisualDescendants().OfType<Control>())
+        {
+            if (candidate.GetType().Name != "TableRow") continue;
+            if (candidate.TranslatePoint(default, playersTable) is not { } origin) continue;
+            var bottom = origin.Y + candidate.Bounds.Height;
+            if (point.Y >= origin.Y && point.Y < bottom) { bandTop = origin.Y; bandBottom = bottom; break; }
+        }
+        PlayerRow? row = null;
+        Control? rowControl = null;
         foreach (var candidate in playersTable.GetVisualDescendants().OfType<Control>())
         {
             if (candidate.DataContext is not PlayerRow found) continue;
             if (candidate.TranslatePoint(default, playersTable) is not { } origin) continue;
-            if (candidate.Bounds.Height <= 0) continue;
             var center = origin.Y + candidate.Bounds.Height / 2;
-            perRow[found] = (origin.Y, origin.Y + candidate.Bounds.Height, candidate, center);
-        }
-        PlayerRow? row = null;
-        Control? rowControl = null;
-        var centers = perRow.Values.Select(v => v.Center).OrderBy(v => v).ToArray();
-        foreach (var (player, band) in perRow)
-        {
-            var index = Array.IndexOf(centers, band.Center);
-            var upper = index > 0 ? (centers[index - 1] + band.Center) / 2 : band.Top;
-            var lower = index < centers.Length - 1 ? (centers[index + 1] + band.Center) / 2 : band.Bottom;
-            if (point.Y < upper || point.Y >= lower) continue;
-            row = player;
-            rowControl = band.Cell;
+            var insideBand = bandTop is { } top && bandBottom is { } bottom
+                ? center >= top && center < bottom
+                : new Rect(origin, candidate.Bounds.Size).Contains(point);
+            if (!insideBand) continue;
+            row = found;
+            rowControl = candidate;
             break;
         }
         if (rowControl is null || row is null || row.IsBot) return;
