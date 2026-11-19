@@ -10,6 +10,7 @@ using HCSL.Core;
 using HCSL.Contracts;
 using HCSL.Frontend;
 using HCSL.Host.Services;
+using HCSL.HostTests;
 using HCSL.Host.ViewModels;
 using HCSL.Host.Views;
 using HCSL.UI.Shared.Styles.Themes;
@@ -462,6 +463,11 @@ Check(!downloads.GetVisualDescendants().OfType<Textarea>().Any(),
 downloadWindow.Close();
 Console.WriteLine("PASS gui.downloads.measured-progress-instead-of-task-log");
 if (only is "logs") return 0;
+}
+if (only is null or "roster")
+{
+RosterEchoTests.Run();
+if (only is "roster") return 0;
 }
 if (only is null or "forms")
 {

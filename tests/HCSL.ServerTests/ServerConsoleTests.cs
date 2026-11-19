@@ -38,6 +38,17 @@ public static class ServerConsoleTests
         if (!controller.ConsoleHistoryEnabled) throw new Exception("History must default on.");
         await controller.SendConsoleAsync(Guid.NewGuid(), "status");
         if (fake.Sends != 0) throw new Exception("Wrong RunId sent.");
+        // The engine echo flag must reach the view as-is, and only on the marked line.
+        fake.Lines = [new ServerLogLine(1, "ciallo", null, true), new ServerLogLine(2, "Unknown command 'ciallo'!")];
+        controller.SetLogsVisible(true);
+        await controller.RefreshLogsAsync();
+        var echoedRows = controller.ConsoleRows;
+        if (echoedRows.Count != 2 || !echoedRows[0].Echo || echoedRows[1].Echo)
+            throw new Exception("The server echo flag was lost or applied to the wrong row.");
+        if (!echoedRows[0].DisplayText.EndsWith("ciallo", StringComparison.Ordinal))
+            throw new Exception("The echo row must render as engine output.");
+        // Later assertions page logs of their own; keep this fixture from leaking into them.
+        fake.Lines = [];
         var loadingFake = new FakeClient { State = ServerState.LoadingMap };
         using (var loading = new ServerController(loadingFake, a => a(), activeInterval: TimeSpan.FromHours(1), idleInterval: TimeSpan.FromHours(1)))
         {
@@ -103,6 +114,7 @@ public static class ServerConsoleTests
     private sealed class FakeClient : IDaemonClient
     {
         public Guid Run=Guid.NewGuid(); public int Sends; public ServerConsoleCommand? Last; public ServerState State=ServerState.Running;
+        public ServerLogLine[] Lines = [];
         public System.Collections.Concurrent.ConcurrentQueue<Guid> LogRuns = new();
         public Task<LocalResponse> SendAsync(LocalRequest request,CancellationToken ct=default)
         {
@@ -116,7 +128,7 @@ public static class ServerConsoleTests
                 LogRuns.Enqueue(logRun);
                 if (logRun != Run) throw new IOException("HCSL-SERVER-STALE: Log cursor belongs to another run.");
             }
-            var snapshot=new ServerSnapshot(Run,null,State,true,"",true,false,null,0,false,[]);
+            var snapshot=new ServerSnapshot(Run,null,State,true,"",true,false,null,0,false,Lines);
             return Task.FromResult(new LocalResponse(LocalProtocol.Version,request.Id,true,Defaults:new("/settings","/data","/library"),ServerSnapshotJson:JsonSerializer.Serialize(snapshot)));
         }
     }

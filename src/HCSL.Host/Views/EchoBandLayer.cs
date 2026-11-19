@@ -42,11 +42,21 @@ public sealed class EchoBandLayer : Control
     {
         var fill = Fill;
         if (fill is null || lines.Length == 0 || lineHeight <= 0 || Bounds.Width <= 0) return;
-        for (var i = 0; i < lines.Length; i++)
+        foreach (var band in Bands(lines, lineHeight, origin, Bounds.Size))
+            context.FillRectangle(fill, band);
+    }
+
+    /// <summary>Bands that intersect the visible area, in layer coordinates; pure so the geometry is testable.</summary>
+    public static IReadOnlyList<Rect> Bands(IReadOnlyList<int> rows, double lineHeight, double origin, Size size)
+    {
+        var bands = new List<Rect>(rows.Count);
+        if (lineHeight <= 0 || size.Width <= 0 || size.Height <= 0) return bands;
+        for (var i = 0; i < rows.Count; i++)
         {
-            var top = origin + lines[i] * lineHeight;
-            if (top + lineHeight < 0 || top > Bounds.Height) continue;
-            context.FillRectangle(fill, new Rect(0, top, Bounds.Width, lineHeight));
+            var top = origin + rows[i] * lineHeight;
+            if (top + lineHeight < 0 || top > size.Height) continue;
+            bands.Add(new Rect(0, top, size.Width, lineHeight));
         }
+        return bands;
     }
 }
