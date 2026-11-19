@@ -6,36 +6,7 @@
              x:Class="HCSL.Host.Views.PlayerRosterPage"
              Classes="player-roster-page">
   <UserControl.Resources>
-    <!-- Every column renders through a template bound to the row, so a cell anywhere in the row carries the
-         player in its DataContext (Arc's built-in text cells do not). -->
-    <DataTemplate x:Key="PlayerNameCell" x:DataType="vm:PlayerRow">
-      <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerIdentityCell" x:DataType="vm:PlayerRow">
-      <arc:Badge Size="Small" Tone="{Binding IdentityTone}" Content="{Binding Identity}"
-                 arc:Tooltip.Tip="{Binding IdentityTooltip}"
-                 HorizontalAlignment="Left" VerticalAlignment="Center">
-        <arc:Badge.Icon>
-          <lucide:LucideIcon Kind="{Binding IdentityIcon}"/>
-        </arc:Badge.Icon>
-      </arc:Badge>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerSteamIdCell" x:DataType="vm:PlayerRow">
-      <TextBlock Text="{Binding SteamIdText}" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerAddressCell" x:DataType="vm:PlayerRow">
-      <TextBlock Text="{Binding Address}" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerStateCell" x:DataType="vm:PlayerRow">
-      <arc:Badge Size="Small" Tone="{Binding StateTone}" Content="{Binding State}"
-                 HorizontalAlignment="Left" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerPingCell" x:DataType="vm:PlayerRow">
-      <TextBlock Text="{Binding PingText}" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="PlayerConnectedCell" x:DataType="vm:PlayerRow">
-      <TextBlock Text="{Binding Connected}" VerticalAlignment="Center"/>
-    </DataTemplate>
+    <!-- Row templates live on the columns; see arc:Table / arc:DataTableColumn in the Table page. -->
   </UserControl.Resources>
 
   <Panel>
@@ -44,10 +15,80 @@
       <Border Classes="console-roster-frame">
         <Border Classes="console-roster-clip">
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <arc:Table x:Name="Table" Classes="console-players"
+            <!-- Column bindings target row items, not this control's data context, so they stay reflection bindings;
+                 the cell templates keep their compiled x:DataType. -->
+            <arc:Table x:Name="Table" Classes="console-players" x:CompileBindings="False"
                        Caption="在线玩家" EmptyMessage="暂无玩家" LoadingMessage="正在读取玩家列表"
                        ItemNameOne="名玩家" ItemNameOther="名玩家"
-                       HorizontalAlignment="Left" VerticalAlignment="Stretch"/>
+                       HorizontalAlignment="Left" VerticalAlignment="Stretch">
+              <arc:Table.Columns>
+                <arc:DataTableColumn Header="玩家" Binding="{Binding Name}"
+                                    Width="{DynamicResource ConsoleTablePlayerWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <arc:DataTableColumn Header="身份" Binding="{Binding Identity}"
+                                    Width="{DynamicResource ConsoleTableIdentityWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <arc:Badge Size="Small" Tone="{Binding IdentityTone}" Content="{Binding Identity}"
+                                 arc:Tooltip.Tip="{Binding IdentityTooltip}"
+                                 HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <arc:Badge.Icon>
+                          <lucide:LucideIcon Kind="{Binding IdentityIcon}"/>
+                        </arc:Badge.Icon>
+                      </arc:Badge>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <arc:DataTableColumn Header="SteamID" Binding="{Binding SteamIdText}"
+                                    Width="{DynamicResource ConsoleTableSteamIdWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <TextBlock Text="{Binding SteamIdText}" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <arc:DataTableColumn Header="地址" Binding="{Binding Address}"
+                                    Width="{DynamicResource ConsoleTableAddressWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <TextBlock Text="{Binding Address}" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <arc:DataTableColumn Header="状态" Binding="{Binding State}"
+                                    Width="{DynamicResource ConsoleTableStateWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <arc:Badge Size="Small" Tone="{Binding StateTone}" Content="{Binding State}"
+                                 HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <!-- Numeric value for the sort, text for display: IsNumeric stays off so header and cells left-align. -->
+                <arc:DataTableColumn Header="延迟" Binding="{Binding PingText}" SortBinding="{Binding Ping}"
+                                    IsNumeric="False"
+                                    Width="{DynamicResource ConsoleTablePingWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <TextBlock Text="{Binding PingText}" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+                <arc:DataTableColumn Header="在线时长" Binding="{Binding Connected}"
+                                    Width="{DynamicResource ConsoleTableConnectedWidth}">
+                  <arc:DataTableColumn.CellTemplate>
+                    <DataTemplate x:DataType="vm:PlayerRow">
+                      <TextBlock Text="{Binding Connected}" VerticalAlignment="Center"/>
+                    </DataTemplate>
+                  </arc:DataTableColumn.CellTemplate>
+                </arc:DataTableColumn>
+              </arc:Table.Columns>
+            </arc:Table>
           </ScrollViewer>
         </Border>
       </Border>

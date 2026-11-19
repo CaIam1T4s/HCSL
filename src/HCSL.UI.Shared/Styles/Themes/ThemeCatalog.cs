@@ -47,13 +47,15 @@ public static class ThemeCatalog
         ["ConsoleFrameThickness"] = new Thickness(2),
         // Console player-table column widths. They live with the other shared values because a table column's
         // Auto width measures the sort value, not the templated cell (badge, action buttons).
-        ["ConsoleTablePlayerWidth"] = 220d,
-        ["ConsoleTableIdentityWidth"] = 112d,
-        ["ConsoleTableSteamIdWidth"] = 180d,
-        ["ConsoleTableAddressWidth"] = 160d,
-        ["ConsoleTableStateWidth"] = 96d,
-        ["ConsoleTablePingWidth"] = 96d,
-        ["ConsoleTableConnectedWidth"] = 120d,
+        // Console player-table column widths, as GridLength so the XAML columns can bind them. They live with the
+        // other shared values because a table column's Auto width measures the sort value, not the templated cell.
+        ["ConsoleTablePlayerWidth"] = new GridLength(220),
+        ["ConsoleTableIdentityWidth"] = new GridLength(112),
+        ["ConsoleTableSteamIdWidth"] = new GridLength(180),
+        ["ConsoleTableAddressWidth"] = new GridLength(160),
+        ["ConsoleTableStateWidth"] = new GridLength(96),
+        ["ConsoleTablePingWidth"] = new GridLength(96),
+        ["ConsoleTableConnectedWidth"] = new GridLength(120),
         ThemeDictionaries =
         {
             [ThemeVariant.Light] = CreatePaletteResources(Light),

@@ -40,7 +40,6 @@ public sealed partial class PlayerRosterPage : UserControl
         InitializeComponent();
         Table.ItemsSource = Rows;
         Table.Width = TableWidth();
-        AddColumns();
         // Menu at the pointer, like the instance list: ContextRequested is raised after release, so the
         // pointer position is available for PlacementMode.Pointer.
         Table.AddHandler(InputElement.ContextRequestedEvent, OnContextRequested,
@@ -99,50 +98,6 @@ public sealed partial class PlayerRosterPage : UserControl
 
     public void ApplyAdminGroup(PlayerRow row) =>
         row.SetAdminGroup(row.SteamId is { } id && adminGroupBySteamId.TryGetValue(id, out var group) ? group : null);
-
-    /// <summary>Every column is a row-bound template so the player is reachable from any cell's DataContext.</summary>
-    private void AddColumns()
-    {
-        Table.Columns.Add(new DataTableColumn("玩家", row => ((PlayerRow)row).Name)
-        {
-            Width = ColumnWidth("ConsoleTablePlayerWidth"),
-            CellTemplate = CellTemplate("PlayerNameCell")
-        });
-        Table.Columns.Add(new DataTableColumn("身份", row => ((PlayerRow)row).Identity)
-        {
-            Width = ColumnWidth("ConsoleTableIdentityWidth"),
-            CellTemplate = CellTemplate("PlayerIdentityCell")
-        });
-        Table.Columns.Add(new DataTableColumn("SteamID", row => ((PlayerRow)row).SteamIdText)
-        {
-            Width = ColumnWidth("ConsoleTableSteamIdWidth"),
-            CellTemplate = CellTemplate("PlayerSteamIdCell")
-        });
-        Table.Columns.Add(new DataTableColumn("地址", row => ((PlayerRow)row).Address)
-        {
-            Width = ColumnWidth("ConsoleTableAddressWidth"),
-            CellTemplate = CellTemplate("PlayerAddressCell")
-        });
-        Table.Columns.Add(new DataTableColumn("状态", row => ((PlayerRow)row).State)
-        {
-            Width = ColumnWidth("ConsoleTableStateWidth"),
-            CellTemplate = CellTemplate("PlayerStateCell")
-        });
-        // Numeric value for the sort, text for display: IsNumeric stays off so the header and cells both left-align.
-        Table.Columns.Add(new DataTableColumn("延迟", row => ((PlayerRow)row).Ping)
-        {
-            Width = ColumnWidth("ConsoleTablePingWidth"),
-            IsNumeric = false,
-            CellTemplate = CellTemplate("PlayerPingCell")
-        });
-        Table.Columns.Add(new DataTableColumn("在线时长", row => ((PlayerRow)row).Connected)
-        {
-            Width = ColumnWidth("ConsoleTableConnectedWidth"),
-            CellTemplate = CellTemplate("PlayerConnectedCell")
-        });
-    }
-
-    private IDataTemplate? CellTemplate(string key) => this.FindResource(key) as IDataTemplate;
 
     /// <summary>Row actions live in a context menu so the table needs no action column. BOT rows get none.</summary>
     private void OnContextRequested(object? sender, ContextRequestedEventArgs e)
@@ -264,11 +219,6 @@ public sealed partial class PlayerRosterPage : UserControl
         return Actions?.RevokeAsync(row) ?? Task.CompletedTask;
     }
 
-    /// <summary>Column widths come from the shared resource dictionary; a missing entry falls back to Auto.</summary>
-    private static GridLength ColumnWidth(string key) =>
-        Avalonia.Application.Current?.TryFindResource(key, out var value) == true && value is double width
-            ? new GridLength(width) : GridLength.Auto;
-
     /// <summary>Sum of every column, so the table keeps its widths and the page scrolls instead of clipping.</summary>
     private static double TableWidth()
     {
@@ -281,8 +231,8 @@ public sealed partial class PlayerRosterPage : UserControl
         var total = 0d;
         foreach (var key in keys)
         {
-            if (Avalonia.Application.Current?.TryFindResource(key, out var value) != true || value is not double width) return double.NaN;
-            total += width;
+            if (Avalonia.Application.Current?.TryFindResource(key, out var value) != true || value is not GridLength width) return double.NaN;
+            total += width.Value;
         }
         return total;
     }
