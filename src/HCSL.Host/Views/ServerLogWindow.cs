@@ -149,7 +149,7 @@ public sealed partial class ServerLogWindow : ArcWindow
         Closed += (_, _) =>
         {
             closed = true; CloseConsoleMenus(); owner.PromptVisibilityChanged -= PromptChanged;
-            playerClock.Stop();
+            playerPage.StopClock();
             owner.Closed -= OwnerClosed;
             model.PropertyChanged -= Changed;
             if (!hiddenForPrompt) model.CloseLogs();

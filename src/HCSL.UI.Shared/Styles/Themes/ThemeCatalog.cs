@@ -43,6 +43,8 @@ public static class ThemeCatalog
         // Console pages inset their content from the window edges; a Thickness resource because Arc's spacing
         // tokens are doubles and cannot be bound to Padding or Margin.
         ["ConsolePageInset"] = new Thickness(16),
+        // Arc's edge rule plus one pixel: the roster frame reads better slightly heavier than a default rule.
+        ["ConsoleFrameThickness"] = new Thickness(2),
         // Console player-table column widths. They live with the other shared values because a table column's
         // Auto width measures the sort value, not the templated cell (badge, action buttons).
         ["ConsoleTablePlayerWidth"] = 220d,

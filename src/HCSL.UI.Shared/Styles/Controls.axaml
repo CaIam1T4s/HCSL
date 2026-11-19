@@ -339,9 +339,35 @@
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
   </Style>
-  <!-- Arc's Primary variant stays neutral in this theme; the accent fill is opt-in per button, like the
-       instance editor's save button. -->
-  <Style Selector="arc|Button.accent-confirm">
+  <!-- Console pages inset their content from the window edges and keep the window's own gradient. -->
+  <Style Selector="Border.console-page">
+    <Setter Property="Padding" Value="{DynamicResource ConsolePageInset}"/>
+  </Style>
+  <!-- The outer frame owns the stroke; the table's own frame and outline stay invisible (see .console-players). -->
+  <Style Selector="Border.console-roster-frame">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource Surface}"/>
+    <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Border}"/>
+    <Setter Property="BorderThickness" Value="{DynamicResource ConsoleFrameThickness}"/>
+    <Setter Property="Padding" Value="{DynamicResource ConsoleFrameThickness}"/>
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusSurface}"/>
+    <Setter Property="ClipToBounds" Value="True"/>
+  </Style>
+  <!-- The scroller is clipped to the same rounded shape, so a sorted column's tint cannot square the corners. -->
+  <Style Selector="Border.console-roster-clip">
+    <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusSurface}"/>
+    <Setter Property="ClipToBounds" Value="True"/>
+  </Style>
+  <!-- Invisible square the popovers anchor to, placed at the context menu's origin. -->
+  <Style Selector="Border.popover-anchor">
+    <Setter Property="Width" Value="{arc:ArcDesignTokenResource Space1}"/>
+    <Setter Property="Height" Value="{arc:ArcDesignTokenResource Space1}"/>
+  </Style>
+  <Style Selector="StackPanel.roster-grant-body">
+    <Setter Property="Spacing" Value="{arc:ArcDesignTokenResource Space3}"/>
+    <Setter Property="Margin" Value="{DynamicResource DialogBodyInset}"/>
+  </Style>
+  <!-- Arc's Primary variant is the foreground fill; HCSL's one considered action carries the accent. -->
+  <Style Selector="arc|Button.dialog-primary">
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource AccentForeground}"/>
   </Style>

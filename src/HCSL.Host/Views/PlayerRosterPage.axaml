@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             xmlns:vm="using:HCSL.Host.ViewModels"
+             x:Class="HCSL.Host.Views.PlayerRosterPage"
+             Classes="player-roster-page">
+  <UserControl.Resources>
+    <!-- Every column renders through a template bound to the row, so a cell anywhere in the row carries the
+         player in its DataContext (Arc's built-in text cells do not). -->
+    <DataTemplate x:Key="PlayerNameCell" x:DataType="vm:PlayerRow">
+      <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerIdentityCell" x:DataType="vm:PlayerRow">
+      <arc:Badge Size="Small" Tone="{Binding IdentityTone}" Content="{Binding Identity}"
+                 arc:Tooltip.Tip="{Binding IdentityTooltip}"
+                 HorizontalAlignment="Left" VerticalAlignment="Center">
+        <arc:Badge.Icon>
+          <lucide:LucideIcon Kind="{Binding IdentityIcon}"/>
+        </arc:Badge.Icon>
+      </arc:Badge>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerSteamIdCell" x:DataType="vm:PlayerRow">
+      <TextBlock Text="{Binding SteamIdText}" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerAddressCell" x:DataType="vm:PlayerRow">
+      <TextBlock Text="{Binding Address}" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerStateCell" x:DataType="vm:PlayerRow">
+      <arc:Badge Size="Small" Tone="{Binding StateTone}" Content="{Binding State}"
+                 HorizontalAlignment="Left" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerPingCell" x:DataType="vm:PlayerRow">
+      <TextBlock Text="{Binding PingText}" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="PlayerConnectedCell" x:DataType="vm:PlayerRow">
+      <TextBlock Text="{Binding Connected}" VerticalAlignment="Center"/>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Panel>
+    <!-- The window keeps its own gradient: this page only insets the roster frame. -->
+    <Border Classes="console-page">
+      <Border Classes="console-roster-frame">
+        <Border Classes="console-roster-clip">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <arc:Table x:Name="Table" Classes="console-players"
+                       Caption="在线玩家" EmptyMessage="暂无玩家" LoadingMessage="正在读取玩家列表"
+                       ItemNameOne="名玩家" ItemNameOther="名玩家"
+                       HorizontalAlignment="Left" VerticalAlignment="Stretch"/>
+          </ScrollViewer>
+        </Border>
+      </Border>
+    </Border>
+
+    <!-- Row confirmations open at the context menu's own origin, exactly like the instance list. -->
+    <Canvas x:Name="AnchorLayer" IsHitTestVisible="False">
+      <Border x:Name="Anchor" Classes="popover-anchor"/>
+    </Canvas>
+    <arc:Popover x:Name="HoldPopover" Placement="Bottom" Alignment="Start" Offset="0"
+                 TriggerMode="Manual" HasShadow="False">
+      <arc:Popover.Styles>
+        <Style Selector="arc|PopoverSurface">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="BorderThickness" Value="0"/>
+          <Setter Property="Padding" Value="0"/>
+        </Style>
+      </arc:Popover.Styles>
+      <arc:HoldToConfirm x:Name="HoldAction" HoldDuration="0:0:1" Tone="Danger"/>
+    </arc:Popover>
+
+    <arc:Dialog x:Name="GrantDialog" Title="授予管理员" Size="Small" ShowCloseButton="True">
+      <StackPanel Classes="roster-grant-body">
+        <TextBlock x:Name="GrantPrompt" TextWrapping="Wrap"/>
+        <arc:Select x:Name="GrantGroup" Placeholder="选择管理组"/>
+      </StackPanel>
+      <arc:Dialog.Actions>
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}"
+                    HorizontalAlignment="Right">
+          <arc:Button Content="取消" Variant="Secondary" Click="CloseGrant"/>
+          <arc:Button Content="确定" Classes="dialog-primary" Click="ConfirmGrant"/>
+        </StackPanel>
+      </arc:Dialog.Actions>
+    </arc:Dialog>
+  </Panel>
+</UserControl>

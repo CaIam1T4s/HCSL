@@ -69,22 +69,11 @@ public sealed partial class ServerLogWindow
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
         };
         var shell = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("Auto,*") };
-        shellHost = shell;
         shell.Children.Add(sidebar);
         Grid.SetColumnSpan(notifications, 2);
         notifications.ZIndex = 10; // Above the content: toasts must not be hidden under the log viewport or the command input.
         shell.Children.Add(notifications);
-        // Popovers anchor through this layer, at the context menu's own origin (same approach as the instance list).
-        popoverLayer = new Canvas { IsHitTestVisible = false };
-        Grid.SetColumnSpan(popoverLayer, 2);
-        popoverLayer.ZIndex = 19;
-        // Same anchor the instance list uses: a Space1 square placed at the menu origin.
-        popoverAnchor = new Border();
-        ArcTokens.Bind(popoverAnchor, Layoutable.WidthProperty, ArcDesignTokenKind.Space1);
-        ArcTokens.Bind(popoverAnchor, Layoutable.HeightProperty, ArcDesignTokenKind.Space1);
-        popoverLayer.Children.Add(popoverAnchor);
-        shell.Children.Add(popoverLayer);
-        shell.Children.Add(grantDialog);
+        // The roster page owns its own popover anchor layer and grant dialog.
         Grid.SetColumn(pages, 1);
         shell.Children.Add(pages);
         shell.Children.Add(BuildShareDialog());
