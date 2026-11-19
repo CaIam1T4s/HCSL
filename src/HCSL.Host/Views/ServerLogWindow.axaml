@@ -1,0 +1,53 @@
+<arc:ArcWindow xmlns="https://github.com/avaloniaui"
+               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+               xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+               xmlns:ui="using:HCSL.UI.Shared.Services"
+               x:Class="HCSL.Host.Views.ServerLogWindow"
+               x:Name="ConsoleRoot"
+               Classes="wallpaper-shell"
+               Title="服务器控制台" Width="1100" Height="700" MinWidth="600" MinHeight="400">
+  <arc:ArcWindow.TitleBar>
+    <arc:TitleBar x:Name="ConsoleTitleBar" Height="44" CaptionButtons="Auto">
+      <arc:TitleBar.LeftContent>
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+          <arc:Badge x:Name="statusBadge" Size="Medium"/>
+          <arc:Badge x:Name="mapBadge" Size="Medium" Tone="Neutral"/>
+          <arc:Badge x:Name="playersBadge" Size="Medium" Tone="Neutral"/>
+        </StackPanel>
+      </arc:TitleBar.LeftContent>
+      <arc:TitleBar.Icon>
+        <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Server}" Size="16"/>
+      </arc:TitleBar.Icon>
+    </arc:TitleBar>
+  </arc:ArcWindow.TitleBar>
+
+  <Grid ColumnDefinitions="Auto,*">
+    <Border Classes="sidebar" Grid.Column="0">
+      <arc:Sidebar x:Name="navigation" Classes="main-sidebar" Label="服务器控制台导航"
+                   ExpandedWidth="216" SelectedKey="console" IsCollapsed="False"
+                   IsCollapseButtonVisible="False" IsFilterVisible="False" BorderThickness="0"
+                   ItemInvoked="OnNavigationItemInvoked">
+        <arc:SidebarSection>
+          <arc:SidebarItem Key="console" Label="控制台" Icon="{x:Static arc:ArcIcons.Terminal}"/>
+          <arc:SidebarItem Key="players" Label="在线玩家" Icon="{x:Static arc:ArcIcons.Users}"/>
+          <arc:SidebarItem Key="maps" Label="地图切换"/>
+        </arc:SidebarSection>
+      </arc:Sidebar>
+    </Border>
+
+    <Grid x:Name="pages" Grid.Column="1">
+      <ContentControl x:Name="consoleHost"/>
+      <ContentControl x:Name="playersHost" IsVisible="False"/>
+      <Border x:Name="mapsHost" Classes="console-placeholder" IsVisible="False">
+        <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}">
+          <TextBlock Text="地图切换" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}"/>
+          <TextBlock Text="地图列表与切换操作将在后续步骤接入。" TextWrapping="Wrap"
+                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- Above the content: toasts must not be hidden under the log viewport or the command input. -->
+    <arc:ToastStack x:Name="notifications" Grid.ColumnSpan="2" ZIndex="10" Duration="0:0:3"/>
+  </Grid>
+</arc:ArcWindow>

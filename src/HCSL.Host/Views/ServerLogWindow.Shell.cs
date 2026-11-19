@@ -14,80 +14,52 @@ namespace HCSL.Host.Views;
 
 public sealed partial class ServerLogWindow
 {
-    private readonly Sidebar navigation = new()
-    {
-        Label = "服务器控制台导航", ExpandedWidth = 216,
-        IsCollapseButtonVisible = false, IsFilterVisible = false,
-        SelectedKey = "console", BorderThickness = new Thickness(0)
-    };
-    private readonly Badge statusBadge = new() { Size = BadgeSize.Medium };
-    private readonly Badge mapBadge = new() { Tone = BadgeTone.Neutral, Size = BadgeSize.Medium };
-    private readonly Badge playersBadge = new() { Tone = BadgeTone.Neutral, Size = BadgeSize.Medium };
     private readonly Badge certificateBadge = new() { Size = BadgeSize.Medium, IsVisible = false };
-    private readonly ToastStack notifications = new() { Duration = TimeSpan.FromSeconds(3) };
     private (string Text, BadgeTone Tone, LucideIconKind Icon)? lastCertificateState;
     private string? lastStatusTip;
     private (string, BadgeTone, LucideIconKind)? lastBadgeState;
     private Vector consoleOffset;
     private readonly List<IDisposable> shellBindings = new();
 
-    private Control BuildShell(Control console)
+    /// <summary>
+    /// The chrome (sidebar, pages, title badges) is declared in ServerLogWindow.axaml; this only wires the console
+    /// page into its host and the lifecycle bindings that follow the owning window.
+    /// </summary>
+    private void InitializeShell(Control console)
     {
-        Classes.Add("wallpaper-shell");
         shellBindings.Add(this.Bind(BackgroundProperty, owner.GetObservable(BackgroundProperty)));
         // The console keeps its own gradient: a wallpaper image chosen for the main window must not follow here.
         shellBindings.Add(this.Bind(WindowBackdrop.StrengthProperty, owner.GetObservable(WindowBackdrop.StrengthProperty)));
         Closed += (_, _) => { foreach (var binding in shellBindings) binding.Dispose(); shellBindings.Clear(); };
         navigation.Background = null;
-        navigation.Classes.Add("main-sidebar");
-        var section = new SidebarSection();
-        section.Items.Add(new SidebarItem { Key = "console", Label = "控制台", Icon = ArcIcons.Terminal });
-        section.Items.Add(new SidebarItem { Key = "players", Label = "在线玩家", Icon = ArcIcons.Users });
-        section.Items.Add(new SidebarItem { Key = "maps", Label = "地图切换", Icon = Lucide.Geometry(LucideIconKind.Map) });
-        navigation.Sections.Add(section);
-        var sidebar = new Border { Child = navigation };
-        sidebar.Classes.Add("sidebar");
-
-        var players = BuildPlayersPage();
-        var maps = Placeholder("地图切换", "地图列表与切换操作将在后续步骤接入。");
-        players.IsVisible = maps.IsVisible = false;
-        var pages = new Grid { Children = { console, players, maps } };
-        navigation.ItemInvoked += (_, e) =>
-        {
-            CloseConsoleMenus();
-            if (console.IsVisible && scroll is not null) consoleOffset = scroll.Offset;
-            console.IsVisible = e.Item.Key == "console";
-            players.IsVisible = e.Item.Key == "players";
-            maps.IsVisible = e.Item.Key == "maps";
-            if (console.IsVisible)
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    if (closed) return;
-                    if (scroll is not null && !following) scroll.Offset = consoleOffset;
-                    Update();
-                    if (following) ApplyBottom();
-                }, Avalonia.Threading.DispatcherPriority.Loaded);
-        };
-        var shell = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("Auto,*") };
-        shell.Children.Add(sidebar);
-        Grid.SetColumnSpan(notifications, 2);
-        notifications.ZIndex = 10; // Above the content: toasts must not be hidden under the log viewport or the command input.
-        shell.Children.Add(notifications);
-        // The roster page owns its own popover anchor layer and grant dialog.
-        Grid.SetColumn(pages, 1);
-        shell.Children.Add(pages);
-        shell.Children.Add(BuildShareDialog());
-
-        var badges = new StackPanel { Orientation = Orientation.Horizontal,
-            Children = { statusBadge, mapBadge, playersBadge } };
-        ArcTokens.Bind(badges, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
-        TitleBar = new TitleBar { Height = 44, LeftContent = badges, CaptionButtons = TitleBarCaptionButtons.Auto,
-            Icon = new ArcGlyph { Data = ArcIcons.Server, Size = 16 } };
+        // Arc's sidebar icons are geometry, so this one Lucide glyph is resolved here rather than as a control.
+        foreach (var item in navigation.Sections.SelectMany(s => s.Items))
+            if (item.Key == "maps") item.Icon = Lucide.Geometry(LucideIconKind.Map);
+        consoleHost.Content = console;
+        playersHost.Content = BuildPlayersPage();
+        pages.Children.Add(BuildShareDialog());
         if (owner.TitleBar is { } ownerTitleBar)
-            shellBindings.Add(TitleBar.Bind(BackgroundProperty, ownerTitleBar.GetObservable(BackgroundProperty)));
+            shellBindings.Add(ConsoleTitleBar.Bind(BackgroundProperty, ownerTitleBar.GetObservable(BackgroundProperty)));
         SizeChanged += (_, _) => UpdateShellWidth();
         UpdateShellWidth();
-        return shell;
+    }
+
+    /// <summary>Sidebar route: exactly one page is visible and the console restores the reader's position.</summary>
+    private void OnNavigationItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
+    {
+        CloseConsoleMenus();
+        if (consoleHost.IsVisible && scroll is not null) consoleOffset = scroll.Offset;
+        consoleHost.IsVisible = e.Item.Key == "console";
+        playersHost.IsVisible = e.Item.Key == "players";
+        mapsHost.IsVisible = e.Item.Key == "maps";
+        if (!consoleHost.IsVisible) return;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (closed) return;
+            if (scroll is not null && !following) scroll.Offset = consoleOffset;
+            Update();
+            if (following) ApplyBottom();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -153,19 +125,6 @@ public sealed partial class ServerLogWindow
         lastStatusTip = tip;
         if (tip is null) statusBadge.ClearValue(Tooltip.TipProperty);
         else statusBadge.SetValue(Tooltip.TipProperty, tip);
-    }
-
-    private static Control Placeholder(string title, string description)
-    {
-        var heading = new TextBlock { Text = title, FontWeight = Avalonia.Media.FontWeight.SemiBold };
-        ArcTokens.Bind(heading, TextBlock.FontSizeProperty, ArcDesignTokenKind.TypeLG);
-        var detail = new TextBlock { Text = description, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        ArcTokens.Bind(detail, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
-        var panel = new StackPanel { Children = { heading, detail } };
-        ArcTokens.Bind(panel, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
-        var surface = new Border { Child = panel };
-        surface.Classes.Add("console-placeholder");
-        return surface;
     }
 
     private void UpdateShellWidth()

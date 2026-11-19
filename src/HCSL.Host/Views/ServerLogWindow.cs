@@ -61,9 +61,9 @@ public sealed partial class ServerLogWindow : ArcWindow
     {
         this.model = model;
         this.owner = owner;
+        InitializeComponent();
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
-        Title = "服务器控制台"; Width = 1100; Height = 700; MinWidth = 600; MinHeight = 400;
         var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,Auto,*,Auto") };
         TKCode.Arc.ArcTokens.Bind(grid, Grid.RowSpacingProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Space2);
         grid.Children.Add(BuildConsoleToolbar());
@@ -143,7 +143,7 @@ public sealed partial class ServerLogWindow : ArcWindow
             }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Grid.SetRow(query, 3); grid.Children.Add(query);
-        Content = BuildShell(grid);
+        InitializeShell(grid);
         model.PropertyChanged += Changed;
         model.OpenLogs();
         Closed += (_, _) =>
