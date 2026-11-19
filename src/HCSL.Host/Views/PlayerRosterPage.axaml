@@ -30,7 +30,7 @@
                     </DataTemplate>
                   </arc:DataTableColumn.CellTemplate>
                 </arc:DataTableColumn>
-                <arc:DataTableColumn Header="身份" Binding="{Binding Identity}"
+                <arc:DataTableColumn Header="身份" Binding="{Binding Identity}" SortBinding="{Binding IdentityRank}"
                                     Width="{DynamicResource ConsoleTableIdentityWidth}">
                   <arc:DataTableColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:PlayerRow">
@@ -44,7 +44,7 @@
                     </DataTemplate>
                   </arc:DataTableColumn.CellTemplate>
                 </arc:DataTableColumn>
-                <arc:DataTableColumn Header="SteamID" Binding="{Binding SteamIdText}"
+                <arc:DataTableColumn Header="SteamID" Binding="{Binding SteamIdText}" IsSortable="False"
                                     Width="{DynamicResource ConsoleTableSteamIdWidth}">
                   <arc:DataTableColumn.CellTemplate>
                     <DataTemplate x:DataType="vm:PlayerRow">

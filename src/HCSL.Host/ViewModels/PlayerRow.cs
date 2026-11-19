@@ -45,6 +45,9 @@ public sealed class PlayerRow : INotifyPropertyChanged
 
     public BadgeTone IdentityTone => IsAdmin ? BadgeTone.Info : BadgeTone.Neutral;
 
+    /// <summary>Sort order of the identity column: admins first, then guests, then bots.</summary>
+    public int IdentityRank => IsBot ? 2 : IsAdmin ? 0 : 1;
+
     public BadgeTone StateTone =>
         string.Equals(state, "active", StringComparison.OrdinalIgnoreCase) ? BadgeTone.Success : BadgeTone.Info;
 
@@ -65,6 +68,7 @@ public sealed class PlayerRow : INotifyPropertyChanged
         Raise(nameof(IdentityTooltip));
         Raise(nameof(IdentityIcon));
         Raise(nameof(IdentityTone));
+        Raise(nameof(IdentityRank));
     }
 
     public void Update(string state, int ping, string connected)
