@@ -9,5 +9,8 @@
     <ProjectReference Include="../../src/HCSL.Host/HCSL.Host.csproj" />
     <ProjectReference Include="../../build/HCSL.UI.Diagnostics/HCSL.UI.Diagnostics.csproj" />
     <PackageReference Include="Avalonia.Headless" Version="12.1.5" />
+    <!-- The product assembly carries Debug-only Spyglass pieces; the test host must resolve them too. -->
+    <PackageReference Include="TKCode.Spyglass.Agent" Version="0.2.3" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="TKCode.Spyglass.HotReload" Version="0.2.3" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 </Project>
