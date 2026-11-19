@@ -1,6 +1,6 @@
 namespace HCSL.Frontend;
 
-public sealed record ConsoleLogRow(string Id, string Text, DateTimeOffset? ReceivedAt = null)
+public sealed record ConsoleLogRow(string Id, string Text, DateTimeOffset? ReceivedAt = null, bool Echo = false)
 {
     public string DisplayText => ReceivedAt is { } time
         ? "[" + time.ToLocalTime().ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + "] " + Text

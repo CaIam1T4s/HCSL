@@ -3,8 +3,9 @@ public enum ServerState { Idle, Preparing, Starting, LoadingMap, Running, Stoppi
 public enum ServerAction { Start, Status, Logs, Stop, Recover, Deploy, RecoverDeployment, PlanDeployment, Players, Kick }
 public sealed record ServerCommand(ServerAction Action, Guid InstanceId = default, Guid? RunId = null, long AfterSequence = 0, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
 public sealed record ServerStartOptions(Guid InstanceId, int StartTimeoutSeconds = 120, bool AutoDeploy = false, bool AllowLowMemory = false);
-/// <summary>ReceivedAt is the daemon's collection time, not the engine's event time.</summary>
-public sealed record ServerLogLine(long Sequence, string Text, DateTimeOffset? ReceivedAt = null);
+/// <summary>ReceivedAt is the daemon's collection time, not the engine's event time. Echo marks the engine's own
+/// echo of a command the console wrote, so the view can highlight it.</summary>
+public sealed record ServerLogLine(long Sequence, string Text, DateTimeOffset? ReceivedAt = null, bool Echo = false);
 public sealed record ServerSnapshot(Guid? RunId, Guid? InstanceId, ServerState State, bool Active, string Code,
     bool MapLoaded, bool CleanupConfirmed, int? ExitCode, long NextSequence, bool HistoryTruncated, ServerLogLine[] Lines, string? Detail = null, string Mode = "LoopbackLanValidation", bool EffectiveVac = false, string? Map = null, bool MapHistorical = false,
     string BindAddress = "127.0.0.1", NetworkAccessMode Access = NetworkAccessMode.Loopback, ServerNetworkReadiness? NetworkReadiness = null, string[]? ConnectionAddresses = null, ServerPresetIdentity? Preset = null, ServerMapProgress? MapProgress = null, PlayerRoster? PlayerRoster = null);

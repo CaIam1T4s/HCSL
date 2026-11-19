@@ -16,6 +16,20 @@ public static class ServerConsoleTests
             catch (ServerException) { }
         }
         if (JsonSerializer.Deserialize<ServerConsoleCommand>("{\"Text\":\"status\"}")!.ConfirmMutation) throw new Exception("Legacy flag default changed.");
+        var echoAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var echo = new ConsoleEchoWindow();
+        echo.Record("ciallo", echoAt);
+        if (!echo.TryConsume("ciallo", echoAt.AddMilliseconds(200), out var echoed) || echoed != "ciallo")
+            throw new Exception("The engine echo of a written command was not recognized.");
+        if (echo.TryConsume("ciallo", echoAt.AddMilliseconds(300), out _))
+            throw new Exception("One written command marked two log lines.");
+        echo.Record("status", echoAt);
+        if (echo.TryConsume("status", echoAt + ConsoleEcho.Window + TimeSpan.FromSeconds(1), out _))
+            throw new Exception("An echo outside the window was recognized.");
+        if (!ConsoleEcho.Matches("] mp_roundtime 60  ", "mp_roundtime 60"))
+            throw new Exception("Engine prompt characters defeated the echo match.");
+        if (ConsoleEcho.Matches("mp_roundtime 6", "mp_roundtime 60"))
+            throw new Exception("A different command was mistaken for an echo.");
         var unknown = await new ServerClient(new BrokenClient()).SendConsoleAsync(new(Guid.NewGuid(), Guid.NewGuid(), "status"));
         if (unknown.Delivery != ConsoleDelivery.Unknown) throw new Exception("Connection loss must be unknown.");
         var fake = new FakeClient();

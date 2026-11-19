@@ -39,6 +39,8 @@ public sealed class ServerOperations : IAsyncDisposable
     private ServerMapProgress mapProgress = new(ServerMapPhase.None);
     private long? networkWaitSince;
     private long sequence, lastBusy = Stopwatch.GetTimestamp(); private readonly Queue<ServerLogLine> logs = new();
+    /// <summary>Commands just written, so the engine's echo of each one can be marked exactly once.</summary>
+    private readonly ConsoleEchoWindow echoWindow = new();
     // A page must stay well inside the 64 KiB IPC frame even with long lines, and the ring must be
     // large enough that a client paging at its poll interval does not fall behind a chatty server.
     private const int LogPageSize = 128;
@@ -249,24 +251,22 @@ public sealed class ServerOperations : IAsyncDisposable
             if (closing || !active || state is not (ServerState.Starting or ServerState.LoadingMap or ServerState.Running) || cancellation?.IsCancellationRequested == true)
                 return Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-STATE"));
             // Admission is synchronous up to the runtime's first await; stop marks cancellation before any later write.
-            return SendAndRecordAsync(command, ct);
+            return SendAndTrackAsync(command, ct);
         }
     }
 
     /// <summary>
-    /// Writes the command and records it in the log ring. The server does not echo standard input, so the written
-    /// line has to come from here to appear (and be highlighted) in the console at the right place.
+    /// Writes the command and remembers it, so the engine's echo of that line can be marked in the console. The
+    /// echoed line itself comes from the server; HCSL never adds one (sensitive text stays redacted upstream).
     /// </summary>
-    private async Task<ServerConsoleReceipt> SendAndRecordAsync(ServerConsoleCommand command, CancellationToken ct)
+    private async Task<ServerConsoleReceipt> SendAndTrackAsync(ServerConsoleCommand command, CancellationToken ct)
     {
         var receipt = await service.SendConsoleAsync(command, ct);
         if (receipt.Delivery != ConsoleDelivery.Written) return receipt;
-        var text = ConsoleEcho.Line(ServerConsoleRules.Display(command.Text));
         lock (sync)
         {
             if (command.RunId != runId || !active) return receipt;
-            logs.Enqueue(new(++sequence, text, DateTimeOffset.UtcNow));
-            while (logs.Count > LogCapacity) logs.Dequeue();
+            echoWindow.Record(receipt.DisplayText ?? command.Text, DateTimeOffset.UtcNow);
         }
         return receipt;
     }
@@ -310,7 +310,10 @@ public sealed class ServerOperations : IAsyncDisposable
                 if (e.Log != null)
                 {
                     var line = e.Log.Length > 512 ? e.Log[..512] : e.Log;
-                    owner.logs.Enqueue(new(++owner.sequence, line, e.LogReceivedAt ?? DateTimeOffset.UtcNow));
+                    var receivedAt = e.LogReceivedAt ?? DateTimeOffset.UtcNow;
+                    // The engine echoes a written command in its own output; mark that line instead of writing one.
+                    var echo = owner.echoWindow.TryConsume(line, receivedAt, out _);
+                    owner.logs.Enqueue(new(++owner.sequence, line, receivedAt, echo));
                     while (owner.logs.Count > LogCapacity) owner.logs.Dequeue();
                     // The map name only ever appears once, in the launch log; keep it so later status
                     // replies and log pages can still name the running map.

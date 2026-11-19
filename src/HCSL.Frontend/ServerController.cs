@@ -102,7 +102,7 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     /// <summary>Engine lines only. The host no longer injects "&gt; command" rows or its own receipts:
     /// CS2 echoes what it received, and a locally generated sentence cannot be told apart from engine output.</summary>
     public IReadOnlyList<ConsoleLogRow> ConsoleRows =>
-        logLines.Select(l => new ConsoleLogRow("log:" + l.Sequence, l.Text, l.ReceivedAt)).TakeLast(2000).ToArray();
+        logLines.Select(l => new ConsoleLogRow("log:" + l.Sequence, l.Text, l.ReceivedAt, l.Echo)).TakeLast(2000).ToArray();
     public string ConsoleStatus { get; private set; } = "";
     /// <summary>The PTY exists once the run is active; commands such as host_workshop_collection may be
     /// needed before a map is published as ready. A map change still requires Running.</summary>

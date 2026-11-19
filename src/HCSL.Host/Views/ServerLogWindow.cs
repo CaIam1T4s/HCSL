@@ -30,6 +30,8 @@ public sealed partial class ServerLogWindow : ArcWindow
     /// <summary>Bands behind the log text marking lines the console itself wrote; one layer, no selection.</summary>
     private readonly Canvas echoBands = new() { IsHitTestVisible = false };
     private Canvas? echoLayer;
+    /// <summary>Measured lines of the log view: bands are placed on the presenter, never on a guessed row height.</summary>
+    private Avalonia.Controls.Presenters.TextPresenter? textPresenter;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
     private readonly ConsoleLogViewport reading = new();
     private Guid? displayedRun;
@@ -88,7 +90,12 @@ public sealed partial class ServerLogWindow : ArcWindow
                 // The horizontal bar overlays the viewport's last 12px, so the scrollable text itself
                 // needs bottom room; padding on the Textarea only shrinks the frame, not the content.
                 if (text.GetVisualDescendants().OfType<Avalonia.Controls.Presenters.TextPresenter>().FirstOrDefault() is { } presenter)
+                {
                     presenter.Margin = new Thickness(0, 0, 0, 14);
+                    textPresenter = presenter;
+                }
+                // Layout settles after a text change; the bands follow the measured lines, not a stale extent.
+                scroll.LayoutUpdated += (_, _) => PaintEchoBands();
                 scroll.ScrollChanged += (_, e) =>
                 {
                     PaintEchoBands();
@@ -176,26 +183,31 @@ public sealed partial class ServerLogWindow : ArcWindow
         Update();
     }
     /// <summary>
-    /// Paints a tinted band behind every line the console wrote itself. Rows are one visual line each (NoWrap), so
-    /// a row index maps straight to a vertical offset; the layer is repainted on new rows, scroll and resize.
+    /// Paints a tinted band behind every line the engine echoed from a command the console wrote. Positions come
+    /// from the measured text layout (line height, presenter origin), so wrapping, padding or a stale extent cannot
+    /// shift them; the layer is repainted on new rows, on scroll, on resize and after layout.
     /// </summary>
     private void PaintEchoBands()
     {
         if (echoLayer is null) return;
+        // Cheap guard: most repaints (every layout pass) have nothing to draw.
+        var echoCount = 0;
+        for (var i = 0; i < rows.Count; i++) if (rows[i].Echo) echoCount++;
         echoLayer.Children.Clear();
-        if (scroll is null || rows.Count == 0) return;
-        var rowHeight = scroll.Extent.Height / rows.Count;
-        if (!double.IsFinite(rowHeight) || rowHeight <= 0) return;
+        if (echoCount == 0 || textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout) return;
+        var lineHeight = layout.TextLines[0].Height;
+        if (!double.IsFinite(lineHeight) || lineHeight <= 0) return;
+        // The presenter moves with the scroll offset, so row zero is wherever its origin is now.
+        if (textPresenter.TranslatePoint(default, echoLayer) is not { } origin) return;
         var width = echoLayer.Bounds.Width;
-        if (width <= 0) return;
-        var offset = scroll.Offset.Y;
-        var visible = scroll.Viewport.Height;
+        var visible = echoLayer.Bounds.Height;
+        if (width <= 0 || visible <= 0) return;
         for (var i = 0; i < rows.Count; i++)
         {
-            if (!HCSL.Core.ConsoleEcho.IsEcho(rows[i].Text)) continue;
-            var top = i * rowHeight - offset;
-            if (top + rowHeight < 0 || top > visible) continue;
-            var band = new Border { Width = width, Height = rowHeight };
+            if (!rows[i].Echo) continue;
+            var top = origin.Y + i * lineHeight;
+            if (top + lineHeight < 0 || top > visible) continue;
+            var band = new Border { Width = width, Height = lineHeight };
             TKCode.Arc.ArcTokens.Bind(band, Border.BackgroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentSubtle);
             Canvas.SetLeft(band, 0);
             Canvas.SetTop(band, top);
