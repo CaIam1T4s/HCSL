@@ -362,10 +362,6 @@
     <Setter Property="Width" Value="{arc:ArcDesignTokenResource Space1}"/>
     <Setter Property="Height" Value="{arc:ArcDesignTokenResource Space1}"/>
   </Style>
-  <Style Selector="StackPanel.roster-grant-body">
-    <Setter Property="Spacing" Value="{arc:ArcDesignTokenResource Space3}"/>
-    <Setter Property="Margin" Value="{DynamicResource DialogBodyInset}"/>
-  </Style>
   <!-- Both footer buttons take the same Arc size, so their heights line up and neither is sized ad hoc. -->
   <Style Selector="StackPanel.dialog-actions arc|Button">
     <Setter Property="Size" Value="Small"/>

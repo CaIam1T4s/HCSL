@@ -111,12 +111,11 @@
     </arc:Popover>
 
     <arc:Dialog x:Name="GrantDialog" Title="授予管理员" Size="Small" ShowCloseButton="True">
-      <!-- The player is the dialog's description and the group is a labelled field, so the body carries no
-           hand-written prompt line (see the Dialog and Select pages). -->
-      <StackPanel Classes="roster-grant-body">
-        <arc:Select x:Name="GrantGroup" Label="管理组" Placeholder="选择管理组"
-                    SelectionChanged="OnGrantGroupChanged"/>
-      </StackPanel>
+      <!-- The description names the player, so the body is just the field: Arc's body padding already spaces it
+           from the header and the actions, and no extra label or inset is added on top. -->
+      <arc:Select x:Name="GrantGroup" Placeholder="选择管理组" Size="Small"
+                  AutomationProperties.Name="管理组"
+                  SelectionChanged="OnGrantGroupChanged"/>
       <arc:Dialog.Actions>
         <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}"
                     HorizontalAlignment="Right" Classes="dialog-actions">
