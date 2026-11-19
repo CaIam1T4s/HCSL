@@ -108,8 +108,9 @@ internal sealed class SteamCmdOutput(Guid operation, Action<SteamCmdStage, strin
             var transfer = done is null && totalBytes is null
                 ? new TransferProgress(phase, Percent: percent)
                 : TransferProgress.Measure(phase, done, totalBytes, rate);
-            // Ignore partial numeric tokens until the line/progress delimiter arrives.
-            if (complete || number.Success && number.Groups[2].Value == "(")
+            // Ignore partial numeric tokens until the line or the whole byte pair has arrived: a read can
+            // stop right after "progress: 12.50 (", and that half sample has no trustworthy bytes.
+            if (complete || bytes.Success)
                 if (lastProgress != (stage, percent, transfer))
                 {
                     lastProgress = (stage, percent, transfer);
