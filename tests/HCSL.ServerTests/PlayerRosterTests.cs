@@ -37,6 +37,15 @@ public static class PlayerRosterTests
         ];
         var players = PlayerRosterRules.ParsePlayers(block);
         Check(players.Length == 2, $"Pseudo-client or bot row mis-parsed: got {players.Length} rows.");
+        // Past one hour CS2 prints h:mm:ss in the time column; the row must still parse, not vanish.
+        var longSession = PlayerRosterRules.ParsePlayers([
+            "---------players--------",
+            "  id     time ping loss      state   rate adr name",
+            "   0  1:31:42    1    0     active 786432 192.168.0.5:56388 'CaIam1Tas'",
+            "#end"
+        ]);
+        Check(longSession.Length == 1 && longSession[0].Name == "CaIam1Tas" && !longSession[0].IsBot,
+            $"One-hour session time (h:mm:ss) must parse, got {longSession.Length} rows.");
         Check(players[0].IsBot && players[0].Name == "Bank" && players[0].UserId == 0, "Bot row.");
         var human = players.Single(p => !p.IsBot);
         Check(human.UserId == 2 && human.Name == "Player" && human.Address == "192.168.1.10:54456"

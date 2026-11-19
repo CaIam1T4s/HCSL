@@ -35,7 +35,7 @@ public sealed partial class ServerLogWindow
     {
         Classes.Add("wallpaper-shell");
         shellBindings.Add(this.Bind(BackgroundProperty, owner.GetObservable(BackgroundProperty)));
-        shellBindings.Add(this.Bind(WindowBackdrop.ImageSourceProperty, owner.GetObservable(WindowBackdrop.ImageSourceProperty)));
+        // The console keeps its own gradient: a wallpaper image chosen for the main window must not follow here.
         shellBindings.Add(this.Bind(WindowBackdrop.StrengthProperty, owner.GetObservable(WindowBackdrop.StrengthProperty)));
         Closed += (_, _) => { foreach (var binding in shellBindings) binding.Dispose(); shellBindings.Clear(); };
         navigation.Background = null;
@@ -48,7 +48,7 @@ public sealed partial class ServerLogWindow
         var sidebar = new Border { Child = navigation };
         sidebar.Classes.Add("sidebar");
 
-        var players = Placeholder("在线玩家", "玩家列表与操作将在后续步骤接入。");
+        var players = BuildPlayersPage();
         var maps = Placeholder("地图切换", "地图列表与切换操作将在后续步骤接入。");
         players.IsVisible = maps.IsVisible = false;
         var pages = new Grid { Children = { console, players, maps } };
@@ -73,6 +73,9 @@ public sealed partial class ServerLogWindow
         Grid.SetColumnSpan(notifications, 2);
         notifications.ZIndex = 10; // Above the content: toasts must not be hidden under the log viewport or the command input.
         shell.Children.Add(notifications);
+        shell.Children.Add(kickPopover);
+        shell.Children.Add(revokePopover);
+        shell.Children.Add(grantDialog);
         Grid.SetColumn(pages, 1);
         shell.Children.Add(pages);
         shell.Children.Add(BuildShareDialog());

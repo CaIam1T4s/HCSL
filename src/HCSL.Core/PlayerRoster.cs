@@ -36,8 +36,9 @@ public static class PlayerRosterRules
         "\"(?<name>[^\"<]*)<(?<uid>\\d+)><\\[U:1:(?<account>\\d+)\\]><>\"\\s+STEAM USERID validated", RegexOptions.CultureInvariant);
 
     // id  time  ping  loss  state  rate [adr]  'name' — the pseudo-client fails the time column on purpose.
+    // CS2 prints mm:ss under an hour and h:mm:ss after it, so both forms must parse.
     private static readonly Regex Row = new(
-        "^\\s*(?<id>\\d{1,5})\\s+(?<time>BOT|\\d{1,4}:\\d{2})\\s+(?<ping>\\d{1,5})\\s+(?<loss>\\d{1,5})\\s+(?<state>\\S+)\\s+(?<rate>\\d{1,12})(?:\\s+(?<adr>[^\\s']+))?\\s+'(?<name>[^']*)'\\s*$",
+        "^\\s*(?<id>\\d{1,5})\\s+(?<time>BOT|\\d{1,4}:\\d{2}(?::\\d{2})?)\\s+(?<ping>\\d{1,5})\\s+(?<loss>\\d{1,5})\\s+(?<state>\\S+)\\s+(?<rate>\\d{1,12})(?:\\s+(?<adr>[^\\s']+))?\\s+'(?<name>[^']*)'\\s*$",
         RegexOptions.CultureInvariant);
 
     public static string SteamId64FromAccount(long accountId) =>

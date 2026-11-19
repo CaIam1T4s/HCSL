@@ -262,6 +262,10 @@
   <Style Selector="arc|DialogSurface, arc|DrawerSurface, arc|PopoverSurface, arc|MenuSurface, arc|Toast, arc|Tooltip">
     <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
   </Style>
+  <!-- The bubble inherits its text colour from the placement target (a badge, a button); pin it to the theme. -->
+  <Style Selector="arc|Tooltip">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
+  </Style>
   <Style Selector=".elevated-surface Border.surface-shadow">
     <Setter Property="CornerRadius" Value="{arc:ArcDesignTokenResource RadiusPill}"/>
     <Setter Property="arc:ArcMotion.Tracks" Value="True"/>

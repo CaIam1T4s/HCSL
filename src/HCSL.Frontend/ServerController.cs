@@ -48,6 +48,9 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     private PlayerRoster? livePlayerRoster;
     private long lastRosterPoll;
     private int rosterRequestInFlight;
+    private bool rosterFailed;
+    /// <summary>True only after a roster query actually failed; a roster that was never fetched is not a failure.</summary>
+    public bool RosterFailed => connected && rosterFailed;
     /// <summary>Read-only roster for the actual run, never the currently selected instance.</summary>
     public PlayerRoster? LivePlayerRoster => connected && logsVisible && snapshot is { Active: true, State: ServerState.Running }
         && snapshot.RunId == rosterRun && livePlayerRoster is { } roster
@@ -612,6 +615,8 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
                 if (!logsVisible || snapshot?.RunId != run || snapshot.Active != true) return;
                 rosterRun = run;
                 livePlayerRoster = roster;
+                // A missing roster after a successful query is a real answer (no players); only a failed query is an error.
+                rosterFailed = roster is null;
                 Notify();
             }, current);
         }
