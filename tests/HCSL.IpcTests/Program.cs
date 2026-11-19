@@ -136,7 +136,12 @@ try
         ui.InstallTimeoutSeconds = "7200";
         await ui.InstallAsync();
         var installed = await Finished(ui.LastSnapshot!.Id!.Value, ProbeStage.Succeeded);
-        Check(installed.Result?.Code == "HCSL-CS2-OK" && installed.Events.Any(e => e.Percent == 12.5), "installation progress/result missing");
+        // The fake SteamCMD install ships no HCSL baseline inventory, so a Ready install legitimately
+        // reports a pending baseline instead of HCSL-CS2-OK; the install itself must still have succeeded
+        // and produced measured progress.
+        var installedCode = installed.Result?.Code;
+        Check(installedCode is "HCSL-CS2-OK" or "HCSL-CS2-BASELINE-PENDING" && installed.Events.Any(e => e.Percent == 12.5),
+            $"installation progress/result missing: code={installedCode ?? "<none>"} percents=[{string.Join(",", installed.Events.Select(e => e.Percent?.ToString() ?? "null"))}]");
         Check(ui.ServerDirectory == Path.Combine(options.Workspace.LibraryRoot, "server"), "wrong install path displayed");
         await Until(() => Task.FromResult(!ui.Running));
         await ui.ValidateAsync();

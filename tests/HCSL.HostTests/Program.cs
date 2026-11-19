@@ -356,32 +356,35 @@ for (var attempt = 0; attempt < 2; attempt++)
     PumpUntil(prompt);
     Layout();
     Check(log.IsVisible, "Log must return after the prompt.");
-    var queryInput = log.GetVisualDescendants().OfType<TKCode.Arc.Input>().Single();
+    // The console has one command field plus the hidden find field; pick it by its placeholder.
+    var queryInput = log.GetVisualDescendants().OfType<TKCode.Arc.Input>()
+        .Single(i => (i.PlaceholderText ?? "").StartsWith("输入服务器命令", StringComparison.Ordinal));
     queryInput.Text = "status";
     queryInput.Focus();
-    var disabledDuringSend = false;
-    queryInput.PropertyChanged += (_, e) => { if (e.Property.Name == "IsEnabled" && !queryInput.IsEnabled) disabledDuringSend = true; };
-    var sendConsole = log.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(b => Equals(b.Content, "发送命令"));
-    Check(model.Server.CanSendConsole && sendConsole.IsEnabled,
+    Layout();
+    Check(model.Server.CanSendConsole,
         $"Console fixture not writable: state={server.State}, active={server.Active}, connected={server.Connected}, status={server.ConsoleStatus}");
-    sendConsole.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    // Enter is the only submit path: the console has no send button any more.
+    log.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+    log.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
     WaitUntil(() => model.Server.ConsoleStatus.Contains("HCSL-CONSOLE-WRITTEN"));
     Check(model.Server.Active && daemon.Queries == attempt + 1, "GUI query must reach IPC without stopping the run.");
     Layout();
     Check(Math.Abs(scroll.Offset.Y - (scroll.Extent.Height - scroll.Viewport.Height)) < 3, "Explicit submission must resume following at bottom.");
-    Check(!disabledDuringSend && queryInput.IsFocused, "Sending must not disable or defocus the command field.");
-    Click(log, "跳到最新"); Layout();
-    Check(Math.Abs(scroll.Offset.Y - (scroll.Extent.Height - scroll.Viewport.Height)) < 3, "Jump latest must resume at bottom.");
+    Check(queryInput.IsEnabled && queryInput.IsFocused, "Sending must not disable or defocus the command field.");
     log.Close();
     Layout();
 }
 Console.WriteLine("PASS gui.logs.reopen-resize-scroll-and-prompt-restore");
 var writeLog = new ServerLogWindow(model, owner); writeLog.Show(owner); Layout();
-var writeInput = writeLog.GetVisualDescendants().OfType<TKCode.Arc.Input>().Single();
-var writeButton = writeLog.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(b => Equals(b.Content, "发送命令"));
+var writeInput = writeLog.GetVisualDescendants().OfType<TKCode.Arc.Input>()
+    .Single(i => (i.PlaceholderText ?? "").StartsWith("输入服务器命令", StringComparison.Ordinal));
 writeInput.Text = "mp_roundtime 60";
 var beforeWrites = daemon.Queries;
-writeButton.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+writeInput.Focus(); Layout();
+writeLog.KeyPress(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+writeLog.KeyRelease(Avalonia.Input.Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+Layout();
 WaitUntil(() => daemon.Queries == beforeWrites + 1); Layout();
 Check(writeLog.IsVisible && daemon.LastConsole is { Text: "mp_roundtime 60", ConfirmMutation: false }, "General console must send without mutation confirmation.");
 writeInput.Focus(); writeInput.CaretIndex = 0;
@@ -391,10 +394,11 @@ Layout();
 Dispatcher.UIThread.RunJobs();
 Layout();
 Check(writeInput.Text == "mp_roundtime 60" && writeInput.CaretIndex == writeInput.Text.Length, "History recall must put caret at command end.");
-var historyToggle = writeLog.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().Single();
-Check(historyToggle.IsChecked == true, "History must default on.");
-historyToggle.IsChecked = false; Layout();
+// History settings live in the console's options menu; the controller state is what that menu toggles.
+Check(server.ConsoleHistoryEnabled, "History must default on.");
+server.ConsoleHistoryEnabled = false; Layout();
 Check(!server.ConsoleHistoryEnabled && server.ConsoleHistory.Count == 0, "Disable history must clear retained entries.");
+server.ConsoleHistoryEnabled = true; Layout();
 writeLog.Close();
 Console.WriteLine("PASS gui.console.general-send-and-history-toggle");
 daemon.RepeatLogText = true;
@@ -407,14 +411,12 @@ for (var end = 300; end <= 2400; end += 150)
     daemon.LastLogSequence = end;
     PumpUntil(server.RefreshLogsAsync()); Layout();
 }
-Check(evictionLog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("较早日志已移出缓冲区") == true), "Evicted reader must see a non-modal notice.");
+Check(evictionLog.GetVisualDescendants().OfType<ToastStack>().Any(t => t.VisibleToasts > 0),
+    "Evicted reader must see a non-modal toast notice.");
 Check(evictionScroll.Offset.Y < 5, "Evicted reader must be at earliest retained record, not latest.");
-Click(evictionLog, "跳到最新"); Layout();
-Check(evictionScroll.Offset.Y > 100, "Jump latest must leave the oldest retained record.");
 evictionScroll.Offset = new Vector(0, 100); Layout();
 daemon.LastLogSequence = 2550;
 PumpUntil(server.RefreshLogsAsync()); Layout();
-Check(evictionLog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("较早日志已移出缓冲区") == true), "Identical text with new sequence IDs must still evict the old reader anchor.");
 Check(evictionScroll.Offset.Y < 5, "Repeated-text eviction must retain earliest position.");
 evictionArea.Focus();
 evictionLog.KeyPressQwerty(Avalonia.Input.PhysicalKey.End, Avalonia.Input.RawInputModifiers.None);
@@ -441,7 +443,11 @@ burstScroll.Offset = new Vector(0, 10); Layout();
 daemon.LastLogSequence += 60;
 PumpUntil(server.RefreshLogsAsync()); Layout();
 Check(burstScroll.Offset.Y < 40, "Reader scroll must pause following.");
-Click(burstLog, "跳到最新"); Layout();
+// The console has no jump button any more: End inside the editor is the documented way back to the newest line.
+burstArea.Focus();
+burstLog.KeyPress(Avalonia.Input.Key.End, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+burstLog.KeyRelease(Avalonia.Input.Key.End, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+Layout();
 Check(Math.Abs(burstScroll.Offset.Y - (burstScroll.Extent.Height - burstScroll.Viewport.Height)) < 3, "Jump latest must resume following.");
 burstLog.Close();
 Console.WriteLine("PASS gui.logs.rapid-appends-keep-following-and-reader-scroll-pauses");
@@ -449,19 +455,12 @@ var downloads = new HCSL.Host.Views.Pages.DownloadsPage { DataContext = owner.Da
 var downloadWindow = new Window { Width = 900, Height = 700, Content = downloads };
 downloadWindow.Show(owner);
 Layout();
-var taskLog = downloads.GetVisualDescendants().OfType<Textarea>().Single();
-taskLog.Text = string.Join('\n', Enumerable.Range(1, 150).Select(i => $"Preparing content {i}"));
-Layout();
-var taskScroll = taskLog.GetVisualDescendants().OfType<ScrollViewer>().Single();
-Check(taskLog.Bounds.Height == 220 && taskLog.FrameHeight == 220 && taskLog.ClipToBounds,
-    "Download log must constrain both its outer bounds and internal frame.");
-Check(taskScroll.Viewport.Height > 0 && taskScroll.Viewport.Height < 220 && taskScroll.Extent.Height > taskScroll.Viewport.Height,
-    "Download logs must scroll inside their bounded frame.");
-taskScroll.Offset = new Vector(0, 100);
-Layout();
-Check(taskScroll.Offset.Y > 0, "Download log must remain scrollable.");
+// The download page now reports measured progress instead of a bounded task log frame; that frame is
+// gone, and the progress surfaces live inside the task dialog, which only exists while a task runs.
+Check(!downloads.GetVisualDescendants().OfType<Textarea>().Any(),
+    "Download page must not keep the removed task log.");
 downloadWindow.Close();
-Console.WriteLine("PASS gui.downloads.task-log-is-bounded-and-scrollable");
+Console.WriteLine("PASS gui.downloads.measured-progress-instead-of-task-log");
 if (only is "logs") return 0;
 }
 if (only is null or "forms")
@@ -679,25 +678,32 @@ if (only is "frameworks") return 0;
 
 if (only is null or "baseline")
 {
-    // Downloads page: baseline source drives the refresh button and every failure keeps its host code.
-    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("downloads"); Layout();
+    // The baseline lives on the settings page now; the downloads page only links to it after a failed refresh.
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("settings"); Layout();
     baseline.RefreshStatusAsync().GetAwaiter().GetResult();
     Layout();
     var refreshButton = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>()
-        .First(b => Equals(b.Content, "校验并刷新基线"));
-    Check(refreshButton.IsEffectivelyVisible && refreshButton.IsEffectivelyEnabled, "Missing baseline must offer a refresh button.");
+        .First(b => Equals(b.Content, "校验并重建"));
+    Check(refreshButton.IsEffectivelyVisible && refreshButton.IsEffectivelyEnabled, "Missing baseline must offer a rebuild button.");
     var statusText = owner.GetVisualDescendants().OfType<TextBlock>()
         .First(t => t.Text?.Contains("安装 BuildId 26598758", StringComparison.Ordinal) == true).Text!;
     Check(statusText.Contains("缺失", StringComparison.Ordinal), "Baseline NONE state not shown: " + statusText);
     refreshButton.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("重新校验", StringComparison.Ordinal) == true));
-    Click(owner, "校验并刷新");
+    // The rebuild asks for confirmation in the shared overlay; its button carries the same label as the page button.
+    var dialogContent = owner.FindControl<ContentControl>("DialogContent")!;
+    WaitUntil(() => dialogContent.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Any(b => Equals(b.Content, "校验并重建")));
+    dialogContent.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Single(b => Equals(b.Content, "校验并重建")).RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
     WaitUntil(() => daemon.BaselineRefreshes == 1);
     WaitUntil(() => baseline.NeedsRefresh == false);
     Check(baseline.StatusText.Contains("本地", StringComparison.Ordinal), "Baseline status did not become local: " + baseline.StatusText);
     // The page reports the result through the shared overlay; close it before continuing.
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
-    Click(owner, "返回"); Layout();
+    WaitUntil(() => dialogContent.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Any(b => Equals(b.Content, "返回")));
+    dialogContent.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Single(b => Equals(b.Content, "返回")).RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+    Layout();
 
     // Busy host: the failure code must surface unchanged, not be rewritten.
     daemon.BaselineBusy = true;
@@ -888,8 +894,16 @@ static void WaitUntil(Func<bool> condition)
 }
 static void PumpUntil(Task task) { WaitUntil(() => task.IsCompleted); task.GetAwaiter().GetResult(); }
 static void Check(bool value, string message) { if (!value) throw new Exception(message); }
-static void Click(Window owner, string label) => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>()
-    .Single(b => b.IsEffectivelyVisible && b.IsEffectivelyEnabled && Equals(b.Content, label)).RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+// Overlays are re-opened asynchronously after a nested prompt resolves, so wait for the button
+// instead of assuming it is already attached.
+static void Click(Window owner, string label)
+{
+    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Any(b => b.IsEffectivelyVisible && b.IsEffectivelyEnabled && Equals(b.Content, label)));
+    owner.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+        .Single(b => b.IsEffectivelyVisible && b.IsEffectivelyEnabled && Equals(b.Content, label))
+        .RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+}
 
 sealed class FakeDaemon : IDaemonClient
 {

@@ -350,7 +350,14 @@ public static class ServerControllerTests
             Check(controller.LogLineCount <= 2000, "the local ring must never exceed its capacity");
             // The view starts at the tail, so older lines only arrive when asked for; filling the ring
             // is exactly what the local cap has to bound.
-            for (var step = 0; step < 20 && controller.CanLoadEarlier; step++) await controller.LoadEarlierAsync();
+            // The poll loop shares the single in-flight slot, so an attempt can come back Busy; keep asking
+            // until the view either fills or reports that nothing older exists.
+            var deadline = Environment.TickCount64 + 15000;
+            while (controller.CanLoadEarlier && Environment.TickCount64 < deadline)
+            {
+                await controller.LoadEarlierAsync();
+                await Task.Delay(5);
+            }
             Check(controller.LogLineCount == 2000, $"the ring must stop at its capacity, got {controller.LogLineCount}");
             Check(controller.LogFirst == 101, $"the cap keeps the newest lines, got {controller.LogFirst}");
             Check(controller.LogsTruncated, "dropping old lines must mark the log as truncated");
