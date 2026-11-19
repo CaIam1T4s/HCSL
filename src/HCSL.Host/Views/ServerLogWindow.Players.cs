@@ -128,26 +128,8 @@ public sealed partial class ServerLogWindow
         ItemNameOther = "名玩家"
     };
     private readonly ObservableCollection<PlayerRow> playerRows = [];
-    private readonly Popover kickPopover = new() { TriggerMode = PopoverTriggerMode.Manual, Placement = PopoverPlacement.Bottom, Alignment = PopoverAlignment.Start };
-    private readonly TextBlock kickPrompt = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly HoldToConfirm kickHold = new()
-    {
-        Label = "长按踢出",
-        ConfirmedLabel = "已请求踢出",
-        HoldDuration = TimeSpan.FromSeconds(1),
-        Tone = HoldToConfirmTone.Danger,
-        Icon = Lucide.Geometry(LucideIconKind.UserRoundMinus)
-    };
-    private readonly Popover revokePopover = new() { TriggerMode = PopoverTriggerMode.Manual, Placement = PopoverPlacement.Bottom, Alignment = PopoverAlignment.Start };
-    private readonly TextBlock revokePrompt = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly HoldToConfirm revokeHold = new()
-    {
-        Label = "长按移除管理员",
-        ConfirmedLabel = "已移除",
-        HoldDuration = TimeSpan.FromSeconds(1),
-        Tone = HoldToConfirmTone.Danger,
-        Icon = Lucide.Geometry(LucideIconKind.ShieldMinus)
-    };
+    /// <summary>Host for the per-open popovers; they are recreated so each one gets a fresh anchor.</summary>
+    private Grid? shellHost;
     private readonly ArcDialog grantDialog = new() { Title = "授予管理员", Size = ControlSize.Small, ShowCloseButton = true };
     private readonly ArcSelect grantGroup = new() { Placeholder = "选择管理组" };
     private readonly TextBlock grantPrompt = new() { TextWrapping = TextWrapping.Wrap };
@@ -203,20 +185,6 @@ public sealed partial class ServerLogWindow
             CellTemplate = new FuncDataTemplate<PlayerRow>((_, _) => Cell("Connected"))
         });
 
-        kickPopover.Content = BuildHoldBody(kickPrompt, kickHold);
-        revokePopover.Content = BuildHoldBody(revokePrompt, revokeHold);
-        kickHold.Confirmed += async (_, _) => { kickPopover.IsOpen = false; await KickAsync(); };
-        revokeHold.Confirmed += async (_, _) => { revokePopover.IsOpen = false; await RevokeAdminAsync(); };
-        foreach (var popover in new[] { kickPopover, revokePopover })
-        {
-            // The surface has a 12rem minimum by default; these confirms only need their own text width.
-            popover.Styles.Add(new Style(x => x.OfType<PopoverSurface>())
-            {
-                Setters = { new Setter(Layoutable.MinWidthProperty, 0d) }
-            });
-            Grid.SetColumnSpan(popover, 2);
-            popover.ZIndex = 20;
-        }
         grantDialog.Content = BuildGrantBody();
         Grid.SetColumnSpan(grantDialog, 2);
         grantDialog.ZIndex = 21;
@@ -234,7 +202,8 @@ public sealed partial class ServerLogWindow
         playersTable.HorizontalAlignment = HorizontalAlignment.Left;
         playersTable.VerticalAlignment = VerticalAlignment.Stretch;
         playersTable.Width = TableWidth();
-        playersTable.AddHandler(InputElement.PointerPressedEvent, OnPlayerPointerPressed,
+        // Released, not pressed: PlacementMode.Pointer needs the pointer position that ContextRequested also uses.
+        playersTable.AddHandler(InputElement.PointerReleasedEvent, OnPlayerPointerReleased,
             Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         var scroller = new ScrollViewer
         {
@@ -242,7 +211,10 @@ public sealed partial class ServerLogWindow
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
         };
-        var frame = new Border { Child = scroller, ClipToBounds = true };
+        // Content is clipped to the same rounded shape, so a sorted column's tint cannot square off the corners.
+        var clip = new Border { Child = scroller, ClipToBounds = true };
+        ArcTokens.BindCornerRadius(clip, ArcDesignTokenKind.RadiusSurface);
+        var frame = new Border { Child = clip, ClipToBounds = true };
         // The outer frame owns the stroke and the corner radius; the table's own frame stays invisible.
         ArcTokens.Bind(frame, Border.BackgroundProperty, ArcDesignTokenKind.Surface);
         ArcTokens.Bind(frame, Border.BorderBrushProperty, ArcDesignTokenKind.Border);
@@ -271,13 +243,6 @@ public sealed partial class ServerLogWindow
         };
         surface.Bind(Border.PaddingProperty, new DynamicResourceExtension("ConsolePageInset"));
         return surface;
-    }
-
-    private Control BuildHoldBody(TextBlock prompt, HoldToConfirm hold)
-    {
-        var body = new StackPanel { Children = { prompt, hold } };
-        ArcTokens.Bind(body, StackPanel.SpacingProperty, ArcDesignTokenKind.Space3);
-        return body;
     }
 
     private Control BuildGrantBody()
@@ -388,9 +353,9 @@ public sealed partial class ServerLogWindow
     private GlassMenu? playerMenu;
 
     /// <summary>Row actions live in a context menu so the table needs no action column. BOT rows get none.</summary>
-    private void OnPlayerPointerPressed(object? sender, PointerPressedEventArgs e)
+    private void OnPlayerPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (!e.GetCurrentPoint(playersTable).Properties.IsRightButtonPressed) return;
+        if (e.InitialPressMouseButton != MouseButton.Right) return;
         // Cell text is not hit-testable everywhere, so the row is found by position rather than by the event source.
         var point = e.GetPosition(playersTable);
         // Row containers have no data context, so the pointer is mapped to the container band first and the
@@ -437,34 +402,49 @@ public sealed partial class ServerLogWindow
     }
 
     /// <summary>
-    /// A popover anchors once; showing an already open one keeps its first origin. Close it and re-show on the
-    /// dispatcher after the exit starts, so a second row gets a panel at its own position.
+    /// A Popover keeps the anchor of its first show, so a fresh instance is created for every open; it is
+    /// removed again when it closes. The hold button is new too, which also clears its done state.
     /// </summary>
-    private static void ShowAnchored(Popover popover, Control anchor)
+    private void ShowHoldPopover(Control anchor, string prompt, string label, string confirmedLabel,
+        LucideIconKind icon, Func<Task> confirmed)
     {
-        if (!popover.IsOpen)
+        if (shellHost is null) return;
+        var hold = new HoldToConfirm
         {
-            popover.ShowAt(anchor);
-            return;
-        }
-        void Reopen(object? sender, EventArgs args)
+            Label = label,
+            ConfirmedLabel = confirmedLabel,
+            HoldDuration = TimeSpan.FromSeconds(1),
+            Tone = HoldToConfirmTone.Danger,
+            Icon = Lucide.Geometry(icon)
+        };
+        var body = new StackPanel { Children = { new TextBlock { Text = prompt, TextWrapping = TextWrapping.Wrap }, hold } };
+        ArcTokens.Bind(body, StackPanel.SpacingProperty, ArcDesignTokenKind.Space3);
+        var popover = new Popover
         {
-            popover.Closed -= Reopen;
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => popover.ShowAt(anchor),
-                Avalonia.Threading.DispatcherPriority.Background);
-        }
-        popover.Closed += Reopen;
-        popover.Close();
+            TriggerMode = PopoverTriggerMode.Manual,
+            Placement = PopoverPlacement.Bottom,
+            Alignment = PopoverAlignment.Start,
+            Content = body
+        };
+        popover.Styles.Add(new Style(x => x.OfType<PopoverSurface>())
+        {
+            // The surface has a 12rem minimum by default; these confirms only need their own text width.
+            Setters = { new Setter(Layoutable.MinWidthProperty, 0d) }
+        });
+        Grid.SetColumnSpan(popover, 2);
+        popover.ZIndex = 20;
+        popover.Closed += (_, _) => shellHost.Children.Remove(popover);
+        hold.Confirmed += async (_, _) => { popover.IsOpen = false; await confirmed(); };
+        shellHost.Children.Add(popover);
+        popover.ShowAt(anchor);
     }
 
     private void OpenKick(PlayerRow? row, Control anchor)
     {
         if (row is null) return;
         kickTarget = row;
-        kickPrompt.Text = "踢出 " + row.Name + "？";
-        kickHold.CancelHold();
-        kickHold.IsConfirmed = false;
-        ShowAnchored(kickPopover, anchor);
+        ShowHoldPopover(anchor, "踢出 " + row.Name + "？", "长按踢出", "已请求踢出",
+            LucideIconKind.UserRoundMinus, KickAsync);
     }
 
     private void OpenAdminAction(PlayerRow? row, Control anchor)
@@ -473,11 +453,8 @@ public sealed partial class ServerLogWindow
         if (row.IsAdmin)
         {
             revokeTarget = row;
-            revokePrompt.Text = "移除 " + row.Name + " 的管理员身份？";
-            revokeHold.CancelHold();
-            // The done state is sticky; reset it so the next removal can be held again.
-            revokeHold.IsConfirmed = false;
-            ShowAnchored(revokePopover, anchor);
+            ShowHoldPopover(anchor, "移除 " + row.Name + " 的管理员身份？", "长按移除管理员", "已移除",
+                LucideIconKind.ShieldMinus, RevokeAdminAsync);
             return;
         }
         grantTarget = row;

@@ -69,12 +69,11 @@ public sealed partial class ServerLogWindow
                 }, Avalonia.Threading.DispatcherPriority.Loaded);
         };
         var shell = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("Auto,*") };
+        shellHost = shell;
         shell.Children.Add(sidebar);
         Grid.SetColumnSpan(notifications, 2);
         notifications.ZIndex = 10; // Above the content: toasts must not be hidden under the log viewport or the command input.
         shell.Children.Add(notifications);
-        shell.Children.Add(kickPopover);
-        shell.Children.Add(revokePopover);
         shell.Children.Add(grantDialog);
         Grid.SetColumn(pages, 1);
         shell.Children.Add(pages);
