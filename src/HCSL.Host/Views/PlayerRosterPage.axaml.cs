@@ -198,10 +198,15 @@ public sealed partial class PlayerRosterPage : UserControl
     private void OpenGrant(PlayerRow row)
     {
         grantTarget = row;
-        GrantPrompt.Text = "为 " + row.Name + " 选择管理组";
+        GrantDialog.Description = "为 " + row.Name + " 选择管理组";
         GrantGroup.SelectedItem = null;
+        GrantConfirm.IsEnabled = false;
         GrantDialog.IsOpen = true;
     }
+
+    /// <summary>The primary action stays disabled until there is a group to apply.</summary>
+    private void OnGrantGroupChanged(object? sender, SelectionChangedEventArgs e) =>
+        GrantConfirm.IsEnabled = GrantGroup.SelectedItem is string;
 
     private void CloseGrant(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => GrantDialog.IsOpen = false;
 

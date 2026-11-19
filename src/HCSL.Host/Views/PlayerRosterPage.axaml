@@ -111,15 +111,18 @@
     </arc:Popover>
 
     <arc:Dialog x:Name="GrantDialog" Title="授予管理员" Size="Small" ShowCloseButton="True">
+      <!-- The player is the dialog's description and the group is a labelled field, so the body carries no
+           hand-written prompt line (see the Dialog and Select pages). -->
       <StackPanel Classes="roster-grant-body">
-        <TextBlock x:Name="GrantPrompt" TextWrapping="Wrap"/>
-        <arc:Select x:Name="GrantGroup" Placeholder="选择管理组"/>
+        <arc:Select x:Name="GrantGroup" Label="管理组" Placeholder="选择管理组"
+                    SelectionChanged="OnGrantGroupChanged"/>
       </StackPanel>
       <arc:Dialog.Actions>
         <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}"
-                    HorizontalAlignment="Right">
+                    HorizontalAlignment="Right" Classes="dialog-actions">
           <arc:Button Content="取消" Variant="Secondary" Click="CloseGrant"/>
-          <arc:Button Content="确定" Classes="dialog-primary" Click="ConfirmGrant"/>
+          <arc:Button x:Name="GrantConfirm" Content="授予管理员" Classes="dialog-primary"
+                      Click="ConfirmGrant" IsDefault="True" IsEnabled="False"/>
         </StackPanel>
       </arc:Dialog.Actions>
     </arc:Dialog>
