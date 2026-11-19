@@ -34,6 +34,8 @@ public sealed partial class ServerLogWindow
         share.Click += (_, _) => OpenShareDialog();
         options.Click += (_, _) => OpenOptionsMenu(options);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto") };
+        // Same face as the log: the query is text the console will echo back.
+        findInput.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         // Find sits where the console actions start, the way the instance list keeps search at its top left.
         var search = new ElevatedSurface(findInput)
         {

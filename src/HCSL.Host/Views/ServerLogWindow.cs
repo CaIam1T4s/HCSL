@@ -65,11 +65,14 @@ public sealed partial class ServerLogWindow : ArcWindow
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
         var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,*,Auto") };
-        TKCode.Arc.ArcTokens.Bind(grid, Grid.RowSpacingProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Space2);
+        // Tight rhythm: the toolbar, the log and the command input read as one surface.
+        TKCode.Arc.ArcTokens.Bind(grid, Grid.RowSpacingProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Space1);
         grid.Children.Add(BuildConsoleToolbar());
         query.MaxLength = 4096;
         text.Classes.Add("console-log");
         text.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
+        // The command input lines up with the log it feeds, character for character.
+        query.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
         text.AddHandler(KeyDownEvent, (_, e) => { if (e.Key == Avalonia.Input.Key.End) { e.Handled = true; JumpLatest(); } }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Opened += (_, _) =>
         {
