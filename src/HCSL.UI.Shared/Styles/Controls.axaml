@@ -366,6 +366,11 @@
   <Style Selector="StackPanel.dialog-actions arc|Button">
     <Setter Property="Size" Value="Small"/>
   </Style>
+  <!-- HCSL pills float on Arc's elevation (ShadowRaised) instead of a drawn stroke. -->
+  <Style Selector="StackPanel.dialog-actions arc|Button /template/ Border#PART_Frame">
+    <Setter Property="BoxShadow" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
+    <Setter Property="BorderThickness" Value="0"/>
+  </Style>
   <!-- Arc's Primary variant is the foreground fill; HCSL's one considered action carries the accent. -->
   <Style Selector="arc|Button.dialog-primary">
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
