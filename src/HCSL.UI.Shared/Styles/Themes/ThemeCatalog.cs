@@ -45,13 +45,13 @@ public static class ThemeCatalog
         ["ConsolePageInset"] = new Thickness(16),
         // Console player-table column widths. They live with the other shared values because a table column's
         // Auto width measures the sort value, not the templated cell (badge, action buttons).
-        ["ConsoleTablePlayerWidth"] = 220d,
-        ["ConsoleTableIdentityWidth"] = 112d,
-        ["ConsoleTableSteamIdWidth"] = 180d,
-        ["ConsoleTableAddressWidth"] = 160d,
-        ["ConsoleTableStateWidth"] = 96d,
-        ["ConsoleTablePingWidth"] = 96d,
-        ["ConsoleTableConnectedWidth"] = 120d,
+        ["ConsoleTablePlayerWidth"] = 160d,
+        ["ConsoleTableIdentityWidth"] = 104d,
+        ["ConsoleTableSteamIdWidth"] = 150d,
+        ["ConsoleTableAddressWidth"] = 130d,
+        ["ConsoleTableStateWidth"] = 88d,
+        ["ConsoleTablePingWidth"] = 80d,
+        ["ConsoleTableConnectedWidth"] = 100d,
         ThemeDictionaries =
         {
             [ThemeVariant.Light] = CreatePaletteResources(Light),

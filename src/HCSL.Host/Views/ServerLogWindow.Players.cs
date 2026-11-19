@@ -353,10 +353,21 @@ public sealed partial class ServerLogWindow
     private void OnPlayerPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(playersTable).Properties.IsRightButtonPressed) return;
-        if (e.Source is not Control source) return;
-        Control? anchor = source;
-        while (anchor is not null && anchor.DataContext is not PlayerRow) anchor = anchor.GetVisualParent() as Control;
-        if (anchor?.DataContext is not PlayerRow row || row.IsBot) return;
+        // Cell text is not hit-testable everywhere, so the row is found by position rather than by the event source.
+        var point = e.GetPosition(playersTable);
+        Control? rowControl = null;
+        PlayerRow? row = null;
+        foreach (var candidate in playersTable.GetVisualDescendants().OfType<Control>())
+        {
+            if (candidate.DataContext is not PlayerRow found) continue;
+            if (candidate.TranslatePoint(default, playersTable) is not { } origin) continue;
+            // The first control that holds a player and covers the point is the cell/row under the pointer.
+            if (!new Rect(origin, candidate.Bounds.Size).Contains(point)) continue;
+            rowControl = candidate;
+            row = found;
+            break;
+        }
+        if (rowControl is null || row is null || row.IsBot) return;
         e.Handled = true;
         playerMenu?.Close();
         var menu = playerMenu = new GlassMenu { Name = "PlayerRowMenu", Placement = PlacementMode.Pointer };
@@ -367,11 +378,11 @@ public sealed partial class ServerLogWindow
             item.Click += (_, _) => { menu.Close(); action(); };
             menu.Items.Add(item);
         }
-        Entry("踢出玩家", LucideIconKind.UserRoundMinus, () => OpenKick(row, anchor), danger: true);
+        Entry("踢出玩家", LucideIconKind.UserRoundMinus, () => OpenKick(row, rowControl), danger: true);
         Entry(row.IsAdmin ? "移除管理员" : "授予管理员",
             row.IsAdmin ? LucideIconKind.ShieldMinus : LucideIconKind.ShieldPlus,
-            () => OpenAdminAction(row, anchor));
-        menu.Open(anchor);
+            () => OpenAdminAction(row, rowControl));
+        menu.Open(rowControl);
     }
 
     private void OpenKick(PlayerRow? row, Control anchor)
