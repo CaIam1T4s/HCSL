@@ -25,11 +25,12 @@ public sealed partial class ServerLogWindow
 
     private Control BuildConsoleToolbar()
     {
-        var view = new ExpandingButtonGroupItem { Label = "查看", Icon = Lucide.Geometry(LucideIconKind.Eye) };
         var share = new ExpandingButtonGroupItem { Label = "分享", Icon = Lucide.Geometry(LucideIconKind.Send) };
+        var view = new ExpandingButtonGroupItem { Label = "查看", Icon = Lucide.Geometry(LucideIconKind.Eye) };
         var options = new ExpandingButtonGroupItem { Label = "选项", Icon = Lucide.Geometry(LucideIconKind.Settings) };
-        var group = new ExpandingButtonGroup { Label = "控制台操作", Size = ControlSize.Small, DefaultExpandedItem = view };
-        group.Items.Add(view); group.Items.Add(share); group.Items.Add(options);
+        // Arc's Medium group: 36 px actions with 16 px icons; share reads first, on the left.
+        var group = new ExpandingButtonGroup { Label = "控制台操作", Size = ControlSize.Medium, DefaultExpandedItem = view };
+        group.Items.Add(share); group.Items.Add(view); group.Items.Add(options);
         group.Classes.Add("console-actions");        view.Click += (_, _) => OpenViewMenu(view);
         share.Click += (_, _) => OpenShareDialog();
         options.Click += (_, _) => OpenOptionsMenu(options);
