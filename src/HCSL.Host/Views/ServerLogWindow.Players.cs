@@ -123,6 +123,7 @@ public sealed partial class ServerLogWindow
     {
         Caption = "在线玩家",
         EmptyMessage = "暂无玩家",
+        LoadingMessage = "正在读取玩家列表",
         ItemNameOne = "名玩家",
         ItemNameOther = "名玩家"
     };
@@ -250,7 +251,10 @@ public sealed partial class ServerLogWindow
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled
         };
         var frame = new Border { Child = scroller, ClipToBounds = true };
+        // The outer frame owns the stroke and the corner radius; the table's own frame stays invisible.
         ArcTokens.Bind(frame, Border.BackgroundProperty, ArcDesignTokenKind.Surface);
+        ArcTokens.Bind(frame, Border.BorderBrushProperty, ArcDesignTokenKind.Border);
+        ArcTokens.Bind(frame, Border.BorderThicknessProperty, ArcDesignTokenKind.EdgeThickness);
         ArcTokens.BindCornerRadius(frame, ArcDesignTokenKind.RadiusSurface);
         var surface = new Border
         {
