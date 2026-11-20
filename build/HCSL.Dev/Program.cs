@@ -52,6 +52,7 @@ static async Task<int> RunAsync(DevInvocation invocation, JsonSerializerOptions 
     "players" => await PlayersAsync(invocation, json, ct),
     "kick" => await KickAsync(invocation, json, ct),
     "admins" => await AdminsAsync(invocation, json, ct),
+    "pools" => await PoolsAsync(invocation, json, ct),
     "gc" => Gc(invocation),
     "baseline" => Baseline(invocation, json),
     "test" => await TestAsync(invocation, json, ct),
@@ -281,6 +282,154 @@ static (int Offset, int Limit) ParsePageOptions(DevInvocation invocation)
     if (offset < 0) throw new DevUsageException("--offset needs a non-negative integer.");
     return (offset, limit);
 }
+
+/// <summary>
+/// Instance-level map pools: list/show read, the rest write (they need --yes and a stopped server). Pools are shared by
+/// every preset of the instance; deleting one unbinds the presets that used it.
+/// </summary>
+static async Task<int> PoolsAsync(DevInvocation invocation, JsonSerializerOptions json, CancellationToken ct)
+{
+    var workspace = Workspace(invocation);
+    var (entry, preset) = Target(workspace, invocation);
+    var action = invocation.Positionals.Length == 0 ? "list" : invocation.Positionals[0];
+    var (daemonClient, _) = await ConnectAsync(invocation, ct);
+    var client = new InstanceClient(daemonClient);
+    var loaded = await client.MapPoolsAsync(new(MapPoolLibraryAction.List, entry.Id), ct);
+
+    if (action is "list")
+    {
+        if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(loaded, json)); return 0; }
+        var assigned = loaded.Library.PoolOf(preset.Id);
+        Console.WriteLine("instance   " + entry.Definition!.Name + " · pools " + loaded.Library.Pools.Length
+            + " · preset " + preset.Name + " uses " + (assigned?.Name ?? "none"));
+        foreach (var pool in loaded.Library.Pools)
+        {
+            var rotation = MapPoolRules.Rotation(new(1, 0, pool.Maps)) switch
+            {
+                MapPoolRotation.MapGroup => "自动（地图组）",
+                MapPoolRotation.Collection => "自动（合集）",
+                _ => "手工"
+            };
+            Console.WriteLine($"  {pool.Id:D}  {pool.Name,-16} {pool.Maps.Length,3} 张  {rotation}"
+                + (assigned?.Id == pool.Id ? "  ← 本预设" : ""));
+        }
+        return 0;
+    }
+
+    var argument = invocation.Positionals.Length > 1 ? invocation.Positionals[1] : null;
+    MapPoolRecord Resolve(string? nameOrId)
+    {
+        if (nameOrId is null) throw new DevUsageException($"pools {action} needs a pool name or id. Example: hcsl pools add 比赛池 standard-de_dust2 --yes");
+        if (Guid.TryParseExact(nameOrId, "D", out var id)) return loaded.Library.Pools.FirstOrDefault(p => p.Id == id)
+            ?? throw new DevUsageException("No pool with id " + id.ToString("D") + ".");
+        return loaded.Library.Pools.FirstOrDefault(p => string.Equals(p.Name, nameOrId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new DevUsageException("No pool named " + nameOrId + ".");
+    }
+
+    if (action == "show")
+    {
+        var pool = Resolve(argument);
+        if (invocation.Has("--json")) { Console.WriteLine(JsonSerializer.Serialize(pool, json)); return 0; }
+        Console.WriteLine(pool.Id.ToString("D") + "  " + pool.Name);
+        foreach (var map in pool.Maps) Console.WriteLine("  " + ServerMapRules.Label(map));
+        return 0;
+    }
+
+    if (!invocation.Has("--yes")) throw new DevUsageException($"pools {action} changes map pools; add --yes to confirm.");
+    var revision = entry.Definition!.Revision;
+    MapPoolLibraryCommand Command(MapPoolLibraryAction kind, string? name, Guid poolId = default, ServerMapTarget[]? maps = null) =>
+        new(kind, entry.Id, revision, poolId, preset.Id, name, maps, loaded.Library.Revision, loaded.Hash);
+
+    switch (action)
+    {
+        case "create":
+        {
+            var name = argument ?? throw new DevUsageException("pools create needs a name.");
+            var maps = ParseMaps(invocation.Get("--maps"));
+            loaded = await client.MapPoolsAsync(Command(MapPoolLibraryAction.Create, name, maps: maps), ct);
+            Console.WriteLine("created    " + name);
+            return 0;
+        }
+        case "rename":
+        {
+            var pool = Resolve(argument);
+            var name = invocation.Positionals.Length > 2 ? invocation.Positionals[2]
+                : throw new DevUsageException("pools rename needs a new name.");
+            loaded = await client.MapPoolsAsync(Command(MapPoolLibraryAction.Rename, name, pool.Id), ct);
+            Console.WriteLine("renamed    " + pool.Name + " → " + name);
+            return 0;
+        }
+        case "delete":
+        {
+            var pool = Resolve(argument);
+            var unbound = loaded.Library.Assignments.Where(a => a.Value == pool.Id).Select(a => a.Key).ToArray();
+            var response = await client.MapPoolsAsync(Command(MapPoolLibraryAction.Delete, null, pool.Id), ct);
+            Console.WriteLine("deleted    " + pool.Name + " · unbound presets " + unbound.Length);
+            return 0;
+        }
+        case "assign":
+        {
+            var pool = Resolve(argument);
+            loaded = await client.MapPoolsAsync(Command(MapPoolLibraryAction.AssignPreset, null, pool.Id), ct);
+            Console.WriteLine("assigned   " + preset.Name + " → " + pool.Name);
+            return 0;
+        }
+        case "unassign":
+        {
+            loaded = await client.MapPoolsAsync(Command(MapPoolLibraryAction.AssignPreset, null), ct);
+            Console.WriteLine("unassigned " + preset.Name);
+            return 0;
+        }
+        case "add":
+        case "remove":
+        {
+            var pool = Resolve(argument);
+            var targets = invocation.Positionals.Skip(2).Select(ParseMap).ToArray();
+            if (targets.Length == 0) throw new DevUsageException($"pools {action} needs at least one map.");
+            var maps = pool.Maps.ToList();
+            var changed = 0; var skipped = 0;
+            foreach (var target in targets)
+            {
+                var key = MapCatalogRules.KeyOf(target);
+                var present = maps.Any(m => MapCatalogRules.KeyOf(m) == key);
+                if (action == "add" == present) { skipped++; continue; }
+                if (action == "add") maps.Add(target); else maps.RemoveAll(m => MapCatalogRules.KeyOf(m) == key);
+                changed++;
+            }
+            loaded = await client.MapPoolsAsync(Command(MapPoolLibraryAction.SaveMaps, null, pool.Id, maps.ToArray()), ct);
+            Console.WriteLine($"{action,-9}  {pool.Name} · changed {changed} · skipped {skipped}");
+            return 0;
+        }
+        default:
+            throw new DevUsageException("Unknown pools action. Run: hcsl help");
+    }
+}
+
+/// <summary>One map argument: "standard de_dust2", "workshop 123", "collection 123", a bare name or a workshop link.</summary>
+static ServerMapTarget ParseMap(string text)
+{
+    var trimmed = text.Trim();
+    if (trimmed.Length == 0) throw new DevUsageException("Empty map argument.");
+    var parts = trimmed.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (parts.Length == 2)
+    {
+        var kind = parts[0].ToLowerInvariant() switch
+        {
+            "standard" => ServerMapKind.Standard,
+            "workshop" => ServerMapKind.Workshop,
+            "collection" => ServerMapKind.WorkshopCollection,
+            _ => (ServerMapKind)(-1)
+        };
+        if ((int)kind >= 0) return MapPoolRules.Parse(parts[0].ToLowerInvariant() + " " + parts[1]);
+    }
+    if (trimmed.Contains("id=", StringComparison.OrdinalIgnoreCase)) return ServerMapRules.ParseWorkshopInput(trimmed);
+    var target = new ServerMapTarget(ServerMapKind.Standard, trimmed);
+    ServerMapRules.Validate(target);
+    return target;
+}
+
+static ServerMapTarget[] ParseMaps(string? value) =>
+    string.IsNullOrWhiteSpace(value) ? [] : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(ParseMap).ToArray();
 
 static void PrintAdmins(AdminListSnapshot snapshot)
 {

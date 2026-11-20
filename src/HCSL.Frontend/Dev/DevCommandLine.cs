@@ -14,10 +14,10 @@ public static class DevCommandLine
 {
     public static readonly string[] Commands =
     [
-        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "players", "kick", "admins", "baseline"
+        "status", "instances", "plan", "deploy", "recover", "start", "stop", "exec", "logs", "doctor", "plugins", "import", "gc", "test", "frameworks", "players", "kick", "admins", "pools", "baseline"
     ];
 
-    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags", "--key", "--query", "--offset", "--limit"];
+    private static readonly HashSet<string> ValueOptions = ["--instance", "--preset", "--settings", "--data", "--library", "--after", "--run", "--version", "--id", "--name", "--meta", "--install", "--framework", "--reason", "--groups", "--group", "--flags", "--key", "--query", "--offset", "--limit", "--pool", "--maps"];
     private static readonly HashSet<string> FlagOptions = ["--json", "--explain", "--dry-run", "--full-copy", "--reflink", "--confirm-write", "--follow", "--allow-low-memory", "--wait", "--yes", "--force", "--enable", "--recover", "--no-runtime", "--import-cfg", "--probe", "--init-groups", "--root"];
 
     public const string Usage = """
@@ -46,6 +46,12 @@ public static class DevCommandLine
                                  grant <steamid> --groups <name[,name]> [--name <display>] --yes
                                  init-groups creates a conservative group; --root is required for @css/root.
                                  revoke --key <raw key> removes an entry whose identity is unparsable.
+          pools [list|show|create|rename|delete|add|remove|assign|unassign]
+                                 Manage the instance's shared map pools and which pool a preset uses.
+                                 list [--json] · show <pool> · create <name> [--maps "standard de_dust2,workshop 3070244462"]
+                                 rename <pool> <name> · delete <pool> (unbinds presets automatically)
+                                 add|remove <pool> <map...> · assign [--preset <uuid>] <pool> · unassign
+                                 Writes need --yes and a stopped server. Maps accept a workshop link (the id is extracted).
           plugins versions       List every installed package version and size.
           plugins remove <id> <version>
                                  Delete an unused package version (needs --yes; refuses presets).
@@ -143,6 +149,14 @@ public static class DevCommandLine
             throw new DevUsageException($"{command} takes no positional arguments (got '{positionals[0]}'). Run: hcsl help");
         if (command == "kick" && positionals.Count != 1)
             throw new DevUsageException("kick needs exactly one target (userid or SteamID64). Example: hcsl kick 2 --reason \"afk\" --yes");
+        if (command == "pools")
+        {
+            var action = positionals.Count == 0 ? "list" : positionals[0];
+            var minimum = action is "list" or "unassign" ? 1 : action is "show" or "delete" or "assign" ? 2 : action is "create" or "add" or "remove" ? 3 : action is "rename" ? 4 : 99;
+            if (minimum == 99) throw new DevUsageException("pools accepts [list|show|create|rename|delete|add|remove|assign|unassign]. Run: hcsl help");
+            if (positionals.Count < minimum - (action == "list" ? 0 : 0) && action != "list")
+                throw new DevUsageException($"pools {action} is missing arguments. Example: hcsl {Example("pools")}");
+        }
         if (command == "admins" && positionals.Count > 2)
             throw new DevUsageException("admins accepts [list|find|grant|revoke|set-groups|init-groups|reload] and at most one SteamID argument.");
         return new(command, [.. positionals], options);
@@ -155,6 +169,7 @@ public static class DevCommandLine
         "gc" => "gc --yes",
         "kick" => "kick 2 --reason \"afk\" --yes",
         "admins" => "admins grant 76561198000000000 --groups #hcsl/admin --yes",
+        "pools" => "pools add 比赛池 \"standard de_dust2\" --yes",
         "frameworks" => "frameworks --install counterstrikesharp",
         _ => $"{command} --instance 565653a2-28fe-4fce-8bb6-6e231d55ac61"
     };
