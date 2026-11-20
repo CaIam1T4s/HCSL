@@ -49,7 +49,9 @@ public sealed partial class ServerLogWindow
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        ArcTokens.Bind(search, Layoutable.MaxWidthProperty, ArcDesignTokenKind.ContentMaxWidthSM);
+        // A find field is a short query, not a page column: keep it near 256 px so the counter, the step buttons and
+        // the action group at the right never compete for the same space.
+        ArcTokens.Bind(search, Layoutable.MaxWidthProperty, ArcDesignTokenKind.MediaSizeXL);
         ArcTokens.Bind(search, Layoutable.MinWidthProperty, ArcDesignTokenKind.MediaSizeXL);
         ArcTokens.Bind(findResult, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
         // The counter answers "is there more?" without a second look at the log, like an editor's find bar.

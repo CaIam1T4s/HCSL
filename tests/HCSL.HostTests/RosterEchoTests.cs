@@ -72,24 +72,33 @@ public static class RosterEchoTests
     private static void Bands()
     {
         // Row 2 starts two lines below the presenter origin; the band moves with the scroll offset baked into origin.
-        var bands = LogBandLayer.Bands([2], 20, -45, new Size(300, 100));
+        // A zero width means "the whole line", which is what an echo row paints.
+        var whole = new BandSpan(2, 0, 0);
+        var bands = LogBandLayer.Bands([whole], 20, -45, new Size(300, 100));
         if (bands.Count != 1 || bands[0].Y != -5 || bands[0].Height != 20 || bands[0].Width != 300)
-            throw new Exception("An echoed line's band must sit on the measured line height.");
-        if (LogBandLayer.Bands([0], 20, -100, new Size(300, 100)).Count != 0)
+            throw new Exception("An echoed line's band must sit on the measured line height and span the line.");
+        if (LogBandLayer.Bands([new BandSpan(0, 0, 0)], 20, -100, new Size(300, 100)).Count != 0)
             throw new Exception("A line scrolled above the viewport must not be drawn.");
-        if (LogBandLayer.Bands([9], 20, 0, new Size(300, 100)).Count != 0)
+        if (LogBandLayer.Bands([new BandSpan(9, 0, 0)], 20, 0, new Size(300, 100)).Count != 0)
             throw new Exception("A line scrolled below the viewport must not be drawn.");
-        if (LogBandLayer.Bands([0, 1, 2], 20, 0, new Size(300, 100)).Count != 3)
-            throw new Exception("Every visible echoed line must be drawn.");
-        if (LogBandLayer.Bands([0], 0, 0, new Size(300, 100)).Count != 0)
+        if (LogBandLayer.Bands([new BandSpan(0, 0, 0), new BandSpan(1, 0, 0), new BandSpan(2, 0, 0)], 20, 0, new Size(300, 100)).Count != 3)
+            throw new Exception("Every visible band must be drawn.");
+        if (LogBandLayer.Bands([new BandSpan(0, 0, 0)], 0, 0, new Size(300, 100)).Count != 0)
             throw new Exception("A zero line height must draw nothing instead of dividing by zero.");
+        // A match tints only its characters: the rect carries the measured column offset and the text width.
+        var matchBands = LogBandLayer.Bands([new BandSpan(1, 120, 48)], 20, 0, new Size(300, 100));
+        if (matchBands.Count != 1 || matchBands[0].X != 120 || matchBands[0].Width != 48 || matchBands[0].Y != 20)
+            throw new Exception("A match must tint the matched characters, not the whole line.");
+        var clipped = LogBandLayer.Bands([new BandSpan(0, 280, 100)], 20, 0, new Size(300, 100));
+        if (clipped.Count != 1 || clipped[0].Width != 20)
+            throw new Exception("A match running past the viewport must be clipped, not overflow it.");
         // The three band groups share one geometry; a match and an echo line must land on the same line row.
         var group = new LogBandLayer();
-        group.SetBands([1], [1, 2], [2], 20, 0);
-        var echoed = LogBandLayer.Bands([1], 20, 0, new Size(300, 100));
-        var matched = LogBandLayer.Bands([1, 2], 20, 0, new Size(300, 100));
-        var current = LogBandLayer.Bands([2], 20, 0, new Size(300, 100));
-        if (echoed[0] != matched[0] || matched[1] != current[0])
+        group.SetBands([1], [new BandSpan(1, 40, 20), new BandSpan(2, 0, 10)], [new BandSpan(2, 0, 10)], 20, 0);
+        var echoed = LogBandLayer.Bands([new BandSpan(1, 0, 0)], 20, 0, new Size(300, 100));
+        var matched = LogBandLayer.Bands([new BandSpan(1, 40, 20), new BandSpan(2, 0, 10)], 20, 0, new Size(300, 100));
+        var current = LogBandLayer.Bands([new BandSpan(2, 0, 10)], 20, 0, new Size(300, 100));
+        if (echoed[0].Y != matched[0].Y || matched[1] != current[0])
             throw new Exception("Echo, match and current-match bands must share one line grid.");
     }
 }

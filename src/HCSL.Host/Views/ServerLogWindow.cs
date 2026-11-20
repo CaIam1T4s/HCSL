@@ -207,24 +207,15 @@ public sealed partial class ServerLogWindow : ArcWindow
     }
 
     /// <summary>
-    /// Positions the bands behind the log: the engine echo of a written command, every search match, and the current
-    /// match. Positions come from the measured text layout (line height, presenter origin), so wrapping, padding or a
-    /// stale extent cannot shift them. The layer only invalidates visuals, keeping this safe inside layout callbacks.
+    /// Positions the bands behind the log: the engine echo of a written command tints a line, a search match tints only
+    /// the matched characters, and the current match is emphasised. Positions come from the measured text layout, so
+    /// wrapping, padding or a stale extent cannot shift them; the layer only invalidates visuals.
     /// </summary>
     private void PaintBands()
     {
         var echoRows = new List<int>();
         for (var i = 0; i < rows.Count; i++) if (rows[i].Echo) echoRows.Add(i);
-        var matchRows = new List<int>();
-        var currentRows = new List<int>();
-        foreach (var match in matches)
-        {
-            if (match.Row < 0 || match.Row >= rows.Count) continue;
-            if (!matchRows.Contains(match.Row)) matchRows.Add(match.Row);
-        }
-        if (matchIndex >= 0 && matchIndex < matches.Count && matches[matchIndex].Row is var row && row >= 0 && row < rows.Count)
-            currentRows.Add(row);
-        if (echoRows.Count == 0 && matchRows.Count == 0)
+        if (echoRows.Count == 0 && matches.Count == 0)
         {
             bands.IsVisible = false;
             bands.SetBands([], [], [], 0, 0);
@@ -239,8 +230,27 @@ public sealed partial class ServerLogWindow : ArcWindow
         if (!double.IsFinite(lineHeight) || lineHeight <= 0) { bands.IsVisible = false; return; }
         // The presenter moves with the scroll offset, so row zero is wherever its origin is now.
         if (textPresenter.TranslatePoint(default, bands) is not { } origin) { bands.IsVisible = false; return; }
+        var matchSpans = new List<BandSpan>(matches.Count);
+        foreach (var match in matches)
+            if (SpanOf(layout, match) is { } span) matchSpans.Add(span);
+        var currentSpans = new List<BandSpan>(1);
+        if (matchIndex >= 0 && matchIndex < matches.Count && SpanOf(layout, matches[matchIndex]) is { } currentSpan)
+            currentSpans.Add(currentSpan);
         bands.IsVisible = true;
-        bands.SetBands(echoRows, matchRows, currentRows, lineHeight, origin.Y);
+        bands.SetBands(echoRows, matchSpans, currentSpans, lineHeight, origin.Y);
+    }
+
+    /// <summary>The measured horizontal span of one match, so the tint covers the matched characters only.</summary>
+    private static BandSpan? SpanOf(Avalonia.Media.TextFormatting.TextLayout layout, LogMatch match)
+    {
+        if (match.Row < 0 || match.Row >= layout.TextLines.Count) return null;
+        var line = layout.TextLines[match.Row];
+        var start = line.FirstTextSourceIndex + match.Start;
+        var left = line.GetDistanceFromCharacterHit(new Avalonia.Media.CharacterHit(start, 0));
+        var right = line.GetDistanceFromCharacterHit(new Avalonia.Media.CharacterHit(start + match.Length, 0));
+        var width = right - left;
+        if (!double.IsFinite(left) || !double.IsFinite(width) || width <= 0) return null;
+        return new BandSpan(match.Row, left, width);
     }
 
     private static bool IsAtBottom(ScrollViewer viewer) =>
