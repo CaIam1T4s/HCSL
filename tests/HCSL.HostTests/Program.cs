@@ -537,6 +537,7 @@ WaitUntil(() => mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().First
 var mapsTable = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
 var mapsFilter = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single();
 Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page must offer search plus source and pool filters.");
+Check(mapsFilter.Fields.Single(f => f.Id == "pool").Options.Count == 1, "The pool filter must list the instance pools.");
 Check(mapsTable.Columns.Count == 3 && mapsTable.IsSelectable, "The map table needs a checkbox column, name, source and pool membership.");
 var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
 Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图", "添加到图池", "从图池移除" }),
@@ -1067,6 +1068,14 @@ sealed class FakeDaemon : IDaemonClient
             }
             else throw new Exception("Unexpected instance write in GUI fixture.");
             return Task.FromResult(CatalogResponse());
+        }
+        if (request.Kind == RequestKind.MapPoolLibrary)
+        {
+            var pool = new MapPoolRecord(Guid.Parse("11111111-1111-1111-1111-111111111111"), "比赛池",
+                [new ServerMapTarget(ServerMapKind.Standard, "de_dust2")]);
+            var library = new MapPoolLibraryResult(new(1, 2, [pool], new Dictionary<Guid, Guid>()), "library-hash");
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                MapPoolLibraryResultJson: JsonSerializer.Serialize(library)));
         }
         if (request.Kind == RequestKind.MapCatalog)
         {

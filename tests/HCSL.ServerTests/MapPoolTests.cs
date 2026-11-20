@@ -108,6 +108,22 @@ public static class MapPoolTests
         Check(MapCatalogScanner.Build([new MapFile("maps/workshop/01/bad.bsp", 1, null)]).Entries.Length == 0,
             "An invalid Workshop folder name must not become a catalog entry.");
         Check(MapCatalogScanner.Scan(Path.Combine(root, "missing-game")).Entries.Length == 0, "A missing game directory is an empty catalog.");
+        // Instance-level pool library: shared by presets, delete unbinds, names must be unique.
+        var a = new MapPoolRecord(Guid.NewGuid(), "比赛池", [new ServerMapTarget(ServerMapKind.Standard, "de_dust2")]);
+        var b = new MapPoolRecord(Guid.NewGuid(), "练习池", [new ServerMapTarget(ServerMapKind.Workshop, "3070244462")]);
+        var presetA = Guid.NewGuid(); var presetB = Guid.NewGuid();
+        var library = new MapPoolLibrary(1, 0, [a, b], new() { [presetA] = a.Id, [presetB] = b.Id });
+        MapPoolLibraryRules.Validate(library);
+        Check(library.PoolOf(presetA)?.Name == "比赛池" && library.PoolOf(presetB)?.Name == "练习池", "Presets must resolve their assigned pool.");
+        Check(library.PoolOf(Guid.NewGuid()) is null, "An unassigned preset has no pool.");
+        var afterDelete = MapPoolLibraryRules.Delete(library, a.Id, out var unbound);
+        Check(afterDelete.Pools.Length == 1 && unbound.SequenceEqual([presetA]) && afterDelete.PoolOf(presetA) is null,
+            "Deleting a pool must unbind every preset that used it.");
+        Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a, a with { Name = "另一个" }], new())), "HCSL-MAPPOOL-LIBRARY");
+        Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a, a with { Id = Guid.NewGuid() }], new())), "HCSL-MAPPOOL-NAME");
+        Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a], new() { [presetA] = Guid.NewGuid() })), "HCSL-MAPPOOL-LIBRARY");
+        Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a with { Name = " " }], new())), "HCSL-MAPPOOL-NAME");
+        Check(!MapPoolLibraryRules.Names.Valid(new string('x', 41)) && MapPoolLibraryRules.Names.Valid("比赛池"), "Pool name bounds changed.");
         Console.WriteLine("PASS maps.pool-legacy-crud-order-dedup-revisions-hash-copy-isolation-size-link-lock-frame-and-unverified-rotation-gate");
     }
 }

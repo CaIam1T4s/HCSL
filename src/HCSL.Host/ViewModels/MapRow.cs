@@ -11,12 +11,10 @@ public sealed class MapRow : INotifyPropertyChanged
     private bool inPool;
     private string? poolName;
 
-    public MapRow(MapCatalogEntry entry, bool inPool, string? poolName)
+    public MapRow(MapCatalogEntry entry, IReadOnlyList<string> poolNames)
     {
         Entry = entry;
-        this.inPool = inPool;
-        this.poolName = poolName;
-        RebuildPools();
+        SetPools(poolNames);
     }
 
     public MapCatalogEntry Entry { get; }
@@ -42,21 +40,16 @@ public sealed class MapRow : INotifyPropertyChanged
     public BadgeTone SourceTone => Entry.Source == MapCatalogSource.Standard ? BadgeTone.Success
         : Entry.Incomplete ? BadgeTone.Neutral : BadgeTone.Info;
 
-    public void SetPool(string? name)
+    /// <summary>Every pool of the instance that holds this map; the presence stack shows their initials.</summary>
+    public void SetPools(IReadOnlyList<string> names)
     {
-        if (poolName == name) return;
-        poolName = name;
-        inPool = name is not null;
-        RebuildPools();
+        pools.Clear();
+        foreach (var name in names) pools.Add(new PresenceStackViewer(name));
+        poolName = names.Count == 0 ? null : string.Join("、", names);
+        inPool = names.Count > 0;
         Raise(nameof(InPool));
         Raise(nameof(PoolText));
         Raise(nameof(Pools));
-    }
-
-    private void RebuildPools()
-    {
-        pools.Clear();
-        if (poolName is not null) pools.Add(new PresenceStackViewer(poolName));
     }
 
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

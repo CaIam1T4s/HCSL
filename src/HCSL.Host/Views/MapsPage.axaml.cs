@@ -20,7 +20,7 @@ public sealed partial class MapsPage : UserControl
 {
     private readonly ObservableCollection<MapRow> allRows = [], visible = [];
     private MapsPageContext? context;
-    private MapPoolResult? pool;
+    private MapPoolLibraryResult? library;
 
     public MapsPage()
     {
@@ -50,15 +50,16 @@ public sealed partial class MapsPage : UserControl
         try
         {
             var catalog = await ctx.Model.MapCatalogAsync(ctx.InstanceId);
-            pool = await ctx.Model.MapPoolAsync(new(MapPoolAction.Read, ctx.InstanceId, ctx.PresetId));
-            var poolName = "当前图池";
+            library = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.List, ctx.InstanceId));
+            var pools = library.Library.Pools;
             allRows.Clear();
             foreach (var entry in catalog.Entries)
             {
-                var inPool = pool.Pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key);
-                allRows.Add(new MapRow(entry, inPool, inPool ? poolName : null));
+                var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
+                    .Select(p => p.Name).ToArray();
+                allRows.Add(new MapRow(entry, names));
             }
-            FillPoolFilter(poolName);
+            FillPoolFilter(pools.Select(p => p.Name).ToArray());
             Apply();
         }
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
@@ -67,12 +68,12 @@ public sealed partial class MapsPage : UserControl
         }
     }
 
-    private void FillPoolFilter(string poolName)
+    private void FillPoolFilter(IReadOnlyList<string> poolNames)
     {
         var field = Filters.Fields.FirstOrDefault(f => f.Id == "pool");
         if (field is null) return;
         field.Options.Clear();
-        field.Options.Add(new FilterOption { Value = poolName, Label = poolName });
+        foreach (var name in poolNames) field.Options.Add(new FilterOption { Value = name, Label = name });
     }
 
     /// <summary>Source chips, pool chips and the search text all narrow the same catalog.</summary>
@@ -86,7 +87,7 @@ public sealed partial class MapsPage : UserControl
         foreach (var row in allRows)
         {
             if (sources.Count > 0 && !sources.Contains(row.FilterSource)) continue;
-            if (pools.Count > 0 && !row.InPool) continue;
+            if (pools.Count > 0 && !row.Pools.Any(v => pools.Contains(v.Name))) continue;
             if (query.Length > 0 && !row.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
             visible.Add(row);
@@ -182,11 +183,44 @@ public sealed partial class MapsPage : UserControl
         }
     }
 
-    /// <summary>Adds or removes the selection to the preset's pool; entries already in that state are skipped.</summary>
+    /// <summary>
+    /// Adds or removes the selection in one library pool chosen from a glass menu; entries already in that state are
+    /// skipped and reported as a count.
+    /// </summary>
     private async Task ChangePoolAsync(MapsPageContext ctx, MapRow[] rows, bool add)
     {
-        if (pool is not { } loaded) return;
-        var maps = loaded.Pool.Maps.ToList();
+        if (library is not { } loaded || loaded.Library.Pools.Length == 0)
+        {
+            ctx.Notify(new ToastOptions { Title = "还没有图池", Description = "先在实例管理中创建图池", Kind = ToastKind.Warning });
+            return;
+        }
+        var candidates = loaded.Library.Pools.Where(pool => add
+            ? rows.Any(r => !pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == r.Key))
+            : rows.Any(r => pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == r.Key))).ToArray();
+        if (candidates.Length == 0)
+        {
+            ctx.Notify(new ToastOptions
+            {
+                Title = add ? "已在所有图池中" : "不在任何图池中",
+                Description = "没有需要修改的条目", Kind = ToastKind.Info
+            });
+            return;
+        }
+        var menu = new GlassMenu { Placement = Avalonia.Controls.PlacementMode.Bottom };
+        AutomationProperties.SetName(menu, add ? "添加到图池" : "从图池移除");
+        foreach (var pool in candidates)
+        {
+            var item = new GlassMenuItem { Content = pool.Name };
+            item.Click += (_, _) => { menu.Close(); _ = ApplyPoolAsync(ctx, loaded, pool, rows, add); };
+            menu.Items.Add(item);
+        }
+        menu.Open(Selection);
+    }
+
+    private async Task ApplyPoolAsync(MapsPageContext ctx, MapPoolLibraryResult loaded, MapPoolRecord pool,
+        MapRow[] rows, bool add)
+    {
+        var maps = pool.Maps.ToList();
         var changed = 0; var skipped = 0;
         foreach (var row in rows)
         {
@@ -195,24 +229,18 @@ public sealed partial class MapsPage : UserControl
             if (add) maps.Add(row.Target); else maps.RemoveAll(m => MapCatalogRules.KeyOf(m) == row.Key);
             changed++;
         }
-        if (changed == 0)
-        {
-            ctx.Notify(new ToastOptions { Title = add ? "已在图池中" : "不在图池中", Description = "没有需要修改的条目", Kind = ToastKind.Info });
-            return;
-        }
+        if (changed == 0) return;
         try
         {
-            var command = new MapPoolCommand(MapPoolAction.Save, ctx.InstanceId, ctx.PresetId, Maps: maps.ToArray(),
-                ExpectedRevision: loaded.Pool.Revision, ExpectedHash: loaded.Hash);
-            pool = await ctx.Model.MapPoolAsync(command);
+            var command = new MapPoolLibraryCommand(MapPoolLibraryAction.SaveMaps, ctx.InstanceId, PoolId: pool.Id,
+                Maps: maps.ToArray(), ExpectedRevision: loaded.Library.Revision, ExpectedHash: loaded.Hash);
+            library = await ctx.Model.MapPoolsAsync(command);
+            var names = library.Library.Pools;
             foreach (var row in rows)
-            {
-                var present = pool.Pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == row.Key);
-                row.SetPool(present ? "当前图池" : null);
-            }
+                row.SetPools(names.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == row.Key)).Select(p => p.Name).ToArray());
             ctx.Notify(new ToastOptions
             {
-                Title = add ? "已加入图池" : "已从图池移除",
+                Title = (add ? "已加入 " : "已从 ") + pool.Name + (add ? "" : " 移除"),
                 Description = "修改 " + changed + " 张 · 跳过 " + skipped + " 张",
                 Kind = ToastKind.Success
             });

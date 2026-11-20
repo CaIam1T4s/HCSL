@@ -353,6 +353,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),
             RequestKind.MapCatalog => MapCatalog(request),
+            RequestKind.MapPoolLibrary => MapPoolLibrary(request),
             RequestKind.Plugin => Plugin(request),
             RequestKind.PluginImport => PluginImport(request),
             RequestKind.PluginImportProbe => PluginImportProbe(request),
@@ -408,6 +409,22 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result));
         if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
+        return response;
+    }
+    /// <summary>Instance-level pool library; the write gate matches the other map editors.</summary>
+    private LocalResponse MapPoolLibrary(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<MapPoolLibraryCommand>(request.MapPoolLibraryJson ?? "null")
+            ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool library command is required.");
+        if (command.Action != MapPoolLibraryAction.List &&
+            (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
+            throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing map pools.");
+        var result = new LocalMapPoolLibraryStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true,
+            MapPoolLibraryResultJson: JsonSerializer.Serialize(result));
+        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool library response exceeds the IPC frame limit.");
         return response;
     }
     /// <summary>

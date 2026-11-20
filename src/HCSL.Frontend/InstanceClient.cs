@@ -13,6 +13,18 @@ public sealed class InstanceClient(IDaemonClient client)
         return JsonSerializer.Deserialize<MapPoolResult>(response.MapPoolResultJson ?? "null") ?? throw new IOException("Missing map pool result.");
     }
 
+    /// <summary>Instance-level pool library: shared by every preset of that instance.</summary>
+    public async Task<MapPoolLibraryResult> MapPoolsAsync(MapPoolLibraryCommand command, CancellationToken ct = default)
+    {
+        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
+        if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapPoolLibrary,
+            Options: new(hello.Defaults), MapPoolLibraryJson: JsonSerializer.Serialize(command)), ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<MapPoolLibraryResult>(response.MapPoolLibraryResultJson ?? "null")
+            ?? throw new IOException("Missing map pool library result.");
+    }
+
     /// <summary>
     /// Read-only catalog of the maps one instance runtime can offer. The catalog itself is shared by the app; what is
     /// downloaded is a fact of that runtime, which is why the instance id travels with the request.
