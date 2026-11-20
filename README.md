@@ -1,6 +1,6 @@
 <h1 align="center">Hello Counter-Strike! Launcher</h1>
 
-Hello Counter-Strike! Launcher（**HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建
+Hello Counter-Strike! Launcher（**HCSL**）是面向服主与玩家的 Windows / Linux CS2启动器，使用 .NET 10 与 Avalonia 构建
 
 ## 文档目录
 
@@ -65,7 +65,7 @@ bash build/test-fast.sh full
 ## 项目功能
 
 - **实例**：实例管理一个服务端可执行文件的链接，一个预设列表和多个图池列表
-- **配置预设**：预设包含已启用的插件，相关cfg和启用的图池
+- **配置预设**：预设包含已启用的插件和其相关cfg，用户的cfg，和启用的图池
 - **插件与框架**：本地插件包导入、框架安装（Metamod:Source、CounterStrikeSharp、Source2Mod、SwiftlyS2、ModSharp）、版本与依赖校验、部署清单与回滚。
 - **CFG 与地图**：只读 CFG 树浏览与 `exec`、地图池管理与顺序保存、普通地图与工坊地图/合集启动。
 - **服务器控制**：启动、停服、恢复、部署（不启动）、日志分页与跟随、本机控制台、低内存二次确认与退出策略。

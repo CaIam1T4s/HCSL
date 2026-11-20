@@ -124,6 +124,24 @@ public static class MapPoolTests
         Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a], new() { [presetA] = Guid.NewGuid() })), "HCSL-MAPPOOL-LIBRARY");
         Reject(() => MapPoolLibraryRules.Validate(new(1, 0, [a with { Name = " " }], new())), "HCSL-MAPPOOL-NAME");
         Check(!MapPoolLibraryRules.Names.Valid(new string('x', 41)) && MapPoolLibraryRules.Names.Valid("比赛池"), "Pool name bounds changed.");
+        // Deployment prefers the instance library over the legacy per-preset file.
+        var depInstance = Guid.NewGuid(); var depPreset = Guid.NewGuid();
+        var storeJson = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) } };
+        var libRoot = Path.Combine(root, "lib");
+        var instanceDir = Path.Combine(libRoot, "instances", depInstance.ToString("D"));
+        Directory.CreateDirectory(Path.Combine(instanceDir, "presets", depPreset.ToString("D")));
+        var legacyFile = Path.Combine(instanceDir, "presets", depPreset.ToString("D"), "maps.json");
+        File.WriteAllText(legacyFile, JsonSerializer.Serialize(new PresetMapPool(1, 3, [new ServerMapTarget(ServerMapKind.Standard, "de_dust2")]), storeJson));
+        Check(LocalPresetMapPoolStore.ReadForDeployment(legacyFile).Maps.Single().Value == "de_dust2", "Legacy fallback changed.");
+        var assigned = new MapPoolRecord(Guid.NewGuid(), "库池", [new ServerMapTarget(ServerMapKind.Standard, "de_mirage")]);
+        var libraryFile = Path.Combine(instanceDir, "map-pools.json");
+        File.WriteAllText(libraryFile, JsonSerializer.Serialize(new MapPoolLibrary(1, 7, [assigned], new() { [depPreset] = assigned.Id }), storeJson));
+        Check(LocalPresetMapPoolStore.ReadForDeployment(legacyFile).Maps.Single().Value == "de_mirage",
+            "Deployment must use the pool assigned in the instance library.");
+        File.WriteAllText(libraryFile, "{ not json");
+        Check(LocalPresetMapPoolStore.ReadForDeployment(legacyFile).Maps.Single().Value == "de_dust2",
+            "A broken library must fall back to the preset's own pool, not fail the start.");
         Console.WriteLine("PASS maps.pool-legacy-crud-order-dedup-revisions-hash-copy-isolation-size-link-lock-frame-and-unverified-rotation-gate");
     }
 }

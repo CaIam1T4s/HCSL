@@ -6,6 +6,49 @@
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
   <UserControl.Resources>
+    <!-- One row at a time: a compact dot whose fill and ring animate through Arc's tokens and motion levels. -->
+    <ControlTheme x:Key="MapSelectRadio" TargetType="RadioButton">
+      <Setter Property="Width" Value="20"/>
+      <Setter Property="Height" Value="20"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Grid Width="20" Height="20" Background="Transparent">
+            <Border Name="Ring" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                    BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
+                    Background="Transparent"/>
+            <Border Name="Dot" Width="10" Height="10"
+                    CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                    Background="{arc:ArcDesignTokenResource Accent}"
+                    arc:ArcMotion.Tracks="True" Opacity="0"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:checked /template/ Border#Dot">
+        <Setter Property="Opacity" Value="1"/>
+      </Style>
+      <Style Selector="^:checked /template/ Border#Ring">
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}"/>
+      </Style>
+      <Style Selector="^:pointerover /template/ Border#Ring">
+        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource AccentStrong}"/>
+      </Style>
+      <Style Selector="^/template/ Border#Dot:motion-full">
+        <Setter Property="Transitions">
+          <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
+        </Setter>
+      </Style>
+      <Style Selector="^/template/ Border#Dot:motion-reduced">
+        <Setter Property="Transitions">
+          <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
+        </Setter>
+      </Style>
+    </ControlTheme>
+    <DataTemplate x:Key="MapSelectCell" x:DataType="vm:MapRow">
+      <RadioButton Theme="{StaticResource MapSelectRadio}" GroupName="map-selection"
+                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                   HorizontalAlignment="Left" VerticalAlignment="Center"/>
+    </DataTemplate>
     <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
       <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
                  HorizontalAlignment="Left" VerticalAlignment="Center"/>
@@ -49,15 +92,13 @@
                           SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
-        <arc:SelectionToolbarAction Key="add" Label="添加到图池"/>
-        <arc:SelectionToolbarAction Key="remove" Label="从图池移除"/>
       </arc:SelectionToolbar.Actions>
-      <arc:Table x:Name="Table" IsSelectable="True" Caption="地图目录"
+      <arc:Table x:Name="Table" IsSelectable="False" Caption="地图目录"
                  EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
-                 ItemNameOne="张地图" ItemNameOther="张地图"
-                 SelectionChanged="SelectionChanged">
+                 ItemNameOne="张地图" ItemNameOther="张地图">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="360"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="44" CellTemplate="{StaticResource MapSelectCell}"/>
+          <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
           <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
                                CellTemplate="{StaticResource MapSourceCell}"/>
           <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"

@@ -538,23 +538,24 @@ var mapsTable = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().Singl
 var mapsFilter = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single();
 Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page must offer search plus source and pool filters.");
 Check(mapsFilter.Fields.Single(f => f.Id == "pool").Options.Count == 1, "The pool filter must list the instance pools.");
-Check(mapsTable.Columns.Count == 3 && mapsTable.IsSelectable, "The map table needs a checkbox column, name, source and pool membership.");
+Check(mapsTable.Columns.Count == 4 && !mapsTable.IsSelectable, "The map table needs a single-select column, name, source and pool membership.");
 var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
-Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图", "添加到图池", "从图池移除" }),
-    "The bulk bar must offer switch, add and remove.");
-Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Bulk actions must start disabled without a selection.");
+Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图" }),
+    "With one map selectable, the bar must offer only the switch.");
+Check(mapsSelection.Actions.All(a => !a.IsEnabled), "The switch must start disabled without a selection.");
 Check(mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b =>
     Avalonia.Automation.AutomationProperties.GetName(b) == "地图轮换规则"),
     "The rotation rule must be reachable through a named icon button.");
-// The bar's count gates the actions: several rows allow pool edits but not switching.
-mapsSelection.SelectedCount = 3; Layout();
-Check(mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled == false, "Switching several maps must be refused.");
-Check(mapsSelection.Actions.Single(a => a.Key == "add").IsEnabled, "Adding a selection must be offered.");
-// One row: switching becomes available.
-mapsSelection.SelectedCount = 1; Layout();
-Check(mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled, "Switching one map must be offered.");
-mapsSelection.SelectedCount = 0; Layout();
-Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Clearing the selection must disable every bulk action.");
+// Selecting a row enables the switch; choosing another moves the selection instead of adding to it.
+var mapRows = mapsTable.ItemsSource!.Cast<HCSL.Host.ViewModels.MapRow>().ToArray();
+mapRows[1].IsSelected = true; Layout();
+Check(mapRows[1].IsSelected && mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled,
+    "Selecting one map must enable switching it.");
+mapRows[3].IsSelected = true; Layout();
+Check(!mapRows[1].IsSelected && mapRows[3].IsSelected && mapsSelection.SelectedCount == 1,
+    "Selecting another map must move the single selection.");
+mapRows[3].IsSelected = false; Layout();
+Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Clearing the selection must disable the switch.");
 mapsWindow.Close(); Layout();
 Console.WriteLine("PASS gui.maps.catalog-filters-selection-and-rotation-hint");
 if (only is "maps") return 0;

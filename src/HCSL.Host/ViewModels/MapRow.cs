@@ -8,7 +8,7 @@ namespace HCSL.Host.ViewModels;
 public sealed class MapRow : INotifyPropertyChanged
 {
     private readonly List<PresenceStackViewer> pools = [];
-    private bool inPool;
+    private bool inPool, isSelected;
     private string? poolName;
 
     public MapRow(MapCatalogEntry entry, IReadOnlyList<string> poolNames)
@@ -23,6 +23,18 @@ public sealed class MapRow : INotifyPropertyChanged
     public MapCatalogSource Source => Entry.Source;
     public bool Downloaded => !Entry.Incomplete && (Entry.Source == MapCatalogSource.Standard || Entry.SizeBytes > 0 || Entry.WorkshopId is not null && !Entry.Incomplete);
     public bool InPool => inPool;
+
+    /// <summary>The page keeps at most one row selected; the radio column binds here.</summary>
+    public bool IsSelected
+    {
+        get => isSelected;
+        set
+        {
+            if (isSelected == value) return;
+            isSelected = value;
+            Raise(nameof(IsSelected));
+        }
+    }
     public string Key => Entry.Key;
     public ServerMapTarget Target => Entry.Source == MapCatalogSource.Workshop
         ? new(ServerMapKind.Workshop, Entry.WorkshopId!)

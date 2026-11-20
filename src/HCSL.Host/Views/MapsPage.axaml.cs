@@ -13,14 +13,15 @@ namespace HCSL.Host.Views;
 public sealed record MapsPageContext(HostServerController Model, Guid InstanceId, Guid PresetId, Action<ToastOptions> Notify);
 
 /// <summary>
-/// The console's map page: the app-level map catalog filtered and selected through Arc's toolbar blocks, with the
-/// current instance's pool deciding membership. Editable pools stay in the instance editor.
+/// The console's map page: the app-level map catalog filtered through Arc's toolbar blocks. Exactly one map can be
+/// chosen, so the bar carries one action; pool membership is shown, never edited here (that lives in the instance editor).
 /// </summary>
 public sealed partial class MapsPage : UserControl
 {
     private readonly ObservableCollection<MapRow> allRows = [], visible = [];
     private MapsPageContext? context;
     private MapPoolLibraryResult? library;
+    private MapRow? selected;
 
     public MapsPage()
     {
@@ -30,7 +31,7 @@ public sealed partial class MapsPage : UserControl
         ToolTip.SetTip(RulesButton, "仅内置地图和创意工坊合集支持轮换");
         AutomationProperties.SetName(RefreshButton, "刷新地图目录");
         ToolTip.SetTip(RefreshButton, "刷新地图目录");
-        // The bar follows the table's own checkbox column; its count is the only gate for the bulk actions.
+        // Single selection: the bar only ever reports one row, and "select all" has nothing to select.
         Selection.TotalCount = 0;
         Selection.PropertyChanged += (_, e) =>
         {
@@ -57,7 +58,9 @@ public sealed partial class MapsPage : UserControl
             {
                 var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
                     .Select(p => p.Name).ToArray();
-                allRows.Add(new MapRow(entry, names));
+                var row = new MapRow(entry, names);
+                row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
+                allRows.Add(row);
             }
             FillPoolFilter(pools.Select(p => p.Name).ToArray());
             Apply();
@@ -92,63 +95,47 @@ public sealed partial class MapsPage : UserControl
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
             visible.Add(row);
         }
-        Selection.TotalCount = visible.Count;
-        Selection.SelectedCount = Table.SelectedItems?.Count ?? 0;
+        Selection.SelectedCount = selected is { IsSelected: true } ? 1 : 0;
         UpdateActions();
     }
 
-    private void UpdateActions()
+    /// <summary>Only one row may be chosen: choosing another clears the previous one, hiding it clears the bar.</summary>
+    private void Choose(MapRow row)
     {
-        // The bar's own count is the single source: the table's selection feeds it, and a test (or a future bulk
-        // selection) can drive it directly.
-        var selected = Selection.SelectedCount;
-        foreach (var action in Selection.Actions)
-            action.IsEnabled = action.Key switch
-            {
-                "switch" => selected == 1,
-                "add" => selected >= 1,
-                "remove" => selected >= 1,
-                _ => true
-            };
+        if (row.IsSelected)
+        {
+            selected = row;
+            foreach (var other in allRows)
+                if (!ReferenceEquals(other, row) && other.IsSelected) other.IsSelected = false;
+            Selection.SelectedCount = 1;
+        }
+        else if (ReferenceEquals(selected, row))
+        {
+            selected = null;
+            Selection.SelectedCount = 0;
+        }
+        UpdateActions();
     }
+
+    private void UpdateActions() =>
+        Selection.Actions.Single(a => a.Key == "switch").IsEnabled = selected is { IsSelected: true };
 
     private void FiltersChanged(object? sender, FilterToolbarFiltersChangedEventArgs e) => Apply();
 
-    private void SelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
+    private void SelectAll(object? sender, RoutedEventArgs e) { }
+
+    private void ClearSelection(object? sender, RoutedEventArgs e)
     {
-        Selection.SelectedCount = Table.SelectedItems?.Count ?? 0;
+        foreach (var row in allRows) row.IsSelected = false;
+        selected = null;
+        Selection.SelectedCount = 0;
         UpdateActions();
     }
 
-    private void SelectAll(object? sender, RoutedEventArgs e) => Table.SelectAll();
-
-    private void ClearSelection(object? sender, RoutedEventArgs e) => Table.ClearSelection();
-
     private async void Invoked(object? sender, SelectionToolbarActionEventArgs e)
     {
-        if (context is not { } ctx) return;
-        var chosen = Table.SelectedItems?.OfType<MapRow>().ToArray() ?? [];
-        try
-        {
-            switch (e.Action.Key)
-            {
-                case "switch" when chosen.Length == 1:
-                    await SwitchAsync(ctx, chosen[0]);
-                    break;
-                case "add":
-                    await ChangePoolAsync(ctx, chosen, add: true);
-                    break;
-                case "remove":
-                    await ChangePoolAsync(ctx, chosen, add: false);
-                    break;
-            }
-        }
-        finally
-        {
-            Table.ClearSelection();
-            Selection.SelectedCount = 0;
-            UpdateActions();
-        }
+        if (context is not { } ctx || e.Action.Key != "switch" || selected is not { } row) return;
+        await SwitchAsync(ctx, row);
     }
 
     /// <summary>The switch only writes the command; loading and downloading are reported by the server log.</summary>
@@ -161,8 +148,7 @@ public sealed partial class MapsPage : UserControl
         }
         try
         {
-            var receipt = await new ServerMapClient(ctx.Model.Server)
-                .ChangeAsync(ctx.InstanceId, run, row.Target);
+            var receipt = await new ServerMapClient(ctx.Model.Server).ChangeAsync(ctx.InstanceId, run, row.Target);
             if (receipt is null)
             {
                 ctx.Notify(new ToastOptions { Title = "换图投递结果未知", Description = "下一次状态轮询前无法确认", Kind = ToastKind.Warning });
@@ -180,74 +166,6 @@ public sealed partial class MapsPage : UserControl
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
         {
             ctx.Notify(new ToastOptions { Title = "换图失败", Description = e.Message, Kind = ToastKind.Error });
-        }
-    }
-
-    /// <summary>
-    /// Adds or removes the selection in one library pool chosen from a glass menu; entries already in that state are
-    /// skipped and reported as a count.
-    /// </summary>
-    private async Task ChangePoolAsync(MapsPageContext ctx, MapRow[] rows, bool add)
-    {
-        if (library is not { } loaded || loaded.Library.Pools.Length == 0)
-        {
-            ctx.Notify(new ToastOptions { Title = "还没有图池", Description = "先在实例管理中创建图池", Kind = ToastKind.Warning });
-            return;
-        }
-        var candidates = loaded.Library.Pools.Where(pool => add
-            ? rows.Any(r => !pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == r.Key))
-            : rows.Any(r => pool.Maps.Any(m => MapCatalogRules.KeyOf(m) == r.Key))).ToArray();
-        if (candidates.Length == 0)
-        {
-            ctx.Notify(new ToastOptions
-            {
-                Title = add ? "已在所有图池中" : "不在任何图池中",
-                Description = "没有需要修改的条目", Kind = ToastKind.Info
-            });
-            return;
-        }
-        var menu = new GlassMenu { Placement = Avalonia.Controls.PlacementMode.Bottom };
-        AutomationProperties.SetName(menu, add ? "添加到图池" : "从图池移除");
-        foreach (var pool in candidates)
-        {
-            var item = new GlassMenuItem { Content = pool.Name };
-            item.Click += (_, _) => { menu.Close(); _ = ApplyPoolAsync(ctx, loaded, pool, rows, add); };
-            menu.Items.Add(item);
-        }
-        menu.Open(Selection);
-    }
-
-    private async Task ApplyPoolAsync(MapsPageContext ctx, MapPoolLibraryResult loaded, MapPoolRecord pool,
-        MapRow[] rows, bool add)
-    {
-        var maps = pool.Maps.ToList();
-        var changed = 0; var skipped = 0;
-        foreach (var row in rows)
-        {
-            var present = maps.Any(m => MapCatalogRules.KeyOf(m) == row.Key);
-            if (add == present) { skipped++; continue; }
-            if (add) maps.Add(row.Target); else maps.RemoveAll(m => MapCatalogRules.KeyOf(m) == row.Key);
-            changed++;
-        }
-        if (changed == 0) return;
-        try
-        {
-            var command = new MapPoolLibraryCommand(MapPoolLibraryAction.SaveMaps, ctx.InstanceId, PoolId: pool.Id,
-                Maps: maps.ToArray(), ExpectedRevision: loaded.Library.Revision, ExpectedHash: loaded.Hash);
-            library = await ctx.Model.MapPoolsAsync(command);
-            var names = library.Library.Pools;
-            foreach (var row in rows)
-                row.SetPools(names.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == row.Key)).Select(p => p.Name).ToArray());
-            ctx.Notify(new ToastOptions
-            {
-                Title = (add ? "已加入 " : "已从 ") + pool.Name + (add ? "" : " 移除"),
-                Description = "修改 " + changed + " 张 · 跳过 " + skipped + " 张",
-                Kind = ToastKind.Success
-            });
-        }
-        catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
-        {
-            ctx.Notify(new ToastOptions { Title = "修改图池失败", Description = e.Message, Kind = ToastKind.Error });
         }
     }
 

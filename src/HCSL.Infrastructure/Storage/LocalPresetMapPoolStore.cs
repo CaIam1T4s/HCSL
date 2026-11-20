@@ -67,7 +67,40 @@ public sealed class LocalPresetMapPoolStore : IPresetMapPoolStore
             throw new InstanceException("HCSL-MAPPOOL-CONFLICT", "maps.json changed. Reload before saving; draft was not saved.");
     }
     internal static void ValidateForCopy(string file) => _ = Read(file);
-    internal static PresetMapPool ReadForDeployment(string file) => Read(file).Pool;
+    /// <summary>Deployment reads a preset's pool: the instance library wins, the legacy per-preset file is the fallback.</summary>
+    internal static PresetMapPool ReadForDeployment(string file)
+    {
+        var presetDirectory = Path.GetDirectoryName(Path.GetFullPath(file));
+        // <instance>/presets/<presetId>/maps.json: the instance directory is two levels above the file's folder.
+        var instance = presetDirectory is null ? null : Path.GetDirectoryName(Path.GetDirectoryName(presetDirectory));
+        if (presetDirectory is not null && instance is not null &&
+            Guid.TryParseExact(Path.GetFileName(presetDirectory), "D", out var presetId))
+        {
+            var libraryFile = Path.Combine(instance, "map-pools.json");
+            if (File.Exists(libraryFile) && TryReadLibraryPool(libraryFile, presetId) is { } assigned) return assigned;
+        }
+        return Read(file).Pool;
+    }
+
+    /// <summary>The assigned pool of one preset from the instance library; null when it has none or the file is unreadable.</summary>
+    private static PresetMapPool? TryReadLibraryPool(string libraryFile, Guid presetId)
+    {
+        try
+        {
+            Safe(libraryFile);
+            if (new FileInfo(libraryFile).Length > 256 * 1024) return null;
+            var library = JsonSerializer.Deserialize<MapPoolLibrary>(File.ReadAllBytes(libraryFile), Json);
+            if (library is null) return null;
+            MapPoolLibraryRules.Validate(library);
+            var pool = library.PoolOf(presetId);
+            return pool is null ? null : new PresetMapPool(1, library.Revision, pool.Maps);
+        }
+        catch (Exception e) when (e is InstanceException or IOException or UnauthorizedAccessException or JsonException)
+        {
+            // A broken library must not stop a start: the preset's own maps.json still describes a valid pool.
+            return null;
+        }
+    }
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
     private static MapPoolResult Read(string file)
     {
