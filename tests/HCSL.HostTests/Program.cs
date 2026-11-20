@@ -464,20 +464,23 @@ var findField = findLog.GetVisualDescendants().OfType<TKCode.Arc.SearchField>().
 findField.Text = "REPEAT"; Layout();
 var expectedMatches = model.Server.ConsoleRows.Count(r => r.Text.Contains("repeat", StringComparison.Ordinal));
 Check(expectedMatches > 100, $"The fixture must hold enough repeated lines, got {expectedMatches}.");
-Check(CounterText() == "1 / " + expectedMatches, $"Case-insensitive find must count every row: got '{CounterText()}' for {expectedMatches} lines.");
-Check(findScroll.Offset.Y < 5, "The first match must bring its line into view and pause following.");
+// Typing does not move the reader: the selected match is the first one in the visible range, near the tail here.
+var typedCounter = CounterText();
+var typedIndex = int.Parse(typedCounter.Split(" / ")[0]);
+Check(typedCounter.EndsWith(" / " + expectedMatches, StringComparison.Ordinal) && typedIndex > expectedMatches - 60,
+    $"Typing must select the match nearest the viewport: got '{typedCounter}'.");
+Check(Math.Abs(findScroll.Offset.Y - (findScroll.Extent.Height - findScroll.Viewport.Height)) < 3, "Typing must not scroll the log.");
 var bandLayer = findLog.GetVisualDescendants().OfType<HCSL.Host.Views.LogBandLayer>().First();
 Check(bandLayer.IsVisible, "Matches must draw bands behind the matched lines.");
 var stepNext = findLog.GetVisualDescendants().OfType<TKCode.Arc.Button>()
     .Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "下一个匹配");
 stepNext.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
-Check(CounterText() == "2 / " + expectedMatches, $"Next must advance the counter: got '{CounterText()}'.");
+Check(CounterText() == (typedIndex + 1) + " / " + expectedMatches, $"Next must advance one match: got '{CounterText()}'.");
+Check(findScroll.Offset.Y > 0, "Stepping must keep the current match in view.");
 var stepPrevious = findLog.GetVisualDescendants().OfType<TKCode.Arc.Button>()
     .Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "上一个匹配");
 stepPrevious.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
-Check(CounterText() == "1 / " + expectedMatches, "Previous must step back.");
-stepPrevious.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
-Check(CounterText() == expectedMatches + " / " + expectedMatches, "Previous on the first match must wrap to the last one.");
+Check(CounterText() == typedIndex + " / " + expectedMatches, "Previous must step back to the previous match.");
 // The case option is an Arc toggle group: pressing it re-runs the search with Ordinal matching.
 var caseOption = findLog.GetVisualDescendants().OfType<TKCode.Arc.ToggleGroupItem>().First();
 // Keyboard path: the option is a real toggle, so Space must press it without relying on pointer hit testing.
@@ -490,7 +493,7 @@ Check(!bandLayer.IsVisible, "No match must leave no bands behind.");
 findLog.KeyPress(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
 findLog.KeyRelease(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
 Layout();
-Check(CounterText() == "1 / " + expectedMatches, "Releasing the case option must restore the matches.");
+Check(CounterText().EndsWith(" / " + expectedMatches, StringComparison.Ordinal), "Releasing the case option must restore the matches.");
 findField.Text = ""; Layout();
 Check(CounterText() == "", "Clearing the query must clear the counter.");
 findLog.Close();

@@ -218,18 +218,16 @@ public sealed partial class ServerLogWindow : ArcWindow
         if (echoRows.Count == 0 && matches.Count == 0)
         {
             bands.IsVisible = false;
-            bands.SetBands([], [], [], 0, 0);
+            bands.SetBands([], [], [], 0, 0, 0, default);
             return;
         }
-        if (textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout)
+        if (textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout || scroll is null)
         {
             bands.IsVisible = false;
             return;
         }
         var lineHeight = layout.TextLines[0].Height;
         if (!double.IsFinite(lineHeight) || lineHeight <= 0) { bands.IsVisible = false; return; }
-        // The presenter moves with the scroll offset, so row zero is wherever its origin is now.
-        if (textPresenter.TranslatePoint(default, bands) is not { } origin) { bands.IsVisible = false; return; }
         var matchSpans = new List<BandSpan>(matches.Count);
         foreach (var match in matches)
             if (SpanOf(layout, match) is { } span) matchSpans.Add(span);
@@ -237,7 +235,9 @@ public sealed partial class ServerLogWindow : ArcWindow
         if (matchIndex >= 0 && matchIndex < matches.Count && SpanOf(layout, matches[matchIndex]) is { } currentSpan)
             currentSpans.Add(currentSpan);
         bands.IsVisible = true;
-        bands.SetBands(echoRows, matchSpans, currentSpans, lineHeight, origin.Y);
+        // Scroll offset, not the presenter's translation: both axes move the bands with the text.
+        bands.SetBands(echoRows, matchSpans, currentSpans, lineHeight,
+            scroll.Offset.X, scroll.Offset.Y, scroll.Viewport);
     }
 
     /// <summary>The measured horizontal span of one match, so the tint covers the matched characters only.</summary>

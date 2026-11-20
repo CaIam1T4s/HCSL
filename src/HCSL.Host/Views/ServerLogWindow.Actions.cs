@@ -82,12 +82,13 @@ public sealed partial class ServerLogWindow
         {
             Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
             Classes = { "console-searchbar" },
-            Children = { search, findResult, previous, next, caseGroup }
+            // Steps first, counter last: the buttons stay next to the field, the number changes next to nothing.
+            Children = { search, previous, next, findResult, caseGroup }
         };
-        ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
+        ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space1);
         toolbar.Children.Add(searchRow);
         Grid.SetColumn(group, 1); toolbar.Children.Add(group);
-        findInput.TextChanged += (_, _) => RecomputeMatches(reset: true);
+        findInput.TextChanged += (_, _) => RecomputeMatches(reset: true, jump: false);
         // Tunnel first: the field would otherwise swallow Enter as SearchSubmitted and Escape as a clear.
         findInput.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
@@ -260,17 +261,30 @@ public sealed partial class ServerLogWindow
         rows.Select(r => showTimestamps ? r.DisplayText : r.Text).ToArray();
 
     /// <summary>
-    /// Scans the rows the log shows and keeps the current match when the query did not change. Callers that only
-    /// refreshed the rows pass <c>jump: false</c>, so a poll never moves the reader.
+    /// Scans the rows the log shows. A fresh query starts at the match nearest the reader's viewport instead of the
+    /// first match in the file; callers that only refreshed the rows pass <c>jump: false</c>, so a poll never moves them.
     /// </summary>
     private void RecomputeMatches(bool reset = false, bool jump = true)
     {
         var query = findInput.Text;
         matches = LogSearch.Find(LineTexts(), query, matchCase);
-        matchIndex = matches.Count > 0 ? (reset ? 0 : Math.Clamp(matchIndex, 0, matches.Count - 1)) : -1;
+        matchIndex = matches.Count == 0 ? -1 : reset ? NearestMatch() : Math.Clamp(matchIndex, 0, matches.Count - 1);
         findResult.Text = query is { Length: > 0 } ? LogSearch.Counter(matches.Count, matchIndex) : "";
         PaintBands();
         if (jump && matchIndex >= 0) JumpToMatch();
+    }
+
+    /// <summary>The first match at or below the top visible line, so typing continues where the reader is looking.</summary>
+    private int NearestMatch()
+    {
+        if (matches.Count == 0) return -1;
+        if (textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout || scroll is null) return 0;
+        var lineHeight = layout.TextLines[0].Height;
+        if (!double.IsFinite(lineHeight) || lineHeight <= 0) return 0;
+        var topRow = (int)Math.Floor(Math.Max(0, scroll.Offset.Y) / lineHeight);
+        for (var i = 0; i < matches.Count; i++)
+            if (matches[i].Row >= topRow) return i;
+        return 0;
     }
 
     /// <summary>Moves to the next or previous match, wrapping; the log stops following the tail while reading.</summary>
