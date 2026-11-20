@@ -1,6 +1,6 @@
 <h1 align="center">Hello Counter-Strike! Launcher</h1>
 
-Hello Counter-Strike! Launcher（**HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建。
+Hello Counter-Strike! Launcher（**HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建
 
 ## 文档目录
 
@@ -13,26 +13,27 @@ Hello Counter-Strike! Launcher（**HCSL**）是面向 CS2 服主与玩家的 Win
 
 ## 项目简介
 
-项目包含三个前端和一个本机宿主：
+本项目当前使用 Avalonia 12.1.5 与 TKCode.Arc 1.1.0构建
+
+项目包含三个前端，一个服务端宿主和一个CLI工具：
 
 - **服务端GUI**（`HCSL.Host`）：提供服务端下载，管理和运行，使用实例来隔离进行插件和配置隔离
 - **服务端TUI**（`HCSL.Tui`）：无桌面环境下的终端管理界面，提供GUI支持的全部功能，支持ssh远程终端使用
-- **玩家客户端**（`HCSL.Client`）：查看保存的服务器列表，提供相比CS2原本命令行更直观的进服操作，不
-- **本机 Daemon**（`HCSL.Daemon`）：持有服务器进程与 SteamCMD 任务，通过本机 IPC 为 GUI/TUI 提供能力。
+- **玩家客户端**（`HCSL.Client`）：查看保存的服务器列表，提供相比CS2原本命令行更直观的进服操作，对所有已知ip和密码的CS2服务器都适用
+- **本机 Daemon**（`HCSL.Daemon`）：在服务端启动时自动启动，持有服务器进程与 SteamCMD 任务，通过本机 IPC 为 GUI/TUI 提供能力，已包含在服务端GUI/TUI的release中
+- **命令行调试工具**（`build/HCSL.dev`）：为方便开发者调试使用的CLI工具，不包含在Release中
 
-实例只保存配置、插件与预设，CS2 服务端由全局内容库统一安装和更新。
-
-> 本项目与 Valve 无关联，未获 Valve 背书。Counter-Strike 及相关商标归 Valve 所有。
+> 本项目与 Valve 无关联，未获 Valve 背书。Counter-Strike 及相关商标归 Valve 所有
 
 ## 快速开始
 
 ### 环境要求
 
-- .NET 10 SDK（开发与框架依赖版运行都需要）。
-- Windows：无额外系统依赖。
-- Linux：Avalonia GUI 需要 X11 相关系统库（如 `libx11`、`libfontconfig`），TUI 需要支持 UTF-8 的终端。
+- .NET 10 SDK（开发与框架依赖版运行都需要）
+- Windows：无额外系统依赖
+- Linux：Avalonia GUI 需要 X11 相关系统库（如 `libx11`、`libfontconfig`），TUI 需要支持 UTF-8 的终端
 
-### 构建与运行
+### 从源码构建并运行
 
 ```sh
 git clone https://github.com/CaIam1T4s/Hello_Counter_Strike_Launcher.git
@@ -51,22 +52,20 @@ dotnet run --project src/HCSL.Tui
 dotnet run --project src/HCSL.Client
 ```
 
-GUI/TUI 启动时会自动连接或拉起随附的 Daemon；下载中心可以重试连接。构建与测试命令：
+测试：
 
 ```sh
 bash build/test-fast.sh full
 ```
 
-当前使用 Avalonia 12.1.5 与 TKCode.Arc 1.1.0（最新稳定版）。Arc 已不再使用预览依赖，后续升级仍需验证 API 与主题兼容性。
-
 ### 数据位置
 
-设置、私有数据、实例与内容库分别管理。新内容库默认位于用户主目录的 `HCSL-Library`，已有工作区继续使用保存的位置，不自动迁移。
+设置、私有数据、实例与内容库分别管理。内容库默认位于用户主目录的 `HCSL-Library`文件夹下
 
 ## 项目功能
 
-- **界面**：HMCL 风格分组侧栏、自绘标题栏、浅色/深色/跟随系统主题、自定义背景、侧栏毛玻璃，主题与背景设置仅在当前会话生效。
-- **实例与配置预设**：实例创建/编辑/删除、JSON 持久化；一个实例可有多套配置预设，一次运行一套，切换前需停服。
+- **实例**：实例管理一个服务端可执行文件的链接和
+- **配置预设**：一个实例可持有多个配置预设，一次运行使用一个预设，切换前需停服
 - **插件与框架**：本地插件包导入、框架安装（Metamod:Source、CounterStrikeSharp、Source2Mod、SwiftlyS2、ModSharp）、版本与依赖校验、部署清单与回滚。
 - **CFG 与地图**：只读 CFG 树浏览与 `exec`、地图池管理与顺序保存、普通地图与工坊地图/合集启动。
 - **服务器控制**：启动、停服、恢复、部署（不启动）、日志分页与跟随、本机控制台、低内存二次确认与退出策略。
@@ -77,8 +76,7 @@ bash build/test-fast.sh full
 
 ## 当前功能的缺陷
 
-- **真实 CS2 尚未端到端验收**：部署、开服、插件加载与地图切换多数通过脚本或模拟验证；局域网的玩家加入尚未做双机实测。
-- **网络能力受限**：仅支持直接 IP/局域网，公网传输策略、组网/中继已取消或未实现；VAC 修改入口未接入，GSLT 与公网开服未实现。
+- **网络能力受限**：仅支持直接 IP/局域网，公网传输策略未实现；VAC 修改入口未接入，GSLT 与公网开服未实现。
 - **玩家身份链路未闭环**：玩家 Steam 身份认证、GUI 端的玩家 Steam 配对、真实 Steam/CS2 联动仍待验收；玩家客户端以格式校验为主，不预检可达性。
 - **Windows 覆盖不足**：TUI 仅在 Linux 终端实测，Windows 下未验证；Windows 打包安装器与代码签名尚未建立。
 - **界面验证不完整**：当前环境无 X 显示服务，GUI 只完成 Headless 测试与构建验证，真实渲染、输入设备与文件管理器交互需人工检查。

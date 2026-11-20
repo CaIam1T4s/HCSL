@@ -39,13 +39,7 @@
     <Grid x:Name="pages" Grid.Column="1">
       <ContentControl x:Name="consoleHost"/>
       <ContentControl x:Name="playersHost" IsVisible="False"/>
-      <Border x:Name="mapsHost" Classes="console-placeholder" IsVisible="False">
-        <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}">
-          <TextBlock Text="地图切换" FontWeight="SemiBold" FontSize="{arc:ArcDesignTokenResource TypeLG}"/>
-          <TextBlock Text="地图列表与切换操作将在后续步骤接入。" TextWrapping="Wrap"
-                     Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-        </StackPanel>
-      </Border>
+      <ContentControl x:Name="mapsHost" IsVisible="False"/>
     </Grid>
 
     <!-- Above the content: toasts must not be hidden under the log viewport or the command input. -->

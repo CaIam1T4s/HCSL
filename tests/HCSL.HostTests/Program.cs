@@ -515,6 +515,49 @@ if (only is null or "roster")
 RosterEchoTests.Run();
 if (only is "roster") return 0;
 }
+if (only is null or "maps")
+{
+// The map page reads the app catalog and the preset's pool, then filters and gates its bulk actions.
+var mapsPage = new HCSL.Host.Views.MapsPage();
+var mapsWindow = new Window { Width = 900, Height = 640, Content = mapsPage };
+mapsWindow.Show(owner); Layout();
+var mapToasts = new List<TKCode.Arc.ToastOptions>();
+// The page needs one instance and one preset; provide a fixture so the section also runs alone.
+var mapPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Map preset");
+var mapInstance = Guid.NewGuid();
+daemon.IdleForPresetTests = true;
+daemon.Catalog = new([new(mapInstance, new(1, mapInstance, 1, "Map instance", 27015, mapPreset.Id), [mapPreset])]);
+PumpUntil(server.RefreshAsync());
+PumpUntil(model.RefreshInstancesAsync());
+var mapEntry = model.Instances.First(i => i.Entry.Definition is not null);
+PumpUntil(mapsPage.AttachAsync(new HCSL.Host.Views.MapsPageContext(model, mapEntry.Entry.Id,
+    mapEntry.Entry.Presets.First().Id, mapToasts.Add)));
+Layout();
+WaitUntil(() => mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().FirstOrDefault()?.ItemsSource?.Cast<object>().Count() == 4);
+var mapsTable = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
+var mapsFilter = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single();
+Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page must offer search plus source and pool filters.");
+Check(mapsTable.Columns.Count == 3 && mapsTable.IsSelectable, "The map table needs a checkbox column, name, source and pool membership.");
+var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
+Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图", "添加到图池", "从图池移除" }),
+    "The bulk bar must offer switch, add and remove.");
+Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Bulk actions must start disabled without a selection.");
+Check(mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b =>
+    Avalonia.Automation.AutomationProperties.GetName(b) == "地图轮换规则"),
+    "The rotation rule must be reachable through a named icon button.");
+// The bar's count gates the actions: several rows allow pool edits but not switching.
+mapsSelection.SelectedCount = 3; Layout();
+Check(mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled == false, "Switching several maps must be refused.");
+Check(mapsSelection.Actions.Single(a => a.Key == "add").IsEnabled, "Adding a selection must be offered.");
+// One row: switching becomes available.
+mapsSelection.SelectedCount = 1; Layout();
+Check(mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled, "Switching one map must be offered.");
+mapsSelection.SelectedCount = 0; Layout();
+Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Clearing the selection must disable every bulk action.");
+mapsWindow.Close(); Layout();
+Console.WriteLine("PASS gui.maps.catalog-filters-selection-and-rotation-hint");
+if (only is "maps") return 0;
+}
 if (only is null or "forms")
 {
 var saveCalls = 0;
@@ -1024,6 +1067,17 @@ sealed class FakeDaemon : IDaemonClient
             }
             else throw new Exception("Unexpected instance write in GUI fixture.");
             return Task.FromResult(CatalogResponse());
+        }
+        if (request.Kind == RequestKind.MapCatalog)
+        {
+            var catalog = new MapCatalogResult(
+            [
+                new MapCatalogEntry("de_dust2", MapCatalogSource.Standard, null),
+                new MapCatalogEntry("de_mirage", MapCatalogSource.Standard, null),
+                new MapCatalogEntry("Workshop #3070244462", MapCatalogSource.Workshop, "3070244462", 1024),
+                new MapCatalogEntry("Workshop #3120456789", MapCatalogSource.Workshop, "3120456789", 0, null, Incomplete: true)
+            ], "fake catalog");
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(catalog)));
         }
         if (request.Kind == RequestKind.MapPool)
         {

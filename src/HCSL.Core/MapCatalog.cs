@@ -16,6 +16,9 @@ public sealed record MapCatalogEntry(string Name, MapCatalogSource Source, strin
 
 public sealed record MapCatalogResult(MapCatalogEntry[] Entries, string? Detail = null);
 
+/// <summary>Which instance runtime to read; the catalog itself is app-level, its download state is not.</summary>
+public sealed record MapCatalogCommand(Guid InstanceId);
+
 public static class MapCatalogRules
 {
     public const int MaxEntries = 5000;

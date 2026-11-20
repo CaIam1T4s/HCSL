@@ -18,6 +18,7 @@ public sealed partial class ServerLogWindow
     private string? lastStatusTip;
     private (string, BadgeTone, LucideIconKind)? lastBadgeState;
     private Vector consoleOffset;
+    private MapsPage? mapsPage;
     private readonly List<IDisposable> shellBindings = new();
 
     /// <summary>
@@ -36,11 +37,30 @@ public sealed partial class ServerLogWindow
             if (item.Key == "maps") item.Icon = Lucide.Geometry(LucideIconKind.Map);
         consoleHost.Content = console;
         playersHost.Content = BuildPlayersPage();
+        mapsPage = new MapsPage();
+        mapsHost.Content = mapsPage;
         pages.Children.Add(BuildShareDialog());
         if (owner.TitleBar is { } ownerTitleBar)
             shellBindings.Add(ConsoleTitleBar.Bind(BackgroundProperty, ownerTitleBar.GetObservable(BackgroundProperty)));
         SizeChanged += (_, _) => UpdateShellWidth();
         UpdateShellWidth();
+    }
+
+    /// <summary>The map page reads the selected instance/preset; without one it explains why it is empty.</summary>
+    private async Task OpenMapsAsync()
+    {
+        if (mapsPage is null) return;
+        if (model.Selected?.Entry is not { Definition: { } definition, Presets: { } presets } ||
+            presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId) is not { } preset)
+        {
+            notifications.Show(new ToastOptions
+            {
+                Title = "无法读取地图", Description = "先在实例列表中选择实例与预设", Kind = ToastKind.Warning
+            });
+            return;
+        }
+        await mapsPage.AttachAsync(new MapsPageContext(model, definition.Id, preset.Id,
+            options => notifications.Show(options)));
     }
 
     /// <summary>Sidebar route: exactly one page is visible and the console restores the reader's position.</summary>
@@ -51,6 +71,7 @@ public sealed partial class ServerLogWindow
         consoleHost.IsVisible = e.Item.Key == "console";
         playersHost.IsVisible = e.Item.Key == "players";
         mapsHost.IsVisible = e.Item.Key == "maps";
+        if (mapsHost.IsVisible) _ = OpenMapsAsync();
         if (!consoleHost.IsVisible) return;
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {

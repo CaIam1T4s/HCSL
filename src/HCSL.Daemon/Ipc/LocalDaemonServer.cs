@@ -7,6 +7,7 @@ using HCSL.Application.Abstractions;
 using HCSL.Contracts;
 using HCSL.Daemon.Workers;
 using HCSL.Infrastructure.Deployment;
+using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
 
 namespace HCSL.Daemon.Ipc;
@@ -351,6 +352,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.Instances => Instances(request),
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),
+            RequestKind.MapCatalog => MapCatalog(request),
             RequestKind.Plugin => Plugin(request),
             RequestKind.PluginImport => PluginImport(request),
             RequestKind.PluginImportProbe => PluginImportProbe(request),
@@ -406,6 +408,24 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result));
         if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
+        return response;
+    }
+    /// <summary>
+    /// Read-only map catalog for one instance: built-in maps and downloaded Workshop items from that runtime. It never
+    /// executes anything, so it is safe while the server runs and while SteamCMD is busy.
+    /// </summary>
+    private LocalResponse MapCatalog(LocalRequest request)
+    {
+        var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
+        var command = JsonSerializer.Deserialize<MapCatalogCommand>(request.MapCatalogJson ?? "null")
+            ?? throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "Map catalog request is required.");
+        if (command.InstanceId == Guid.Empty) throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "An instance id is required.");
+        var game = Path.Combine(p.LibraryRoot, "runtime", command.InstanceId.ToString("D"), "game");
+        var result = MapCatalogScanner.Scan(game);
+        MapCatalogRules.Validate(result);
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result));
+        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            throw new InstanceException("HCSL-MAPCATALOG-LIMIT", "Map catalog response exceeds the IPC frame limit.");
         return response;
     }
     private LocalResponse PluginImportProbe(LocalRequest request)

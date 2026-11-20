@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             xmlns:vm="using:HCSL.Host.ViewModels"
+             x:Class="HCSL.Host.Views.MapsPage"
+             x:DataType="vm:MapRow">
+  <UserControl.Resources>
+    <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
+      <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
+                 HorizontalAlignment="Left" VerticalAlignment="Center"/>
+    </DataTemplate>
+    <DataTemplate x:Key="MapPoolsCell" x:DataType="vm:MapRow">
+      <arc:PresenceStack ItemsSource="{Binding Pools}" Label="所属图池" IsCountVisible="False"
+                         Size="Small" MaxVisibleCount="3" VerticalAlignment="Center"/>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto">
+      <TextBlock Text="地图切换" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"
+                 VerticalAlignment="Center"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
+        <arc:Button x:Name="RulesButton" Variant="Ghost" Size="Small" Click="ShowRules">
+          <lucide:LucideIcon Kind="CircleQuestionMark"/>
+        </arc:Button>
+        <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh">
+          <lucide:LucideIcon Kind="RotateCw"/>
+        </arc:Button>
+      </StackPanel>
+    </Grid>
+
+    <arc:FilterToolbar Grid.Row="1" x:Name="Filters" IsSearchVisible="True"
+                       SearchPlaceholder="搜索地图名或工坊 ID" Label="地图筛选"
+                       FiltersChanged="FiltersChanged">
+      <arc:FilterToolbar.Fields>
+        <arc:FilterField Id="source" Label="来源">
+          <arc:FilterField.Options>
+            <arc:FilterOption Value="standard" Label="内置"/>
+            <arc:FilterOption Value="workshop" Label="工坊"/>
+            <arc:FilterOption Value="missing" Label="未下载"/>
+          </arc:FilterField.Options>
+        </arc:FilterField>
+        <arc:FilterField Id="pool" Label="图池"/>
+      </arc:FilterToolbar.Fields>
+    </arc:FilterToolbar>
+
+    <arc:SelectionToolbar Grid.Row="2" x:Name="Selection" HorizontalAlignment="Stretch"
+                          SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
+      <arc:SelectionToolbar.Actions>
+        <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
+        <arc:SelectionToolbarAction Key="add" Label="添加到图池"/>
+        <arc:SelectionToolbarAction Key="remove" Label="从图池移除"/>
+      </arc:SelectionToolbar.Actions>
+      <arc:Table x:Name="Table" IsSelectable="True" Caption="地图目录"
+                 EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
+                 ItemNameOne="张地图" ItemNameOther="张地图"
+                 SelectionChanged="SelectionChanged">
+        <arc:Table.Columns>
+          <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="360"/>
+          <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
+                               CellTemplate="{StaticResource MapSourceCell}"/>
+          <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
+                               CellTemplate="{StaticResource MapPoolsCell}"/>
+        </arc:Table.Columns>
+      </arc:Table>
+    </arc:SelectionToolbar>
+  </Grid>
+</UserControl>
