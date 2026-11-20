@@ -315,6 +315,8 @@ public sealed partial class ServerLogWindow : ArcWindow
         finally { projecting = false; }
         rows = nextRows;
         PaintBands();
+        // New rows can add or remove matches; the reader stays where they are.
+        if (!string.IsNullOrEmpty(findInput.Text)) RecomputeMatches(jump: false);
         ScheduleEchoRepaint();
         if (wasFollowing)
         {

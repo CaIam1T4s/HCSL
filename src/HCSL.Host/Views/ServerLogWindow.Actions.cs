@@ -53,26 +53,34 @@ public sealed partial class ServerLogWindow
         ArcTokens.Bind(search, Layoutable.MinWidthProperty, ArcDesignTokenKind.MediaSizeXL);
         ArcTokens.Bind(findResult, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
         // The counter answers "is there more?" without a second look at the log, like an editor's find bar.
+        // A fixed width keeps the step buttons from jumping when the total grows from "1 / 8" to "1 / 150".
         ArcTokens.Bind(findResult, TextBlock.FontSizeProperty, ArcDesignTokenKind.TypeSM);
+        findResult.TextAlignment = Avalonia.Media.TextAlignment.Right;
+        ArcTokens.Bind(findResult, Layoutable.MinWidthProperty, ArcDesignTokenKind.Space16);
         var previous = FindButton(LucideIconKind.ChevronUp, "上一个匹配", () => StepMatch(-1));
         var next = FindButton(LucideIconKind.ChevronDown, "下一个匹配", () => StepMatch(1));
-        var caseToggle = new Avalonia.Controls.Primitives.ToggleButton
+        // Arc's toggle group in multiple mode is the pressed/not-pressed control Arc offers for this; one option is
+        // all a find bar needs. The label names the option because it shows an icon only.
+        var caseGroup = new ToggleGroup
         {
-            Content = "Aa", IsChecked = false, MinWidth = 32, MinHeight = 32,
-            Classes = { "console-find-toggle" }
+            Label = "区分大小写", Mode = ToggleGroupMode.Multiple, Size = ControlSize.Small
         };
-        AutomationProperties.SetName(caseToggle, "区分大小写");
-        ToolTip.SetTip(caseToggle, "区分大小写");
-        caseToggle.IsCheckedChanged += (_, _) =>
+        var caseOption = new ToggleGroupOption
         {
-            matchCase = caseToggle.IsChecked == true;
+            Value = "case", Label = "区分大小写",
+            Icon = Lucide.Geometry(LucideIconKind.CaseSensitive)
+        };
+        caseGroup.Items.Add(caseOption);
+        caseGroup.ValueChanged += (_, e) =>
+        {
+            matchCase = e.IsPressed;
             RecomputeMatches(reset: true);
         };
         var searchRow = new StackPanel
         {
             Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
             Classes = { "console-searchbar" },
-            Children = { search, findResult, previous, next, caseToggle }
+            Children = { search, findResult, previous, next, caseGroup }
         };
         ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
         toolbar.Children.Add(searchRow);
@@ -249,15 +257,18 @@ public sealed partial class ServerLogWindow
     private IReadOnlyList<string> LineTexts() =>
         rows.Select(r => showTimestamps ? r.DisplayText : r.Text).ToArray();
 
-    /// <summary>Scans the rows the log shows and keeps the current match when the query did not change.</summary>
-    private void RecomputeMatches(bool reset = false)
+    /// <summary>
+    /// Scans the rows the log shows and keeps the current match when the query did not change. Callers that only
+    /// refreshed the rows pass <c>jump: false</c>, so a poll never moves the reader.
+    /// </summary>
+    private void RecomputeMatches(bool reset = false, bool jump = true)
     {
         var query = findInput.Text;
         matches = LogSearch.Find(LineTexts(), query, matchCase);
         matchIndex = matches.Count > 0 ? (reset ? 0 : Math.Clamp(matchIndex, 0, matches.Count - 1)) : -1;
         findResult.Text = query is { Length: > 0 } ? LogSearch.Counter(matches.Count, matchIndex) : "";
         PaintBands();
-        if (matchIndex >= 0) JumpToMatch();
+        if (jump && matchIndex >= 0) JumpToMatch();
     }
 
     /// <summary>Moves to the next or previous match, wrapping; the log stops following the tail while reading.</summary>
@@ -276,13 +287,21 @@ public sealed partial class ServerLogWindow
         if (matchIndex < 0 || matchIndex >= matches.Count || scroll is null || textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout)
             return;
         var match = matches[matchIndex];
-        var lineHeight = layout.TextLines[0].Height;
+        if (match.Row >= layout.TextLines.Count) return;
+        var line = layout.TextLines[match.Row];
+        var lineHeight = line.Height;
         if (!double.IsFinite(lineHeight) || lineHeight <= 0) return;
         following = false;
         var targetY = Math.Clamp(match.Row * lineHeight - scroll.Viewport.Height / 2, 0,
             Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
-        // Keep the column reachable too: center it roughly one third in, without guessing the exact glyph width.
-        var targetX = match.Start > 40 ? scroll.Offset.X : 0;
+        // The measured line gives the exact column offset, so a match far right is centered instead of guessed.
+        var start = line.FirstTextSourceIndex + match.Start;
+        var end = start + match.Length;
+        var matchLeft = line.GetDistanceFromCharacterHit(new Avalonia.Media.CharacterHit(start, 0));
+        var matchRight = line.GetDistanceFromCharacterHit(new Avalonia.Media.CharacterHit(end, 0));
+        var center = matchLeft + Math.Max(0, matchRight - matchLeft) / 2;
+        var targetX = Math.Clamp(center - scroll.Viewport.Width / 2, 0,
+            Math.Max(0, scroll.Extent.Width - scroll.Viewport.Width));
         scroll.Offset = new Vector(targetX, targetY);
     }
 }

@@ -452,6 +452,49 @@ Layout();
 Check(Math.Abs(burstScroll.Offset.Y - (burstScroll.Extent.Height - burstScroll.Viewport.Height)) < 3, "Jump latest must resume following.");
 burstLog.Close();
 Console.WriteLine("PASS gui.logs.rapid-appends-keep-following-and-reader-scroll-pauses");
+// Find: matches are counted, stepped and highlighted from the rows the log shows, not from a TextBox selection.
+daemon.RepeatLogText = true; daemon.LastLogSequence += 150;
+var findLog = new ServerLogWindow(model, owner); findLog.Show(owner); Layout();
+PumpUntil(server.RefreshLogsAsync()); Layout();
+var findScroll = findLog.GetVisualDescendants().OfType<Textarea>().Single()
+    .GetVisualDescendants().OfType<ScrollViewer>().Single();
+string CounterText() => findLog.GetVisualDescendants().OfType<TextBlock>()
+    .Select(t => t.Text).FirstOrDefault(t => t == "无匹配" || (t?.Contains(" / ") ?? false)) ?? "";
+var findField = findLog.GetVisualDescendants().OfType<TKCode.Arc.SearchField>().First(f => f.Label == "查找日志");
+findField.Text = "REPEAT"; Layout();
+var expectedMatches = model.Server.ConsoleRows.Count(r => r.Text.Contains("repeat", StringComparison.Ordinal));
+Check(expectedMatches > 100, $"The fixture must hold enough repeated lines, got {expectedMatches}.");
+Check(CounterText() == "1 / " + expectedMatches, $"Case-insensitive find must count every row: got '{CounterText()}' for {expectedMatches} lines.");
+Check(findScroll.Offset.Y < 5, "The first match must bring its line into view and pause following.");
+var bandLayer = findLog.GetVisualDescendants().OfType<HCSL.Host.Views.LogBandLayer>().First();
+Check(bandLayer.IsVisible, "Matches must draw bands behind the matched lines.");
+var stepNext = findLog.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+    .Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "下一个匹配");
+stepNext.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+Check(CounterText() == "2 / " + expectedMatches, $"Next must advance the counter: got '{CounterText()}'.");
+var stepPrevious = findLog.GetVisualDescendants().OfType<TKCode.Arc.Button>()
+    .Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "上一个匹配");
+stepPrevious.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+Check(CounterText() == "1 / " + expectedMatches, "Previous must step back.");
+stepPrevious.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+Check(CounterText() == expectedMatches + " / " + expectedMatches, "Previous on the first match must wrap to the last one.");
+// The case option is an Arc toggle group: pressing it re-runs the search with Ordinal matching.
+var caseOption = findLog.GetVisualDescendants().OfType<TKCode.Arc.ToggleGroupItem>().First();
+// Keyboard path: the option is a real toggle, so Space must press it without relying on pointer hit testing.
+caseOption.Focus();
+findLog.KeyPress(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+findLog.KeyRelease(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+Layout();
+Check(CounterText() == "无匹配", $"Case-sensitive search must stop matching lower case text: got '{CounterText()}'.");
+Check(!bandLayer.IsVisible, "No match must leave no bands behind.");
+findLog.KeyPress(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+findLog.KeyRelease(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
+Layout();
+Check(CounterText() == "1 / " + expectedMatches, "Releasing the case option must restore the matches.");
+findField.Text = ""; Layout();
+Check(CounterText() == "", "Clearing the query must clear the counter.");
+findLog.Close();
+Console.WriteLine("PASS gui.logs.find-counts-steps-matches-and-caps-case");
 var downloads = new HCSL.Host.Views.Pages.DownloadsPage { DataContext = owner.DataContext };
 var downloadWindow = new Window { Width = 900, Height = 700, Content = downloads };
 downloadWindow.Show(owner);
