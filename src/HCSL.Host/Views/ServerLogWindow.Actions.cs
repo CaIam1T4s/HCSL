@@ -10,6 +10,7 @@ using HCSL.UI.Shared.Controls;
 using TKCode.Arc;
 using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Icons.Lucide;
+using ArcButton = TKCode.Arc.Button;
 using ArcSearchField = TKCode.Arc.SearchField;
 
 namespace HCSL.Host.Views;
@@ -18,10 +19,14 @@ public sealed partial class ServerLogWindow
 {
     private GlassMenu? consoleMenu;
     private bool showTimestamps = true;
-    private int displayLimit = 2000, findIndex = -1;
+    private int displayLimit = 2000;
     private readonly ArcSearchField findInput = new() { Label = "查找日志", IsLabelVisible = false,
         Placeholder = "查找日志", Size = ControlSize.Small };
     private readonly TextBlock findResult = new() { VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>Every match in the displayed rows, the current one, and whether the query is case sensitive.</summary>
+    private IReadOnlyList<LogMatch> matches = [];
+    private int matchIndex = -1;
+    private bool matchCase;
 
     private Control BuildConsoleToolbar()
     {
@@ -47,20 +52,37 @@ public sealed partial class ServerLogWindow
         ArcTokens.Bind(search, Layoutable.MaxWidthProperty, ArcDesignTokenKind.ContentMaxWidthSM);
         ArcTokens.Bind(search, Layoutable.MinWidthProperty, ArcDesignTokenKind.MediaSizeXL);
         ArcTokens.Bind(findResult, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
+        // The counter answers "is there more?" without a second look at the log, like an editor's find bar.
+        ArcTokens.Bind(findResult, TextBlock.FontSizeProperty, ArcDesignTokenKind.TypeSM);
+        var previous = FindButton(LucideIconKind.ChevronUp, "上一个匹配", () => StepMatch(-1));
+        var next = FindButton(LucideIconKind.ChevronDown, "下一个匹配", () => StepMatch(1));
+        var caseToggle = new Avalonia.Controls.Primitives.ToggleButton
+        {
+            Content = "Aa", IsChecked = false, MinWidth = 32, MinHeight = 32,
+            Classes = { "console-find-toggle" }
+        };
+        AutomationProperties.SetName(caseToggle, "区分大小写");
+        ToolTip.SetTip(caseToggle, "区分大小写");
+        caseToggle.IsCheckedChanged += (_, _) =>
+        {
+            matchCase = caseToggle.IsChecked == true;
+            RecomputeMatches(reset: true);
+        };
         var searchRow = new StackPanel
         {
             Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
-            Children = { search, findResult }
+            Classes = { "console-searchbar" },
+            Children = { search, findResult, previous, next, caseToggle }
         };
         ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space2);
         toolbar.Children.Add(searchRow);
         Grid.SetColumn(group, 1); toolbar.Children.Add(group);
-        findInput.TextChanged += (_, _) => FindNext(restart: true);
+        findInput.TextChanged += (_, _) => RecomputeMatches(reset: true);
         // Tunnel first: the field would otherwise swallow Enter as SearchSubmitted and Escape as a clear.
         findInput.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
-            if (e.Key == Key.Enter) { e.Handled = true; FindNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); }
-            else if (e.Key == Key.Escape) { e.Handled = true; findInput.Text = ""; findIndex = -1; findResult.Text = ""; text.Focus(); }
+            if (e.Key == Key.Enter) { e.Handled = true; StepMatch(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1); }
+            else if (e.Key == Key.Escape) { e.Handled = true; findInput.Text = ""; text.Focus(); }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -68,9 +90,19 @@ public sealed partial class ServerLogWindow
             if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             { e.Handled = true; OpenFind(); }
             else if (e.Key == Key.F3)
-            { e.Handled = true; FindNext(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); }
+            { e.Handled = true; StepMatch(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1); }
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         return toolbar;
+    }
+
+    /// <summary>Icon-only find control: Arc's ghost button plus the accessible name the icon cannot carry.</summary>
+    private static ArcButton FindButton(LucideIconKind icon, string name, Action clicked)
+    {
+        var button = new ArcButton { Variant = ButtonVariant.Ghost, Size = ControlSize.Small, Content = new LucideIcon { Kind = icon } };
+        Avalonia.Automation.AutomationProperties.SetName(button, name);
+        ToolTip.SetTip(button, name);
+        button.Click += (_, _) => clicked();
+        return button;
     }
 
     private bool loadingEarlier, historyNoticeShown, limitNoticeShown;
@@ -172,7 +204,7 @@ public sealed partial class ServerLogWindow
         MenuEntry(menu, "导出当前显示日志…", async () => await ExportConsoleAsync(), enabled: rows.Count > 0);
         MenuEntry(menu, "清空显示（不删除文件）", () =>
         {
-            model.Server.ClearConsoleDisplay(); reading.Reset(); findIndex = -1; historyNoticeShown = false; limitNoticeShown = false; JumpLatest();
+            model.Server.ClearConsoleDisplay(); reading.Reset(); historyNoticeShown = false; limitNoticeShown = false; JumpLatest();
         }, enabled: rows.Count > 0);
         menu.Items.Add(new GlassMenuSeparator());
         MenuEntry(menu, "命令历史（仅内存）", () =>
@@ -213,45 +245,44 @@ public sealed partial class ServerLogWindow
     {
         Dispatcher.UIThread.Post(() => { if (!closed) { findInput.Focus(); findInput.SelectAll(); } }, DispatcherPriority.Loaded);
     }
-    private void RestoreFindSelection(string body)
+    /// <summary>The text the log actually shows for each row, so a match maps to a visible line.</summary>
+    private IReadOnlyList<string> LineTexts() =>
+        rows.Select(r => showTimestamps ? r.DisplayText : r.Text).ToArray();
+
+    /// <summary>Scans the rows the log shows and keeps the current match when the query did not change.</summary>
+    private void RecomputeMatches(bool reset = false)
     {
-        if (string.IsNullOrEmpty(findInput.Text) || findIndex < 0) return;
-        var needle = findInput.Text ?? "";
-        if (needle.Length == 0 || findIndex + needle.Length > body.Length
-            || !body.AsSpan(findIndex, needle.Length).Equals(needle.AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            findIndex = -1;
-            findResult.Text = "匹配位置已变化，请按 Enter 重新查找";
-            return;
-        }
-        text.SelectionStart = findIndex;
-        text.SelectionEnd = findIndex + needle.Length;
-        text.CaretIndex = findIndex;
+        var query = findInput.Text;
+        matches = LogSearch.Find(LineTexts(), query, matchCase);
+        matchIndex = matches.Count > 0 ? (reset ? 0 : Math.Clamp(matchIndex, 0, matches.Count - 1)) : -1;
+        findResult.Text = query is { Length: > 0 } ? LogSearch.Counter(matches.Count, matchIndex) : "";
+        PaintBands();
+        if (matchIndex >= 0) JumpToMatch();
     }
-    private void FindNext(bool backwards = false, bool restart = false)
+
+    /// <summary>Moves to the next or previous match, wrapping; the log stops following the tail while reading.</summary>
+    private void StepMatch(int step)
     {
-        var needle = findInput.Text ?? "";
-        var body = text.Text ?? "";
-        if (needle.Length == 0 || body.Length == 0) { findIndex = -1; findResult.Text = needle.Length == 0 ? "" : "无匹配"; return; }
-        var found = -1;
-        if (backwards)
-        {
-            var start = Math.Min(findIndex - 1, body.Length - 1);
-            if (start >= 0) found = body.LastIndexOf(needle, start, StringComparison.OrdinalIgnoreCase);
-            if (found < 0) found = body.LastIndexOf(needle, StringComparison.OrdinalIgnoreCase);
-        }
-        else
-        {
-            var start = restart ? 0 : Math.Clamp(findIndex + 1, 0, body.Length);
-            found = body.IndexOf(needle, start, StringComparison.OrdinalIgnoreCase);
-            if (found < 0 && start > 0) found = body.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
-        }
-        findIndex = found;
-        findResult.Text = found < 0 ? "无匹配" : "已定位";
-        if (found < 0) return;
+        if (matches.Count == 0) { RecomputeMatches(); return; }
+        matchIndex = LogSearch.Step(matches.Count, matchIndex, step);
+        findResult.Text = LogSearch.Counter(matches.Count, matchIndex);
+        PaintBands();
+        JumpToMatch();
+    }
+
+    /// <summary>Scrolls the current match into view on both axes; NoWrap lines are wider than the viewport.</summary>
+    private void JumpToMatch()
+    {
+        if (matchIndex < 0 || matchIndex >= matches.Count || scroll is null || textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout)
+            return;
+        var match = matches[matchIndex];
+        var lineHeight = layout.TextLines[0].Height;
+        if (!double.IsFinite(lineHeight) || lineHeight <= 0) return;
         following = false;
-        text.SelectionStart = found;
-        text.SelectionEnd = found + needle.Length;
-        text.CaretIndex = found;
+        var targetY = Math.Clamp(match.Row * lineHeight - scroll.Viewport.Height / 2, 0,
+            Math.Max(0, scroll.Extent.Height - scroll.Viewport.Height));
+        // Keep the column reachable too: center it roughly one third in, without guessing the exact glyph width.
+        var targetX = match.Start > 40 ? scroll.Offset.X : 0;
+        scroll.Offset = new Vector(targetX, targetY);
     }
 }

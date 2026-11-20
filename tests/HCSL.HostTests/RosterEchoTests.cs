@@ -72,16 +72,24 @@ public static class RosterEchoTests
     private static void Bands()
     {
         // Row 2 starts two lines below the presenter origin; the band moves with the scroll offset baked into origin.
-        var bands = EchoBandLayer.Bands([2], 20, -45, new Size(300, 100));
+        var bands = LogBandLayer.Bands([2], 20, -45, new Size(300, 100));
         if (bands.Count != 1 || bands[0].Y != -5 || bands[0].Height != 20 || bands[0].Width != 300)
             throw new Exception("An echoed line's band must sit on the measured line height.");
-        if (EchoBandLayer.Bands([0], 20, -100, new Size(300, 100)).Count != 0)
+        if (LogBandLayer.Bands([0], 20, -100, new Size(300, 100)).Count != 0)
             throw new Exception("A line scrolled above the viewport must not be drawn.");
-        if (EchoBandLayer.Bands([9], 20, 0, new Size(300, 100)).Count != 0)
+        if (LogBandLayer.Bands([9], 20, 0, new Size(300, 100)).Count != 0)
             throw new Exception("A line scrolled below the viewport must not be drawn.");
-        if (EchoBandLayer.Bands([0, 1, 2], 20, 0, new Size(300, 100)).Count != 3)
+        if (LogBandLayer.Bands([0, 1, 2], 20, 0, new Size(300, 100)).Count != 3)
             throw new Exception("Every visible echoed line must be drawn.");
-        if (EchoBandLayer.Bands([0], 0, 0, new Size(300, 100)).Count != 0)
+        if (LogBandLayer.Bands([0], 0, 0, new Size(300, 100)).Count != 0)
             throw new Exception("A zero line height must draw nothing instead of dividing by zero.");
+        // The three band groups share one geometry; a match and an echo line must land on the same line row.
+        var group = new LogBandLayer();
+        group.SetBands([1], [1, 2], [2], 20, 0);
+        var echoed = LogBandLayer.Bands([1], 20, 0, new Size(300, 100));
+        var matched = LogBandLayer.Bands([1, 2], 20, 0, new Size(300, 100));
+        var current = LogBandLayer.Bands([2], 20, 0, new Size(300, 100));
+        if (echoed[0] != matched[0] || matched[1] != current[0])
+            throw new Exception("Echo, match and current-match bands must share one line grid.");
     }
 }

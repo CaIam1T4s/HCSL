@@ -45,10 +45,12 @@ public static class ThemeCatalog
         ["ConsolePageInset"] = new Thickness(16),
         // Arc's edge rule plus one pixel: the roster frame reads better slightly heavier than a default rule.
         ["ConsoleFrameThickness"] = new Thickness(2),
-        // Console player-table column widths. They live with the other shared values because a table column's
-        // Auto width measures the sort value, not the templated cell (badge, action buttons).
+        // Console search match colours are fixed, not accent-derived: a match must read the same in every theme
+        // and under every accent, the way an editor's find highlight does. Low alpha keeps the log's own text legible.
+        ["ConsoleSearchMatch"] = new SolidColorBrush(Color.Parse("#FFD400"), 0.28),
+        ["ConsoleSearchMatchCurrent"] = new SolidColorBrush(Color.Parse("#FFB300"), 0.55),
         // Console player-table column widths, as GridLength so the XAML columns can bind them. They live with the
-        // other shared values because a table column's Auto width measures the sort value, not the templated cell.
+        // Auto width measures the sort value, not the templated cell (badge, action buttons).
         ["ConsoleTablePlayerWidth"] = new GridLength(220),
         ["ConsoleTableIdentityWidth"] = new GridLength(112),
         ["ConsoleTableSteamIdWidth"] = new GridLength(180),

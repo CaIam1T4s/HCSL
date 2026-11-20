@@ -30,6 +30,22 @@ public static class ServerConsoleTests
             throw new Exception("Engine prompt characters defeated the echo match.");
         if (ConsoleEcho.Matches("mp_roundtime 6", "mp_roundtime 60"))
             throw new Exception("A different command was mistaken for an echo.");
+        // Search rules: every occurrence, per row, with optional case matching and overlapping hits.
+        var searched = LogSearch.Find(["aXa", "bb", ""], "a");
+        if (searched.Count != 2 || searched[0] != new LogMatch(0, 0, 1) || searched[1] != new LogMatch(0, 2, 1))
+            throw new Exception("Search must report every occurrence in row order.");
+        if (LogSearch.Find(["aXa"], "A").Count != 2 || LogSearch.Find(["aXa"], "A", matchCase: true).Count != 0)
+            throw new Exception("Case sensitivity must change the matches, not only the highlight.");
+        var overlapping = LogSearch.Find(["aaa"], "aa");
+        if (overlapping.Count != 2 || overlapping[0].Start != 0 || overlapping[1].Start != 1)
+            throw new Exception("Overlapping matches must be found, like an editor's find.");
+        if (LogSearch.Find(["abc"], "").Count != 0 || LogSearch.Find(["abc"], null).Count != 0)
+            throw new Exception("An empty query matches nothing.");
+        if (LogSearch.Step(5, -1, 1) != 0 || LogSearch.Step(5, 4, 1) != 0 || LogSearch.Step(5, 0, -1) != 4)
+            throw new Exception("Match navigation must wrap at both ends.");
+        if (LogSearch.Step(0, -1, 1) != -1) throw new Exception("An empty match list has no current match.");
+        if (LogSearch.Counter(0, -1) != "无匹配" || LogSearch.Counter(8, 0) != "1 / 8" || LogSearch.Counter(8, 7) != "8 / 8")
+            throw new Exception("The counter must show the position and the total.");
         var unknown = await new ServerClient(new BrokenClient()).SendConsoleAsync(new(Guid.NewGuid(), Guid.NewGuid(), "status"));
         if (unknown.Delivery != ConsoleDelivery.Unknown) throw new Exception("Connection loss must be unknown.");
         var fake = new FakeClient();
