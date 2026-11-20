@@ -471,7 +471,7 @@ Check(typedCounter.EndsWith(" / " + expectedMatches, StringComparison.Ordinal) &
     $"Typing must select the match nearest the viewport: got '{typedCounter}'.");
 Check(Math.Abs(findScroll.Offset.Y - (findScroll.Extent.Height - findScroll.Viewport.Height)) < 3, "Typing must not scroll the log.");
 var bandLayer = findLog.GetVisualDescendants().OfType<HCSL.Host.Views.LogBandLayer>().First();
-Check(bandLayer.IsVisible, "Matches must draw bands behind the matched lines.");
+Check(bandLayer.BandCount > 0, "Matches must draw bands behind the matched lines.");
 var stepNext = findLog.GetVisualDescendants().OfType<TKCode.Arc.Button>()
     .Single(b => Avalonia.Automation.AutomationProperties.GetName(b) == "下一个匹配");
 stepNext.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
@@ -489,7 +489,7 @@ findLog.KeyPress(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None
 findLog.KeyRelease(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
 Layout();
 Check(CounterText() == "无匹配", $"Case-sensitive search must stop matching lower case text: got '{CounterText()}'.");
-Check(!bandLayer.IsVisible, "No match must leave no bands behind.");
+Check(bandLayer.BandCount == 0, "No match must leave no bands behind.");
 findLog.KeyPress(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
 findLog.KeyRelease(Avalonia.Input.Key.Space, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, "");
 Layout();

@@ -28,7 +28,8 @@ public sealed partial class ServerLogWindow : ArcWindow
     private bool following = true, closed, projecting, updateQueued, pinPending, bandsQueued;
     private ScrollViewer? scroll;
     /// <summary>Bands behind the log text marking lines the engine echoed from a written command.</summary>
-    private readonly LogBandLayer bands = new() { IsHitTestVisible = false, IsVisible = false };
+    private readonly LogBandLayer bands = new() { IsHitTestVisible = false };
+    private bool bandsQueuedInContent;
     /// <summary>Measured lines of the log view: bands are placed on the presenter, never on a guessed row height.</summary>
     private Avalonia.Controls.Presenters.TextPresenter? textPresenter;
     private IReadOnlyList<ConsoleLogRow> rows = Array.Empty<ConsoleLogRow>();
@@ -93,6 +94,14 @@ public sealed partial class ServerLogWindow : ArcWindow
                     presenter.Margin = new Thickness(0, 0, 0, 14);
                     textPresenter = presenter;
                 }
+                // Inside the scroll content, behind the text: the bands then share the text's own coordinate system, so
+                // both scroll axes, the frame padding and any line leading are already applied by the ScrollViewer.
+                if (scroll.Content is Panel content)
+                {
+                    if (bands.Parent is Panel previous) previous.Children.Remove(bands);
+                    content.Children.Insert(0, bands);
+                    bandsQueuedInContent = true;
+                }
                 // Layout settles after a text change; the bands follow the measured lines, not a stale extent.
                 // The repaint is posted (never run inside layout) because the layer draws instead of hosting children.
                 scroll.LayoutUpdated += (_, _) =>
@@ -134,15 +143,15 @@ public sealed partial class ServerLogWindow : ArcWindow
         var viewport = new Border { ClipToBounds = true, Child = text };
         viewport.SizeChanged += (_, e) => { text.FrameHeight = Math.Max(0, e.NewSize.Height); PaintBands(); };
         // The echo tint is drawn behind the text, which keeps the Textarea's own virtualization and cross-line
-        // selection; a selection can only hold one range, a drawn layer can hold many.
+        // selection; a selection can only hold one range, a drawn layer can hold many. The layer is inserted into the
+        // scroll content once the template is applied (see Opened).
         TKCode.Arc.ArcTokens.Bind(bands, LogBandLayer.EchoBrushProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentSubtle);
         // Fixed yellow for search, independent of the accent: a match must read the same under every theme.
         bands.Bind(LogBandLayer.MatchBrushProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("ConsoleSearchMatch"));
         bands.Bind(LogBandLayer.CurrentMatchBrushProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("ConsoleSearchMatchCurrent"));
-        bands.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-        bands.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+        bands.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        bands.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
         var logLayers = new Grid { ClipToBounds = true };
-        logLayers.Children.Add(bands);
         logLayers.Children.Add(viewport);
         Grid.SetRow(logLayers, 1); grid.Children.Add(logLayers);
         query.AddHandler(KeyDownEvent, async (_, e) =>
@@ -215,29 +224,33 @@ public sealed partial class ServerLogWindow : ArcWindow
     {
         var echoRows = new List<int>();
         for (var i = 0; i < rows.Count; i++) if (rows[i].Echo) echoRows.Add(i);
+        // Never hide the layer: its size is part of the scroll content, and a visibility change would move the extent.
         if (echoRows.Count == 0 && matches.Count == 0)
         {
-            bands.IsVisible = false;
             bands.SetBands([], [], [], 0, 0, 0, default);
             return;
         }
-        if (textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout || scroll is null)
+        if (textPresenter?.TextLayout is not { TextLines.Count: > 0 } layout || !bandsQueuedInContent)
         {
-            bands.IsVisible = false;
+            bands.SetBands([], [], [], 0, 0, 0, default);
             return;
         }
         var lineHeight = layout.TextLines[0].Height;
-        if (!double.IsFinite(lineHeight) || lineHeight <= 0) { bands.IsVisible = false; return; }
+        if (!double.IsFinite(lineHeight) || lineHeight <= 0)
+        {
+            bands.SetBands([], [], [], 0, 0, 0, default);
+            return;
+        }
         var matchSpans = new List<BandSpan>(matches.Count);
         foreach (var match in matches)
             if (SpanOf(layout, match) is { } span) matchSpans.Add(span);
         var currentSpans = new List<BandSpan>(1);
         if (matchIndex >= 0 && matchIndex < matches.Count && SpanOf(layout, matches[matchIndex]) is { } currentSpan)
             currentSpans.Add(currentSpan);
-        bands.IsVisible = true;
-        // Scroll offset, not the presenter's translation: both axes move the bands with the text.
-        bands.SetBands(echoRows, matchSpans, currentSpans, lineHeight,
-            scroll.Offset.X, scroll.Offset.Y, scroll.Viewport);
+        // The layer lives inside the scroll content, so it is positioned in text coordinates: no scroll offset at all.
+        bands.Width = layout.WidthIncludingTrailingWhitespace;
+        bands.Height = layout.Height;
+        bands.SetBands(echoRows, matchSpans, currentSpans, lineHeight, 0, 0, new Size(bands.Width, bands.Height));
     }
 
     /// <summary>The measured horizontal span of one match, so the tint covers the matched characters only.</summary>

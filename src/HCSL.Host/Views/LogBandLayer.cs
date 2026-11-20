@@ -40,6 +40,9 @@ public sealed class LogBandLayer : Control
 
     public IBrush? CurrentMatchBrush { get => GetValue(CurrentMatchBrushProperty); set => SetValue(CurrentMatchBrushProperty, value); }
 
+    /// <summary>How many bands the last update asked for; the view keeps the layer visible, so tests read this.</summary>
+    public int BandCount => echo.Length + matches.Length + current.Length;
+
     /// <summary>
     /// Bands to draw for the given line height, scroll offset and viewport. Echo rows tint whole lines, match spans
     /// tint the matched characters; only spans inside the viewport are drawn and the layer repaints on a real change.
