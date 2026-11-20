@@ -1,6 +1,9 @@
 namespace HCSL.Core;
 
 public enum MapPoolAction { Read, Save }
+
+/// <summary>How a pool advances to its next map: the launcher's map group, the collection, or a manual switch.</summary>
+public enum MapPoolRotation { MapGroup, Collection, Manual }
 public sealed record PresetMapPool(int FormatVersion, long Revision, ServerMapTarget[] Maps);
 public sealed record MapPoolCommand(MapPoolAction Action, Guid InstanceId, Guid PresetId, long InstanceRevision = 0,
     long ExpectedRevision = 0, string? ExpectedHash = null, ServerMapTarget[]? Maps = null);
@@ -29,6 +32,19 @@ public static class MapPoolRules
     {
         Validate(pool);
         return pool.Maps.Length == 1 && pool.Maps[0].Kind == ServerMapKind.WorkshopCollection ? pool.Maps[0].Value : null;
+    }
+
+    /// <summary>
+    /// Whether this pool can rotate on its own. Only an all built-in pool (the launcher writes a CS2 map group) and a
+    /// single workshop collection (CS2 follows the collection) support rotation; anything with workshop maps is manual.
+    /// </summary>
+    public static MapPoolRotation Rotation(PresetMapPool pool)
+    {
+        Validate(pool);
+        if (pool.Maps.Length == 1 && pool.Maps[0].Kind == ServerMapKind.WorkshopCollection) return MapPoolRotation.Collection;
+        return pool.Maps.All(m => m.Kind == ServerMapKind.Standard) && pool.Maps.Length > 1
+            ? MapPoolRotation.MapGroup
+            : MapPoolRotation.Manual;
     }
     public static ServerMapTarget Parse(string value)
     {

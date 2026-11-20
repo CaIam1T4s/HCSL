@@ -18,6 +18,17 @@ public static class ServerMapTests
             try { ServerMapRules.Validate(target); throw new Exception("Unsafe target accepted."); } catch (InstanceException) { }
         }
         Check(ServerMapRules.StartupArguments(new(ServerMapKind.Workshop, "12345")).SequenceEqual(new[] { "+host_workshop_map", "12345" }), "Workshop startup arguments.");
+        // People paste a Workshop link: the id is extracted locally, the stored value stays an id.
+        Check(ServerMapRules.ParseWorkshopInput("3070244462").Value == "3070244462", "A bare Workshop id must be accepted.");
+        Check(ServerMapRules.ParseWorkshopInput("  https://steamcommunity.com/sharedfiles/filedetails/?id=3070244462&searchtext= ").Value == "3070244462",
+            "A Workshop link must yield its id.");
+        Check(ServerMapRules.ParseWorkshopInput("https://steamcommunity.com/sharedfiles/filedetails/?id=3070244462", ServerMapKind.WorkshopCollection).Kind == ServerMapKind.WorkshopCollection,
+            "A collection link must produce a collection target.");
+        foreach (var bad in new[] { "", "   ", "https://steamcommunity.com/sharedfiles/filedetails/", "de_dust2", "0", "00123", "?id=abc" })
+        {
+            try { ServerMapRules.ParseWorkshopInput(bad); throw new Exception("Unparseable Workshop input accepted: " + bad); }
+            catch (InstanceException) { }
+        }
         Check(ServerMapRules.StartupArguments(new(ServerMapKind.WorkshopCollection, "12345")).SequenceEqual(new[] { "+map", ServerMapRules.CollectionSeedMap, "+host_workshop_collection", "12345" }), "Workshop collection startup arguments must seed a built-in map first.");
         Check(ServerMapRules.StartupArguments(new(ServerMapKind.WorkshopCollection, "12345"))[1] == "de_dust2", "Collection seed map changed without an operator-visible policy.");
         Check(SystemdServerRuntime.IsWorkshopMap("workshop/12345/de_test") && SystemdServerRuntime.IsWorkshopMap("maps/workshop/12345/de_test") && !SystemdServerRuntime.IsWorkshopMap("de_dust2"), "Workshop readiness path classification is wrong.");

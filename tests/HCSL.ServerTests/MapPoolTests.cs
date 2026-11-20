@@ -3,6 +3,7 @@ using HCSL.Application.Abstractions;
 using HCSL.Contracts;
 using HCSL.Core;
 using HCSL.Frontend;
+using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
 namespace HCSL.ServerTests;
 public static class MapPoolTests
@@ -74,8 +75,39 @@ public static class MapPoolTests
             Reject(() => MapPoolRules.Validate(new(1, 0, many.Append(new(ServerMapKind.Standard, "de_extra")).ToArray())), "HCSL-MAPPOOL-INVALID");
             Reject(NativeMapRotation.RequireVerified, "HCSL-ROTATION-UNVERIFIED");
             draft.Remove(0); Check(draft.Maps.Count == 1 && draft.Dirty, "Remove failed.");
+            // Rotation support is part of the catalog's promise: only built-in pools and a single collection rotate.
+            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_mirage")])) == MapPoolRotation.MapGroup,
+                "An all built-in pool must rotate through the launcher's map group.");
+            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.WorkshopCollection, "123")])) == MapPoolRotation.Collection,
+                "A single collection must rotate natively.");
+            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Workshop, "123")])) == MapPoolRotation.Manual,
+                "A pool holding a single Workshop map must be manual.");
+            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2")])) == MapPoolRotation.Manual,
+                "A one-map pool has nothing to rotate.");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        // Catalog: built-in files, downloaded Workshop items, and folders that exist without a map.
+        var catalog = MapCatalogScanner.Build(
+        [
+            new MapFile("maps/de_dust2.bsp", 100, DateTimeOffset.UnixEpoch),
+            new MapFile("maps/notes.txt", 10, null),
+            new MapFile("maps/workshop/3070244462/de_akizuki.bsp", 200, null),
+            new MapFile("maps/workshop/3070244462/de_second.bsp", 200, null),
+            new MapFile("maps/workshop/3120456789/", 0, null)
+        ]);
+        MapCatalogRules.Validate(catalog);
+        Check(catalog.Entries.Length == 3, "Catalog must list one built-in, one downloaded Workshop item and one incomplete download.");
+        Check(catalog.Entries.Count(e => e.Source == MapCatalogSource.Standard) == 1, "Only .bsp files become built-in entries.");
+        var downloaded = catalog.Entries.Single(e => e.WorkshopId == "3070244462");
+        Check(downloaded.Incomplete == false && downloaded.SizeBytes == 200, "A Workshop item with a map must count as downloaded once.");
+        Check(catalog.Entries.Single(e => e.WorkshopId == "3120456789").Incomplete, "A Workshop folder without a .bsp must be marked incomplete.");
+        Check(catalog.Entries[0].Key == "standard:de_dust2" && MapCatalogRules.KeyOf(new(ServerMapKind.Workshop, "7")) == "workshop:7",
+            "Catalog keys must match map targets so membership can be compared.");
+        Check(MapCatalogRules.MembershipCount("standard:de_dust2", [("A", [new ServerMapTarget(ServerMapKind.Standard, "de_dust2")]), ("B", [])]) == 1,
+            "Pool membership must count the pools holding a map.");
+        Check(MapCatalogScanner.Build([new MapFile("maps/workshop/01/bad.bsp", 1, null)]).Entries.Length == 0,
+            "An invalid Workshop folder name must not become a catalog entry.");
+        Check(MapCatalogScanner.Scan(Path.Combine(root, "missing-game")).Entries.Length == 0, "A missing game directory is an empty catalog.");
         Console.WriteLine("PASS maps.pool-legacy-crud-order-dedup-revisions-hash-copy-isolation-size-link-lock-frame-and-unverified-rotation-gate");
     }
 }

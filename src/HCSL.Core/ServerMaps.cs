@@ -17,12 +17,41 @@ public static class ServerMapRules
         var value = target.Value;
         var valid = target.Kind switch
         {
-            ServerMapKind.Standard => !string.IsNullOrEmpty(value) && value.Length <= 100 && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') && !value.All(char.IsAsciiDigit),
+            ServerMapKind.Standard => TryValidateStandard(value),
             ServerMapKind.Workshop => WorkshopId(value),
             ServerMapKind.WorkshopCollection => WorkshopId(value),
             _ => false
         };
         if (!valid) throw new InstanceException("HCSL-MAP-INVALID", "普通地图需填写名称（字母、数字、下划线）；工坊单图/合集需填写正整数 ID，不接受网址或命令。ID 是否可用由 Steam/CS2 验证。");
+    }
+
+    public static bool TryValidateStandard(string? value) =>
+        !string.IsNullOrEmpty(value) && value.Length <= 100 && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_') && !value.All(char.IsAsciiDigit);
+
+    public static bool TryValidateWorkshopId(string? value) => value is not null && WorkshopId(value);
+
+    /// <summary>
+    /// Extracts a Workshop id from what people paste into a field: the bare id, or a community/workshop link that
+    /// carries it in <c>?id=</c>. The rule stays "ids only": nothing is fetched and no URL is stored.
+    /// </summary>
+    public static ServerMapTarget ParseWorkshopInput(string? input, ServerMapKind kind = ServerMapKind.Workshop)
+    {
+        var text = input?.Trim() ?? "";
+        if (text.Length == 0) throw new InstanceException("HCSL-MAP-INPUT", "请输入工坊 ID 或工坊链接。");
+        var id = text;
+        var marker = text.IndexOf("id=", StringComparison.OrdinalIgnoreCase);
+        if (marker >= 0)
+        {
+            id = new string(text[(marker + 3)..].TakeWhile(char.IsAsciiDigit).ToArray());
+        }
+        else if (!text.All(char.IsAsciiDigit))
+        {
+            // A link without ?id= (for example the plain file page) is not something we can resolve offline.
+            throw new InstanceException("HCSL-MAP-INPUT", "无法从输入中识别工坊 ID；请粘贴包含 id= 的工坊链接或直接填写数字 ID。");
+        }
+        var target = new ServerMapTarget(kind, id);
+        Validate(target);
+        return target;
     }
     private static bool WorkshopId(string value) => !string.IsNullOrEmpty(value) && value.Length <= 20 && value[0] != '0' && value.All(char.IsAsciiDigit) && ulong.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0;
     public static string Label(ServerMapTarget target) => target.Kind switch

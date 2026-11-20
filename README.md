@@ -1,6 +1,6 @@
 <h1 align="center">Hello Counter-Strike! Launcher</h1>
 
-Hello Counter-Strike! Launcher（简称 **HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建。
+Hello Counter-Strike! Launcher（**HCSL**）是面向 CS2 服主与玩家的 Windows / Linux 桌面工具集合，使用 .NET 10 与 Avalonia 构建。
 
 ## 文档目录
 
@@ -15,9 +15,9 @@ Hello Counter-Strike! Launcher（简称 **HCSL**）是面向 CS2 服主与玩家
 
 项目包含三个前端和一个本机宿主：
 
-- **服主 GUI**（`HCSL.Host`）：HMCL 风格侧栏、实例管理、下载中心与设置。
-- **服主 TUI**（`HCSL.Tui`）：无桌面环境下的终端管理界面。
-- **玩家客户端**（`HCSL.Client`）：服务器列表、直连与入服密码。
+- **服务端GUI**（`HCSL.Host`）：提供服务端下载，管理和运行，使用实例来隔离进行插件和配置隔离
+- **服务端TUI**（`HCSL.Tui`）：无桌面环境下的终端管理界面，提供GUI支持的全部功能，支持ssh远程终端使用
+- **玩家客户端**（`HCSL.Client`）：查看保存的服务器列表，提供相比CS2原本命令行更直观的进服操作，不
 - **本机 Daemon**（`HCSL.Daemon`）：持有服务器进程与 SteamCMD 任务，通过本机 IPC 为 GUI/TUI 提供能力。
 
 实例只保存配置、插件与预设，CS2 服务端由全局内容库统一安装和更新。
