@@ -82,8 +82,8 @@ public sealed partial class ServerLogWindow
         {
             Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center,
             Classes = { "console-searchbar" },
-            // Steps first, counter last: the buttons stay next to the field, the number changes next to nothing.
-            Children = { search, previous, next, findResult, caseGroup }
+            // Steps next to the field, then the case toggle, and the count last: it grows without pushing the buttons.
+            Children = { search, previous, next, caseGroup, findResult }
         };
         ArcTokens.Bind(searchRow, StackPanel.SpacingProperty, ArcDesignTokenKind.Space1);
         toolbar.Children.Add(searchRow);
