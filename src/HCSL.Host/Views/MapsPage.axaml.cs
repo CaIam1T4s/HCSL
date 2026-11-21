@@ -80,6 +80,19 @@ public sealed partial class MapsPage : UserControl
             allRows.Add(row);
         }
         FillPoolFilter(pools, library?.Library.PoolOf(ctx.PresetId)?.Id);
+        // A pool can hold a map the catalog does not offer yet (a removed vanity pack, a Workshop id that never
+        // downloaded). Show it anyway, so filtering a pool never yields "no maps" for maps that are in it.
+        var known = allRows.Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var orphaned = pools.SelectMany(p => p.Maps).Where(m => !known.Contains(MapCatalogRules.KeyOf(m))).ToArray();
+        foreach (var target in orphaned)
+        {
+            known.Add(MapCatalogRules.KeyOf(target));
+            var entry = target.Kind == ServerMapKind.Standard
+                ? new MapCatalogEntry(target.Value, MapCatalogSource.Standard, null)
+                : new MapCatalogEntry("Workshop #" + target.Value, MapCatalogSource.Workshop, target.Value, Incomplete: true);
+            var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key)).Select(p => p.Name).ToArray();
+            allRows.Add(new MapRow(entry, names));
+        }
         Apply();
     }
 

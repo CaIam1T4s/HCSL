@@ -14,16 +14,18 @@
       <Setter Property="Template">
         <ControlTemplate>
           <Grid Width="20" Height="20" Background="Transparent">
+            <!-- The dot is a child of the ring so both circles share one box and cannot drift apart. -->
             <Border Name="Ring" Width="20" Height="20"
                     CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                     BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
                     Background="Transparent"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            <Border Name="Dot" Width="10" Height="10"
-                    CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
-                    Background="{arc:ArcDesignTokenResource Accent}"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    arc:ArcMotion.Tracks="True" Opacity="0"/>
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Border Name="Dot" Width="10" Height="10"
+                      CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                      Background="{arc:ArcDesignTokenResource Accent}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      arc:ArcMotion.Tracks="True" Opacity="0"/>
+            </Border>
           </Grid>
         </ControlTemplate>
       </Setter>
