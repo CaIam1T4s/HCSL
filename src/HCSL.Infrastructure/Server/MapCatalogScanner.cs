@@ -43,6 +43,8 @@ public static class MapCatalogScanner
             if (!IsMapFile(path)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             if (!ServerMapRules.TryValidateStandard(name)) continue;
+            // "*_vanity" packs are menu/homepage artwork for a map, not something a server can load.
+            if (name.EndsWith("_vanity", StringComparison.OrdinalIgnoreCase)) continue;
             // CS2 bundles "workshop_preview_*" packs: they are official previews of Workshop maps, not the download.
             var source = name.StartsWith("workshop_preview_", StringComparison.OrdinalIgnoreCase)
                 ? MapCatalogSource.Preview : MapCatalogSource.Standard;

@@ -537,7 +537,9 @@ WaitUntil(() => mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().First
 var mapsTable = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
 var mapsFilter = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single();
 Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page must offer search plus source and pool filters.");
-Check(mapsFilter.Fields.Single(f => f.Id == "pool").Options.Count == 1, "The pool filter must list the instance pools.");
+var poolOptions = mapsFilter.Fields.Single(f => f.Id == "pool").Options;
+Check(poolOptions.Count == 1 && poolOptions[0].Hint?.Contains("张", StringComparison.Ordinal) == true,
+    "The pool filter must list the instance pools with their map counts.");
 Check(mapsTable.Columns.Count == 4 && !mapsTable.IsSelectable, "The map table needs a single-select column, name, source and pool membership.");
 var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
 Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图" }),

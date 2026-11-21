@@ -14,7 +14,8 @@
       <Setter Property="Template">
         <ControlTemplate>
           <Grid Width="20" Height="20" Background="Transparent">
-            <Border Name="Ring" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+            <Border Name="Ring" Width="20" Height="20"
+                    CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                     BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
                     Background="Transparent"
                     HorizontalAlignment="Center" VerticalAlignment="Center"/>

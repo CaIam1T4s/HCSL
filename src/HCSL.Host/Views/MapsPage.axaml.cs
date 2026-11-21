@@ -79,16 +79,29 @@ public sealed partial class MapsPage : UserControl
             row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
             allRows.Add(row);
         }
-        FillPoolFilter(pools.Select(p => p.Name).ToArray());
+        FillPoolFilter(pools, library?.Library.PoolOf(ctx.PresetId)?.Id);
         Apply();
     }
 
-    private void FillPoolFilter(IReadOnlyList<string> poolNames)
+    /// <summary>
+    /// Pool chips: the preset's own pool first and marked as current, the rest by name with their map count, so the
+    /// list answers "which one am I on" and "which are worth filtering" before it is opened.
+    /// </summary>
+    private void FillPoolFilter(IReadOnlyList<MapPoolRecord> pools, Guid? currentPoolId)
     {
         var field = Filters.Fields.FirstOrDefault(f => f.Id == "pool");
         if (field is null) return;
         field.Options.Clear();
-        foreach (var name in poolNames) field.Options.Add(new FilterOption { Value = name, Label = name });
+        foreach (var pool in pools.OrderByDescending(p => p.Id == currentPoolId).ThenBy(p => p.Name, StringComparer.Ordinal))
+        {
+            var count = pool.Maps.Length + " 张";
+            field.Options.Add(new FilterOption
+            {
+                Value = pool.Name,
+                Label = pool.Name,
+                Hint = pool.Id == currentPoolId ? "当前 · " + count : count
+            });
+        }
     }
 
     /// <summary>Source chips, pool chips and the search text all narrow the same catalog.</summary>
