@@ -8,19 +8,27 @@
   <UserControl.Resources>
     <!-- One row at a time: a compact dot whose fill and ring animate through Arc's tokens and motion levels. -->
     <ControlTheme x:Key="MapSelectRadio" TargetType="RadioButton">
-      <Setter Property="Width" Value="20"/>
-      <Setter Property="Height" Value="20"/>
+      <!-- No padding or margin of its own: the dot must sit exactly in the middle of the ring. -->
+      <Setter Property="Width" Value="14"/>
+      <Setter Property="Height" Value="14"/>
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <ControlTemplate>
-          <Grid Width="20" Height="20" Background="Transparent">
-            <!-- The dot is a child of the ring so both circles share one box and cannot drift apart. -->
-            <Border Name="Ring" Width="20" Height="20"
+          <Grid Width="14" Height="14" Background="Transparent">
+            <!-- The dot is a child of the ring so both circles share one box and cannot drift apart. The padding equals
+                 the border so the child is centered in the ring's own bounds, not in the inset content box. -->
+            <Border Name="Ring" Width="14" Height="14" Padding="1"
                     CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                     BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
                     Background="Transparent"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
-              <Border Name="Dot" Width="10" Height="10"
+              <Border Name="Dot" Width="6" Height="6"
                       CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                       Background="{arc:ArcDesignTokenResource Accent}"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -103,7 +111,7 @@
                  EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
                  ItemNameOne="张地图" ItemNameOther="张地图">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="" IsSortable="False" Width="44" CellTemplate="{StaticResource MapSelectCell}"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="36" CellTemplate="{StaticResource MapSelectCell}"/>
           <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
           <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
                                CellTemplate="{StaticResource MapSourceCell}"/>
