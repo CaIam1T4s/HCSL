@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using Avalonia.Automation;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
@@ -37,6 +39,25 @@ public sealed partial class MapsPage : UserControl
         {
             if (e.Property == SelectionToolbar.SelectedCountProperty) UpdateActions();
         };
+        // The whole row selects its map: clicking a 36 px dot should not be the only way to choose a map.
+        Table.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, OnRowClicked,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    /// <summary>Maps a click anywhere in a row to that row's selection; the radio still works for the keyboard.</summary>
+    private void OnRowClicked(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left) return;
+        var point = e.GetPosition(Table);
+        foreach (var cell in Table.GetVisualDescendants().OfType<Control>())
+        {
+            if (cell.DataContext is not MapRow row) continue;
+            if (cell.TranslatePoint(default, Table) is not { } origin) continue;
+            if (!new Avalonia.Rect(origin, cell.Bounds.Size).Contains(point)) continue;
+            row.IsSelected = true;
+            e.Handled = true;
+            return;
+        }
     }
 
     public async Task AttachAsync(MapsPageContext value)

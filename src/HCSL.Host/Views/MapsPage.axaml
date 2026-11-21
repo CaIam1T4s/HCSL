@@ -3,6 +3,7 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              xmlns:vm="using:HCSL.Host.ViewModels"
+             xmlns:views="using:HCSL.Host.Views"
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
   <UserControl.Resources>
@@ -20,38 +21,35 @@
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <ControlTemplate>
+          <!-- Two ellipses: a stroke is centred on its own bounds, so no border inset can move the dot. -->
           <Grid Width="14" Height="14" Background="Transparent">
-            <!-- The dot is a child of the ring so both circles share one box and cannot drift apart. The padding equals
-                 the border so the child is centered in the ring's own bounds, not in the inset content box. -->
-            <Border Name="Ring" Width="14" Height="14" Padding="1"
-                    CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
-                    BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
-                    Background="Transparent"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
-              <Border Name="Dot" Width="6" Height="6"
-                      CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
-                      Background="{arc:ArcDesignTokenResource Accent}"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                      arc:ArcMotion.Tracks="True" Opacity="0"/>
-            </Border>
+            <Ellipse Name="Ring" Width="14" Height="14" StrokeThickness="1"
+                     Stroke="{arc:ArcDesignTokenResource BorderStrong}"/>
+            <Ellipse Name="Dot" Width="6" Height="6"
+                     Fill="{arc:ArcDesignTokenResource Accent}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     arc:ArcMotion.Tracks="True" Opacity="0"/>
           </Grid>
         </ControlTemplate>
       </Setter>
-      <Style Selector="^:checked /template/ Border#Dot">
+      <Style Selector="^:checked /template/ Ellipse#Dot">
         <Setter Property="Opacity" Value="1"/>
       </Style>
-      <Style Selector="^:checked /template/ Border#Ring">
-        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource Accent}"/>
+      <Style Selector="^:checked /template/ Ellipse#Ring">
+        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Accent}"/>
       </Style>
-      <Style Selector="^:pointerover /template/ Border#Ring">
-        <Setter Property="BorderBrush" Value="{arc:ArcDesignTokenResource AccentStrong}"/>
+      <Style Selector="^:pointerover /template/ Ellipse#Ring">
+        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource AccentStrong}"/>
       </Style>
-      <Style Selector="^/template/ Border#Dot:motion-full">
+      <Style Selector="^:checked:pointerover /template/ Ellipse#Ring">
+        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Accent}"/>
+      </Style>
+      <Style Selector="^/template/ Ellipse#Dot:motion-full">
         <Setter Property="Transitions">
           <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
         </Setter>
       </Style>
-      <Style Selector="^/template/ Border#Dot:motion-reduced">
+      <Style Selector="^/template/ Ellipse#Dot:motion-reduced">
         <Setter Property="Transitions">
           <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
         </Setter>
