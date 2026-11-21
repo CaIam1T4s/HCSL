@@ -89,15 +89,17 @@ public static class MapPoolTests
         // Catalog: built-in files, downloaded Workshop items, and folders that exist without a map.
         var catalog = MapCatalogScanner.Build(
         [
-            new MapFile("maps/de_dust2.bsp", 100, DateTimeOffset.UnixEpoch),
+            new MapFile("maps/de_dust2.vpk", 100, DateTimeOffset.UnixEpoch),
+            new MapFile("maps/de_mirage.bsp", 90, null),
             new MapFile("maps/notes.txt", 10, null),
-            new MapFile("maps/workshop/3070244462/de_akizuki.bsp", 200, null),
+            new MapFile("maps/de_dust2.vpk.sig", 1, null),
+            new MapFile("maps/workshop/3070244462/de_akizuki.vpk", 200, null),
             new MapFile("maps/workshop/3070244462/de_second.bsp", 200, null),
             new MapFile("maps/workshop/3120456789/", 0, null)
         ]);
         MapCatalogRules.Validate(catalog);
-        Check(catalog.Entries.Length == 3, "Catalog must list one built-in, one downloaded Workshop item and one incomplete download.");
-        Check(catalog.Entries.Count(e => e.Source == MapCatalogSource.Standard) == 1, "Only .bsp files become built-in entries.");
+        Check(catalog.Entries.Length == 4, "Catalog must list both built-in packs, one downloaded Workshop item and one incomplete download.");
+        Check(catalog.Entries.Count(e => e.Source == MapCatalogSource.Standard) == 2, "CS2 ships .vpk packs; loose .bsp maps count too, sidecars do not.");
         var downloaded = catalog.Entries.Single(e => e.WorkshopId == "3070244462");
         Check(downloaded.Incomplete == false && downloaded.SizeBytes == 200, "A Workshop item with a map must count as downloaded once.");
         Check(catalog.Entries.Single(e => e.WorkshopId == "3120456789").Incomplete, "A Workshop folder without a .bsp must be marked incomplete.");

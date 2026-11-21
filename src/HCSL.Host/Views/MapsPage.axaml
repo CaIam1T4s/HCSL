@@ -59,10 +59,9 @@
     </DataTemplate>
   </UserControl.Resources>
 
+  <Border Padding="{DynamicResource ConsolePageInset}">
   <Grid RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto">
-      <TextBlock Text="地图切换" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"
-                 VerticalAlignment="Center"/>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
         <arc:Button x:Name="RulesButton" Variant="Ghost" Size="Small" Click="ShowRules">
           <lucide:LucideIcon Kind="CircleQuestionMark"/>
@@ -75,6 +74,7 @@
 
     <arc:FilterToolbar Grid.Row="1" x:Name="Filters" IsSearchVisible="True"
                        SearchPlaceholder="搜索地图名或工坊 ID" Label="地图筛选"
+                       EmptyText="" AddFilterLabel="筛选" ClearAllLabel="清除筛选"
                        FiltersChanged="FiltersChanged">
       <arc:FilterToolbar.Fields>
         <arc:FilterField Id="source" Label="来源">
@@ -107,4 +107,5 @@
       </arc:Table>
     </arc:SelectionToolbar>
   </Grid>
+  </Border>
 </UserControl>

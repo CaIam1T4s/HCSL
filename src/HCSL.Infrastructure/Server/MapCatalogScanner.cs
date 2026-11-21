@@ -2,16 +2,21 @@ using HCSL.Core;
 
 namespace HCSL.Infrastructure.Server;
 
-/// <summary>One `.bsp` the deployment produced, described without exposing its absolute path.</summary>
+/// <summary>One map pack or map file the deployment produced, described without exposing its absolute path.</summary>
 public sealed record MapFile(string RelativePath, long SizeBytes, DateTimeOffset? ModifiedAt);
 
 /// <summary>
-/// Builds the app-level map catalog from a deployed game directory: built-in maps live in `maps/*.bsp`, Workshop items
-/// in `maps/workshop/&lt;fileid&gt;/**`. Pure on the file list, so the rules are testable without a real deployment.
+/// Builds the map catalog from a deployed game directory: CS2 ships maps as `.vpk` packs (`maps/*.vpk`), custom maps
+/// may be loose `.bsp`, and Workshop items live in `maps/workshop/&lt;fileid&gt;/**`. Pure on the file list, so the rules
+/// are testable without a real deployment.
 /// </summary>
 public static class MapCatalogScanner
 {
     private const string WorkshopRoot = "maps/workshop/";
+
+    /// <summary>A map pack or a loose map; everything else in the folder is a sidecar, not a map.</summary>
+    private static bool IsMapFile(string path) =>
+        path.EndsWith(".vpk", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".bsp", StringComparison.OrdinalIgnoreCase);
 
     public static MapCatalogResult Build(IEnumerable<MapFile> files, int maxEntries = MapCatalogRules.MaxEntries)
     {
@@ -29,13 +34,13 @@ public static class MapCatalogScanner
                 if (!ServerMapRules.TryValidateWorkshopId(id)) continue;
                 // The folder counts even when it holds no map yet: that is exactly "downloading or failed".
                 folders.Add(id);
-                if (!path.EndsWith(".bsp", StringComparison.OrdinalIgnoreCase) || parts.Length < 2) continue;
+                if (!IsMapFile(path) || parts.Length < 2) continue;
                 var key = "workshop:" + id;
                 if (entries.TryGetValue(key, out var known) && !known.Incomplete) continue;
                 entries[key] = new MapCatalogEntry(Name(id), MapCatalogSource.Workshop, id, file.SizeBytes, file.ModifiedAt);
                 continue;
             }
-            if (!path.EndsWith(".bsp", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsMapFile(path)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             if (!ServerMapRules.TryValidateStandard(name)) continue;
             entries["standard:" + name] = new MapCatalogEntry(name, MapCatalogSource.Standard, null, file.SizeBytes, file.ModifiedAt);
@@ -65,7 +70,7 @@ public static class MapCatalogScanner
         {
             if (Directory.Exists(maps))
             {
-                foreach (var file in Directory.EnumerateFiles(maps, "*.bsp", SearchOption.TopDirectoryOnly))
+                foreach (var file in Directory.EnumerateFiles(maps, "*", SearchOption.TopDirectoryOnly).Where(IsMapFile))
                     files.Add(Describe(gameRoot, file));
                 var workshop = Path.Combine(maps, "workshop");
                 if (Directory.Exists(workshop))
@@ -74,7 +79,7 @@ public static class MapCatalogScanner
                     {
                         var id = Path.GetFileName(item);
                         var hasMap = false;
-                        foreach (var file in Directory.EnumerateFiles(item, "*.bsp", SearchOption.AllDirectories))
+                        foreach (var file in Directory.EnumerateFiles(item, "*", SearchOption.AllDirectories).Where(IsMapFile))
                         {
                             hasMap = true;
                             files.Add(Describe(gameRoot, file));
