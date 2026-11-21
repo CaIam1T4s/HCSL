@@ -100,6 +100,10 @@ public static class MapPoolTests
         MapCatalogRules.Validate(catalog);
         Check(catalog.Entries.Length == 4, "Catalog must list both built-in packs, one downloaded Workshop item and one incomplete download.");
         Check(catalog.Entries.Count(e => e.Source == MapCatalogSource.Standard) == 2, "CS2 ships .vpk packs; loose .bsp maps count too, sidecars do not.");
+        // Valve's bundled "workshop_preview_*" packs are previews, not downloaded Workshop items.
+        var preview = MapCatalogScanner.Build([new MapFile("maps/workshop_preview_ancient.vpk", 10, null)]);
+        Check(preview.Entries.Single().Source == MapCatalogSource.Preview && preview.Entries.Single().Key == "standard:workshop_preview_ancient",
+            "A workshop_preview pack must be catalogued as a preview switched like a built-in map.");
         var downloaded = catalog.Entries.Single(e => e.WorkshopId == "3070244462");
         Check(downloaded.Incomplete == false && downloaded.SizeBytes == 200, "A Workshop item with a map must count as downloaded once.");
         Check(catalog.Entries.Single(e => e.WorkshopId == "3120456789").Incomplete, "A Workshop folder without a .bsp must be marked incomplete.");

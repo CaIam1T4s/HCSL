@@ -16,10 +16,12 @@
           <Grid Width="20" Height="20" Background="Transparent">
             <Border Name="Ring" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                     BorderThickness="1" BorderBrush="{arc:ArcDesignTokenResource BorderStrong}"
-                    Background="Transparent"/>
+                    Background="Transparent"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
             <Border Name="Dot" Width="10" Height="10"
                     CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
                     Background="{arc:ArcDesignTokenResource Accent}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
                     arc:ArcMotion.Tracks="True" Opacity="0"/>
           </Grid>
         </ControlTemplate>
@@ -74,12 +76,13 @@
 
     <arc:FilterToolbar Grid.Row="1" x:Name="Filters" IsSearchVisible="True"
                        SearchPlaceholder="搜索地图名或工坊 ID" Label="地图筛选"
-                       EmptyText="" AddFilterLabel="筛选" ClearAllLabel="清除筛选"
+                       EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选"
                        FiltersChanged="FiltersChanged">
       <arc:FilterToolbar.Fields>
         <arc:FilterField Id="source" Label="来源">
           <arc:FilterField.Options>
             <arc:FilterOption Value="standard" Label="内置"/>
+            <arc:FilterOption Value="preview" Label="预览"/>
             <arc:FilterOption Value="workshop" Label="工坊"/>
             <arc:FilterOption Value="missing" Label="未下载"/>
           </arc:FilterField.Options>

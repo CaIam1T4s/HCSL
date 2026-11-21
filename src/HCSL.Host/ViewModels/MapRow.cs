@@ -42,15 +42,30 @@ public sealed class MapRow : INotifyPropertyChanged
     public IReadOnlyList<PresenceStackViewer> Pools => pools;
     public string PoolText => poolName ?? "";
 
-    /// <summary>The filter chip value for this row: built-in, Workshop or not downloaded.</summary>
-    public string FilterSource => Entry.Source == MapCatalogSource.Standard ? "standard"
-        : Entry.Incomplete ? "missing" : "workshop";
+    /// <summary>The filter chip this row answers: built-in, official preview, Workshop or not downloaded.</summary>
+    public string FilterSource => Entry.Source switch
+    {
+        MapCatalogSource.Preview => "preview",
+        MapCatalogSource.Workshop => Entry.Incomplete ? "missing" : "workshop",
+        _ => "standard"
+    };
 
-    public string SourceText => Entry.Source == MapCatalogSource.Standard ? "内置"
-        : Entry.Incomplete ? "未下载" : "工坊";
+    public string SourceText => Entry.Source switch
+    {
+        MapCatalogSource.Preview => "预览",
+        MapCatalogSource.Workshop => Entry.Incomplete ? "未下载" : "工坊",
+        _ => "内置"
+    };
 
-    public BadgeTone SourceTone => Entry.Source == MapCatalogSource.Standard ? BadgeTone.Success
-        : Entry.Incomplete ? BadgeTone.Neutral : BadgeTone.Info;
+    /// <summary>Both spellings a source chip may carry: the option value and its label.</summary>
+    public IReadOnlyList<string> SourceFilterValues => [FilterSource, SourceText];
+
+    public BadgeTone SourceTone => Entry.Source switch
+    {
+        MapCatalogSource.Preview => BadgeTone.Neutral,
+        MapCatalogSource.Workshop => Entry.Incomplete ? BadgeTone.Neutral : BadgeTone.Info,
+        _ => BadgeTone.Success
+    };
 
     /// <summary>Every pool of the instance that holds this map; the presence stack shows their initials.</summary>
     public void SetPools(IReadOnlyList<string> names)

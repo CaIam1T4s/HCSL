@@ -1,7 +1,7 @@
 namespace HCSL.Core;
 
-/// <summary>Where a catalog entry comes from: a deployed built-in map file, or a Workshop item folder.</summary>
-public enum MapCatalogSource { Standard, Workshop }
+/// <summary>Where a catalog entry comes from: a deployed map pack, an official Workshop preview, or a Workshop item.</summary>
+public enum MapCatalogSource { Standard, Workshop, Preview }
 
 /// <summary>
 /// One map the launcher can offer. The catalog is app-level (shared by every instance), while "downloaded" is a fact

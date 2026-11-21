@@ -96,12 +96,16 @@ public sealed partial class MapsPage : UserControl
     {
         var query = Filters.SearchText ?? "";
         var chips = Filters.ActiveFilters ?? [];
-        var sources = chips.Where(c => c.Id == "source").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A chip may carry the option value ("standard") or its label ("内置"); accept either.
+        var sources = chips.Where(c => c.Id == "source")
+            .SelectMany(c => new[] { c.Value, c.Label })
+            .Where(v => v is { Length: > 0 })
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var pools = chips.Where(c => c.Id == "pool").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         visible.Clear();
         foreach (var row in allRows)
         {
-            if (sources.Count > 0 && !sources.Contains(row.FilterSource)) continue;
+            if (sources.Count > 0 && !row.SourceFilterValues.Any(sources.Contains)) continue;
             if (pools.Count > 0 && !row.Pools.Any(v => pools.Contains(v.Name))) continue;
             if (query.Length > 0 && !row.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;

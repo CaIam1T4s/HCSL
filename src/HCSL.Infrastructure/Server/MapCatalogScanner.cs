@@ -43,7 +43,10 @@ public static class MapCatalogScanner
             if (!IsMapFile(path)) continue;
             var name = Path.GetFileNameWithoutExtension(path);
             if (!ServerMapRules.TryValidateStandard(name)) continue;
-            entries["standard:" + name] = new MapCatalogEntry(name, MapCatalogSource.Standard, null, file.SizeBytes, file.ModifiedAt);
+            // CS2 bundles "workshop_preview_*" packs: they are official previews of Workshop maps, not the download.
+            var source = name.StartsWith("workshop_preview_", StringComparison.OrdinalIgnoreCase)
+                ? MapCatalogSource.Preview : MapCatalogSource.Standard;
+            entries["standard:" + name] = new MapCatalogEntry(name, source, null, file.SizeBytes, file.ModifiedAt);
         }
         // Folders that exist but hold no map are shown as incomplete instead of disappearing without a trace.
         foreach (var id in folders)
