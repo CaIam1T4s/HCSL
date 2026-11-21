@@ -48,27 +48,39 @@ public sealed partial class MapsPage : UserControl
     public async Task ReloadAsync()
     {
         if (context is not { } ctx) return;
+        MapCatalogResult catalog;
         try
         {
-            var catalog = await ctx.Model.MapCatalogAsync(ctx.InstanceId);
-            library = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.List, ctx.InstanceId));
-            var pools = library.Library.Pools;
-            allRows.Clear();
-            foreach (var entry in catalog.Entries)
-            {
-                var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
-                    .Select(p => p.Name).ToArray();
-                var row = new MapRow(entry, names);
-                row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
-                allRows.Add(row);
-            }
-            FillPoolFilter(pools.Select(p => p.Name).ToArray());
-            Apply();
+            catalog = await ctx.Model.MapCatalogAsync(ctx.InstanceId);
         }
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
         {
             ctx.Notify(new ToastOptions { Title = "无法读取地图", Description = e.Message, Kind = ToastKind.Error });
+            return;
         }
+        // The catalog is the page's reason to exist, so rows appear even when the pool library cannot be read.
+        var pools = Array.Empty<MapPoolRecord>();
+        try
+        {
+            library = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.List, ctx.InstanceId));
+            pools = library.Library.Pools;
+        }
+        catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            library = null;
+            ctx.Notify(new ToastOptions { Title = "无法读取图池", Description = e.Message + "；地图列表仍可使用", Kind = ToastKind.Warning });
+        }
+        allRows.Clear();
+        foreach (var entry in catalog.Entries)
+        {
+            var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
+                .Select(p => p.Name).ToArray();
+            var row = new MapRow(entry, names);
+            row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
+            allRows.Add(row);
+        }
+        FillPoolFilter(pools.Select(p => p.Name).ToArray());
+        Apply();
     }
 
     private void FillPoolFilter(IReadOnlyList<string> poolNames)

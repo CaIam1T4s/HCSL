@@ -27,10 +27,11 @@ public sealed partial class HostServerController
             throw new IOException("HCSL-MAPCATALOG-INSTANCE: Refresh the instance list.");
         return await instances.MapCatalogAsync(instanceId);
     }
-    /// <summary>Pool library reads are always allowed; writes share the map-pool write gate.</summary>
+    /// <summary>Pool library reads only need a connected daemon; writes share the map-pool write gate.</summary>
     public async Task<MapPoolLibraryResult> MapPoolsAsync(MapPoolLibraryCommand command)
     {
-        if (Busy || !Server.Connected || (command.Action != MapPoolLibraryAction.List && !CanEditMapPool))
+        if (!Server.Connected) throw new IOException("HCSL-MAPPOOL-OFFLINE: The daemon is not connected.");
+        if (command.Action != MapPoolLibraryAction.List && !CanEditMapPool)
             throw new IOException("HCSL-MAPPOOL-BUSY: Stop server/SteamCMD and finish recovery before saving maps.");
         if (!Instances.Any(i => i.Entry.Id == command.InstanceId))
             throw new IOException("HCSL-MAPPOOL-INSTANCE: Refresh the instance list.");
