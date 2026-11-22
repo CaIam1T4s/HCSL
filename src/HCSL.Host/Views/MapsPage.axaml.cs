@@ -30,11 +30,20 @@ public sealed partial class MapsPage : UserControl
         InitializeComponent();
         Table.ItemsSource = visible;
         AutomationProperties.SetName(RulesButton, "地图轮换规则");
-        ToolTip.SetTip(RulesButton, "仅内置地图和创意工坊合集支持轮换");
+        // Arc's tooltip, so it keeps the shared floating-surface material and typography.
+        Tooltip.SetTip(RulesButton, "仅内置地图和创意工坊合集支持轮换");
+        // The refresh icon is self-evident; an extra tooltip would only add noise.
         AutomationProperties.SetName(RefreshButton, "刷新地图目录");
-        ToolTip.SetTip(RefreshButton, "刷新地图目录");
         // Single selection: the bar only ever reports one row, and "select all" has nothing to select.
         Selection.TotalCount = 0;
+        Selection.Labels = new SelectionToolbarLabels
+        {
+            Culture = System.Globalization.CultureInfo.GetCultureInfo("zh-CN"),
+            Count = count => "已选 " + count,
+            SelectAll = total => "全选 " + total,
+            Clear = "清除选择",
+            Toolbar = "批量操作"
+        };
         Selection.PropertyChanged += (_, e) =>
         {
             if (e.Property == SelectionToolbar.SelectedCountProperty) UpdateActions();
@@ -249,15 +258,8 @@ public sealed partial class MapsPage : UserControl
     }
 
     /// <summary>Rotation rules, kept short and honest: only built-in pools and a single collection rotate on their own.</summary>
-    private void ShowRules(object? sender, RoutedEventArgs e)
-    {
-        context?.Notify(new ToastOptions
-        {
-            Title = "仅内置地图和创意工坊合集支持轮换",
-            Description = "含工坊单图的图池需要手动切换；合集的成员与顺序以日志为准",
-            Kind = ToastKind.Info
-        });
-    }
+    private void ShowRules(object? sender, RoutedEventArgs e) =>
+        context?.Notify(new ToastOptions { Title = "仅内置地图和创意工坊合集支持轮换", Kind = ToastKind.Info });
 
     private async void Refresh(object? sender, RoutedEventArgs e) => await ReloadAsync();
 }
