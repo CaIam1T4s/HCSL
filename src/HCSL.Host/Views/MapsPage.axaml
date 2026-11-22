@@ -6,17 +6,39 @@
              xmlns:views="using:HCSL.Host.Views"
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
+  <UserControl.Styles>
+    <!-- The selection marks fade in and out instead of appearing: Arc's transitions honour the motion level. -->
+    <Style Selector="Border.map-rail, lucide|LucideIcon.map-check">
+      <Setter Property="Opacity" Value="0"/>
+    </Style>
+    <Style Selector="Border.map-rail.selected, lucide|LucideIcon.map-check.selected">
+      <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <Style Selector="Border.map-rail:motion-full, lucide|LucideIcon.map-check:motion-full">
+      <Setter Property="Transitions">
+        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.map-rail:motion-reduced, lucide|LucideIcon.map-check:motion-reduced">
+      <Setter Property="Transitions">
+        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
   <UserControl.Resources>
     <!-- Selection reads as a table row, not as a tiny control: an accent rail on the left and a check on the right. -->
     <DataTemplate x:Key="MapRailCell" x:DataType="vm:MapRow">
       <Border Width="3" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
               Background="{arc:ArcDesignTokenResource Accent}"
-              IsVisible="{Binding IsSelected}" Margin="6,0,0,0"/>
+              Classes.selected="{Binding IsSelected}" Classes="map-rail" Margin="6,0,0,0"/>
     </DataTemplate>
     <DataTemplate x:Key="MapSelectedCell" x:DataType="vm:MapRow">
+      <!-- Kept out of the scrollbar's lane and always laid out, so it fades instead of popping in. -->
       <lucide:LucideIcon Kind="Check" Width="16" Height="16"
                          Foreground="{arc:ArcDesignTokenResource Accent}"
-                         IsVisible="{Binding IsSelected}" HorizontalAlignment="Center"/>
+                         Classes.selected="{Binding IsSelected}" Classes="map-check"
+                         HorizontalAlignment="Right" Margin="0,0,16,0"
+                         arc:ArcMotion.Tracks="True" IsHitTestVisible="False"/>
     </DataTemplate>
     <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
       <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
