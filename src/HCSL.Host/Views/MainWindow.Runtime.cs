@@ -24,24 +24,40 @@ public partial class MainWindow
 
     public Task StartSelectedAsync() => RunStartAsync();
 
-    private void StartScopedInstance(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _ = StartSelectedAsync();
+    /// <summary>
+    /// One dispatcher for the instance sidebar: the 运行 rows are actions, the others are sections. Public so the GUI test
+    /// can invoke the same path the sidebar uses.
+    /// </summary>
+    public void InvokeInstanceScopeAction(string key)
+    {
+        switch (key)
+        {
+            case "start": _ = StartSelectedAsync(); return;
+            case "console": ShowLogs(); return;
+            default: (DataContext as ShellViewModel)?.SelectInstanceSection(key); return;
+        }
+    }
 
-    private void OpenScopedConsole(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => ShowLogs();
-
-    /// <summary>The scope footer offers the two runtime entry points; their availability follows the host state.</summary>
+    /// <summary>The 运行 rows follow the host state; nothing else in the scope offers them.</summary>
     private void UpdateScopeFooter()
     {
+        if (ScopeItem("start") is not { } start || ScopeItem("console") is not { } console) return;
         if (shellServers is not { } m)
         {
-            InstanceStartButton.IsEnabled = InstanceConsoleButton.IsEnabled = false;
+            start.IsEnabled = console.IsEnabled = false;
+            start.IsVisible = true;
             return;
         }
         var idle = !starting && m.Server.Connected && !m.Busy;
-        InstanceStartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
-        InstanceConsoleButton.IsEnabled = idle;
-        InstanceStartButton.IsVisible = !m.Server.Active;
-        InstanceConsoleButton.IsVisible = m.Server.Connected;
+        start.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        console.IsEnabled = idle;
+        start.IsVisible = !m.Server.Active;
+        console.IsVisible = m.Server.Connected;
     }
+
+    /// <summary>SidebarItem is not a control, so its rows are resolved by key rather than through generated fields.</summary>
+    private TKCode.Arc.SidebarItem? ScopeItem(string key) =>
+        InstanceSidebar.Sections.SelectMany(section => section.Items).FirstOrDefault(item => item.Key == key);
 
     private async Task RunStartAsync()
     {

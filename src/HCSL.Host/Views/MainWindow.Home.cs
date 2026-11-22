@@ -63,14 +63,15 @@ public partial class MainWindow
                 "presets" => LucideIconKind.FileStack,
                 "content" => LucideIconKind.Puzzle,
                 "pools" => LucideIconKind.Map,
+                "start" => LucideIconKind.Play,
+                "console" => LucideIconKind.Terminal,
                 _ => LucideIconKind.ShieldCheck
             });
     }
 
     private void InstanceSidebarItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
     {
-        if (DataContext is ShellViewModel shell && e.Item.Key is { } section)
-            shell.SelectInstanceSection(section);
+        if (e.Item.Key is { } key) InvokeInstanceScopeAction(key);
     }
 
     private void LeaveInstanceScope(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
