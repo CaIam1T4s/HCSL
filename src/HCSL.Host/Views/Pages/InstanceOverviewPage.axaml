@@ -4,9 +4,8 @@
              xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              x:Class="HCSL.Host.Views.Pages.InstanceOverviewPage"
              x:CompileBindings="False" Classes="instance-overview-page">
-  <Border Padding="{DynamicResource ConsolePageInset}">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource ConsolePageInset}" Spacing="{arc:ArcDesignTokenResource Space4}">
         <!-- Runtime actions (start, stop, map change, logs) live in the console window, on the home page and in the
              sidebar's 运行 rows; this scope only holds the instance's own configuration. -->
         <arc:SettingsGroup Header="实例" Appearance="Card">
@@ -58,7 +57,7 @@
 
         <arc:Accordion>
           <arc:AccordionItem Header="高级">
-            <arc:SettingsGroup Appearance="Plain">
+            <arc:SettingsGroup Appearance="Card">
               <arc:SettingsRow x:Name="LayoutRow" Header="目录布局">
                 <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
                   <TextBlock x:Name="LayoutText" VerticalAlignment="Center"
@@ -77,6 +76,5 @@
           </arc:AccordionItem>
         </arc:Accordion>
       </StackPanel>
-    </ScrollViewer>
-  </Border>
+  </ScrollViewer>
 </UserControl>

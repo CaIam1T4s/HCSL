@@ -25,6 +25,10 @@ public partial class MainWindow
 
     public Task StartSelectedAsync() => RunStartAsync();
 
+    private void StartScopedInstance(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _ = StartSelectedAsync();
+
+    private void OpenScopedConsole(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => ShowLogs();
+
     /// <summary>
     /// One dispatcher for the instance sidebar: the 运行 rows are actions, the others are sections. Public so the GUI test
     /// can invoke the same path the sidebar uses.
@@ -42,31 +46,18 @@ public partial class MainWindow
     /// <summary>The 运行 rows follow the host state; nothing else in the scope offers them.</summary>
     private void UpdateScopeFooter()
     {
-        if (scopeStartItem is not { } start || scopeConsoleItem is not { } console) return;
         if (shellServers is not { } m)
         {
-            start.IsEnabled = console.IsEnabled = false;
-            start.IsVisible = true;
+            ScopeStartButton.IsEnabled = ScopeConsoleButton.IsEnabled = false;
+            ScopeStartButton.IsVisible = true;
             return;
         }
         var idle = !starting && m.Server.Connected && !m.Busy;
-        start.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
-        console.IsEnabled = idle;
-        start.IsVisible = !m.Server.Active;
-        console.IsVisible = m.Server.Connected;
+        ScopeStartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        ScopeConsoleButton.IsEnabled = idle;
+        ScopeStartButton.IsVisible = !m.Server.Active;
+        ScopeConsoleButton.IsVisible = m.Server.Connected;
     }
-
-    /// <summary>SidebarItem is not a control, so the footer rows are kept as fields once the footer exists.</summary>
-    private void ResolveScopeActions()
-    {
-        if (InstanceSidebar.Footer is not TKCode.Arc.SidebarSection footer) return;
-        scopeStartItem = footer.Items.FirstOrDefault(item => item.Key == "start");
-        scopeConsoleItem = footer.Items.FirstOrDefault(item => item.Key == "console");
-        if (scopeStartItem is not null) scopeStartItem.Icon = Lucide.Geometry(LucideIconKind.Play);
-        if (scopeConsoleItem is not null) scopeConsoleItem.Icon = Lucide.Geometry(LucideIconKind.Terminal);
-    }
-
-    private TKCode.Arc.SidebarItem? scopeStartItem, scopeConsoleItem;
 
     private async Task RunStartAsync()
     {
