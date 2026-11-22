@@ -160,16 +160,16 @@ public sealed partial class ServerLogWindow
         if (navigation.IsCollapsed) StopPopover.IsOpen = false;
     }
 
-    /// <summary>Stop is offered only while a server runs; the button stays in place so the action is discoverable.</summary>
+    /// <summary>Stop is offered only while a server runs; the hold says so in its own label instead of a tooltip.</summary>
     private void UpdateStopAction()
     {
         var active = model.Server.Active;
         StopHold.IsEnabled = active;
         StopIcon.IsEnabled = active;
-        var tip = active ? "停止运行中的服务器" : "服务器未运行";
-        Tooltip.SetTip(StopHold, tip);
-        Tooltip.SetTip(StopIcon, tip);
-        AutomationProperties.SetName(StopIcon, tip);
+        StopHold.Label = active ? "长按停止服务器" : "服务器未运行";
+        StopHoldCompact.Label = StopHold.Label;
+        AutomationProperties.SetName(StopIcon, active ? "停止服务器" : "服务器未运行");
+        Tooltip.SetTip(StopIcon, active ? "停止运行中的服务器" : "服务器未运行");
     }
 
     private void OpenStopPopover(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
