@@ -81,16 +81,18 @@
               <!-- Runtime entries are actions, not pages. the footer takes real controls, so they read like two nav rows. -->
               <arc:Sidebar.Footer>
                 <StackPanel Spacing="1" Margin="0,0,0,8">
-                  <arc:Button x:Name="ScopeStartButton" Variant="Ghost" Size="Medium" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left" Click="StartScopedInstance"
+                  <arc:Button x:Name="ScopeStartButton" Variant="Ghost" Size="Small" Height="{arc:ArcDesignTokenResource Space8}"
+                              Padding="12,0" FontSize="{arc:ArcDesignTokenResource TypeBase}"
+                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="StartScopedInstance"
                               Foreground="{arc:ArcDesignTokenResource TextSecondary}">
                     <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
                       <lucide:LucideIcon Kind="Play" Width="16" Height="16"/>
                       <TextBlock Text="启动服务器"/>
                     </StackPanel>
                   </arc:Button>
-                  <arc:Button x:Name="ScopeConsoleButton" Variant="Ghost" Size="Medium" HorizontalAlignment="Stretch"
-                              HorizontalContentAlignment="Left" Click="OpenScopedConsole"
+                  <arc:Button x:Name="ScopeConsoleButton" Variant="Ghost" Size="Small" Height="{arc:ArcDesignTokenResource Space8}"
+                              Padding="12,0" FontSize="{arc:ArcDesignTokenResource TypeBase}"
+                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenScopedConsole"
                               Foreground="{arc:ArcDesignTokenResource TextSecondary}">
                     <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
                       <lucide:LucideIcon Kind="Terminal" Width="16" Height="16"/>

@@ -9,6 +9,13 @@
         <!-- Runtime actions (start, stop, map change, logs) live in the console window, on the home page and in the
              sidebar's 运行 rows; this scope only holds the instance's own configuration. -->
         <arc:SettingsGroup Header="实例" Appearance="Card">
+          <arc:SettingsGroup.HeaderActions>
+            <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh"
+                        Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"
+                        Padding="0">
+              <lucide:LucideIcon Kind="RotateCw"/>
+            </arc:Button>
+          </arc:SettingsGroup.HeaderActions>
           <arc:SettingsRow x:Name="NameRow" Header="名称">
             <arc:Input x:Name="NameInput" IsLabelVisible="False" PlaceholderText="实例名称" MaxLength="80"
                        Width="{arc:ArcDesignTokenResource MediaSizeLG}" Description="1–80 个字符"/>
@@ -34,30 +41,21 @@
           </arc:SettingsRow>
         </arc:SettingsGroup>
 
-        <arc:SettingsGroup Header="部署" Appearance="Card">
-          <arc:SettingsGroup.HeaderActions>
-            <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh"
-                        Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"
-                        Padding="0">
-              <lucide:LucideIcon Kind="RotateCw"/>
-            </arc:Button>
-          </arc:SettingsGroup.HeaderActions>
-
-          <arc:SettingsRow x:Name="DeployRow" Header="重新部署">
-            <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-              <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
-              <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
-            </StackPanel>
-          </arc:SettingsRow>
-
-          <arc:SettingsRow Header="打开目录" Description="旧目录归档后仍可手动取回">
-            <arc:Button x:Name="OpenRuntimeButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenRuntime"/>
-          </arc:SettingsRow>
-        </arc:SettingsGroup>
-
+        <!-- Deploying happens automatically before a start, so the manual paths belong with the rest of the
+             troubleshooting controls. -->
         <arc:Accordion>
           <arc:AccordionItem Header="高级">
             <arc:SettingsGroup Appearance="Card">
+              <arc:SettingsRow x:Name="DeployRow" Header="重新部署">
+                <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+                  <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
+                  <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
+                </StackPanel>
+              </arc:SettingsRow>
+
+              <arc:SettingsRow Header="打开目录" Description="旧目录归档后仍可手动取回">
+                <arc:Button x:Name="OpenRuntimeButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenRuntime"/>
+              </arc:SettingsRow>
               <arc:SettingsRow x:Name="LayoutRow" Header="目录布局">
                 <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
                   <TextBlock x:Name="LayoutText" VerticalAlignment="Center"
