@@ -13,7 +13,7 @@ namespace HCSL.Host.Views.Pages;
 public partial class InstanceContentPage : UserControl
 {
     private HostServerController? subscribed;
-    private bool operating, loaded;
+    private bool operating, loaded, loading;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
@@ -44,8 +44,16 @@ public partial class InstanceContentPage : UserControl
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (IsVisible) Dispatcher.UIThread.Post(Update);
+        if (!IsVisible) return;
+        Update();
+        // Framework/plugin reads flip Busy; only a different instance or preset justifies another read.
+        if (loading || operating || Model is not { } m || m.Busy) return;
+        if (m.Selected?.Entry.Definition is not { } definition) return;
+        if ((definition.Id, definition.SelectedPresetId) == loadedKey) return;
+        Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
     }
+
+    private (Guid Instance, Guid Preset) loadedKey;
 
     private void Update()
     {
@@ -61,8 +69,11 @@ public partial class InstanceContentPage : UserControl
 
     private async Task LoadAsync()
     {
+        if (loading) return;
         if (Model is not { } m || !m.Server.Connected) return;
+        loading = true;
         loaded = true;
+        if (m.Selected?.Entry.Definition is { } target) loadedKey = (target.Id, target.SelectedPresetId);
         try
         {
             var check = await m.CheckFrameworksAsync();
@@ -80,7 +91,7 @@ public partial class InstanceContentPage : UserControl
             }
         }
         catch (IOException error) { Error("读取内容失败", error.Message); loaded = false; }
-        finally { Update(); }
+        finally { loading = false; Update(); }
     }
 
     private async void RefreshFrameworks(object? sender, RoutedEventArgs e)

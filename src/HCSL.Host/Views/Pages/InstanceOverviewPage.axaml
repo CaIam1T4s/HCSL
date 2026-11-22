@@ -9,7 +9,6 @@
         <Border Classes="panel">
           <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
             <Grid ColumnDefinitions="*,Auto">
-              <arc:Badge x:Name="StateBadge" Size="Medium" HorizontalAlignment="Left"/>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
                 <arc:Button x:Name="HelpButton" Variant="Ghost" Size="Small"
                             Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"

@@ -687,7 +687,7 @@ if (only is "forms") return 0;
 
 HCSL.Host.Views.Pages.InstancePresetsPage presetPage = null!;
 PresetDefinition firstPreset = null!;
-if (only is null or "presets" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
+if (only is null or "presets" or "admins" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
 {
 firstPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Selected preset");
 var secondPreset = firstPreset with { Id = Guid.NewGuid(), Name = "Browsed preset", Map = "de_nuke" };
@@ -710,6 +710,24 @@ Click(owner, "取消");
 WaitUntil(() => presetPage?.FindControl<TKCode.Arc.Button>("CreateButton") is { IsEnabled: true });
 Check(model.Selected.Entry.Definition.SelectedPresetId == firstPreset.Id, "Cancelled selection changed preset.");
 if (only is "presets") { Console.WriteLine("PASS only presets"); return 0; }
+}
+
+if (only is null or "admins")
+{
+((ShellViewModel)owner.DataContext!).SelectInstanceSection("admins"); Layout();
+for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
+var adminReads = daemon.AdminReads;
+for (var frame = 0; frame < 12; frame++) { Layout(); Thread.Sleep(10); }
+var adminsPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceAdminsPage>().Single();
+var adminTable = adminsPage.FindControl<TKCode.Arc.Table>("Admins")!;
+Check(daemon.AdminReads == adminReads && adminReads <= 2,
+    "The admin page must settle after at most the initial read, not reload on its own Busy notifications.");
+Check(adminTable.ItemsSource is System.Collections.IEnumerable adminRows && adminRows.Cast<object>().Count() == 1,
+    "Admin table missing entries (source: " + (adminTable.ItemsSource?.GetType().Name ?? "null") + ").");
+((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
+Check(((ShellViewModel)owner.DataContext!).IsInstanceOverview, "Leaving the 管理员 section must still switch pages.");
+Console.WriteLine("PASS gui.admins.single-read-no-reload-loop");
+if (only is "admins") return 0;
 }
 
 if (only is null or "pools")
@@ -973,7 +991,7 @@ if (only is "start") return 0;
 
 if (only is not null)
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, background, sidebar, instances, shadow, theme, theme-transition, theme-raster, home, logs, forms, presets, pools, plugins, frameworks, cfg, maps, start, errors or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, background, sidebar, instances, shadow, theme, theme-transition, theme-raster, home, logs, forms, presets, admins, pools, plugins, frameworks, cfg, maps, start, errors or all.");
     return 2;
 }
 return 0;
@@ -1046,6 +1064,7 @@ sealed class FakeDaemon : IDaemonClient
     public BaselineResult Baseline = new("26598758", "None");
     public int CfgWrites;
     public int PoolWrites, PoolReads;
+    public int AdminReads;
     public bool RejectPoolWrites;
     public int PluginWrites;
     public int FrameworkInstalls;
@@ -1109,6 +1128,15 @@ sealed class FakeDaemon : IDaemonClient
                 new MapCatalogEntry("Workshop #3120456789", MapCatalogSource.Workshop, "3120456789", 0, null, Incomplete: true)
             ], "fake catalog");
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(catalog)));
+        }
+        if (request.Kind == RequestKind.Admin)
+        {
+            var command = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson!)!;
+            if (command.Action == AdminAction.List) AdminReads++;
+            var adminSnapshot = new AdminListSnapshot("css", "CounterStrikeSharp", true, [], [],
+                [new AdminEntry("76561198000000000", "Admin", ["#hcsl/admin"], [], null, [])], "admin-1", [], null, 1);
+            return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                AdminResultJson: JsonSerializer.Serialize(new AdminResult(adminSnapshot, "HCSL-ADMIN-OK", []))));
         }
         if (request.Kind == RequestKind.MapPool)
         {

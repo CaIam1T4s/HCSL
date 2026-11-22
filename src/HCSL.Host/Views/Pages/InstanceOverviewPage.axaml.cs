@@ -68,10 +68,6 @@ public partial class InstanceOverviewPage : UserControl
         var entry = m.Selected?.Entry;
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
-        var state = ServerBadgePresentation.For(m.Server.State, m.Server.Connected, m.Server.Reconnecting);
-        StateBadge.Content = state.Text;
-        StateBadge.Tone = state.Tone;
-        StateBadge.Icon = new LucideIcon { Kind = state.Icon };
         PresetText.Text = preset?.Name ?? "—";
         MapText.Text = preset is null ? "—" : ServerMapRules.Label(new(preset.MapKind, preset.Map));
         PortText.Text = definition?.GamePort.ToString() ?? "—";

@@ -17,7 +17,7 @@ public partial class InstanceMapPoolsPage : UserControl
     private MapPoolLibrary? library;
     private MapPoolRow[] rows = [];
     private MapPoolRow? browsed;
-    private bool operating, loaded;
+    private bool operating, loaded, loading;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private InstanceDefinition? Instance => Model?.Selected?.Entry.Definition;
@@ -49,13 +49,24 @@ public partial class InstanceMapPoolsPage : UserControl
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (IsVisible) Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
+        if (!IsVisible) return;
+        Update();
+        // The library only depends on the selected instance. Reloading on every notification (Busy in particular) would
+        // read it forever.
+        if (loading || operating || Model is not { } m || m.Busy || Instance is not { } instance) return;
+        if (instance.Id == loadedInstance) return;
+        Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
     }
+
+    private Guid loadedInstance;
 
     private async Task LoadAsync()
     {
+        if (loading) return;
         if (Model is not { } m || Instance is not { } instance || !m.Server.Connected || operating) return;
+        loading = true;
         loaded = true;
+        loadedInstance = instance.Id;
         try
         {
             var result = await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.List, instance.Id));
@@ -75,7 +86,7 @@ public partial class InstanceMapPoolsPage : UserControl
             PoolChoices.SelectedItem = browsed;
         }
         catch (IOException error) { Error("读取图池失败", error.Message); loaded = false; }
-        finally { Update(); }
+        finally { loading = false; Update(); }
     }
 
     private void PoolSelected(object? sender, SelectionChangedEventArgs e)

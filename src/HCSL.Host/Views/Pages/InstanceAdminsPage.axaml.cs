@@ -16,7 +16,7 @@ public partial class InstanceAdminsPage : UserControl
     public sealed record AdminRow(string DisplayName, string SteamId, string Groups);
 
     private HostServerController? subscribed;
-    private bool operating, loaded;
+    private bool operating, loaded, loading;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
@@ -46,14 +46,26 @@ public partial class InstanceAdminsPage : UserControl
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (IsVisible) Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
+        if (!IsVisible) return;
+        Update();
+        // The list only depends on which instance/preset is selected. Every other notification (Busy, server state,
+        // log growth) must not start another read, or the page reloads itself forever.
+        if (loading || operating || Model is not { } m || m.Busy) return;
+        if (m.Selected?.Entry.Definition is not { } definition) return;
+        if ((definition.Id, definition.SelectedPresetId) == loadedKey) return;
+        Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
     }
+
+    private (Guid Instance, Guid Preset) loadedKey;
 
     private async Task LoadAsync()
     {
+        if (loading) return;
         if (Model is not { } m || m.Selected?.Entry.Definition is not { } definition || !m.Server.Connected || operating) return;
         if (m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId) is not { } preset) return;
+        loading = true;
         loaded = true;
+        loadedKey = (definition.Id, definition.SelectedPresetId);
         try
         {
             var result = await m.AdminsAsync();
@@ -64,7 +76,7 @@ public partial class InstanceAdminsPage : UserControl
                 + " · " + preset.Name;
         }
         catch (IOException error) { Error("读取管理员失败", error.Message); loaded = false; }
-        finally { Update(); }
+        finally { loading = false; Update(); }
     }
 
     private void Update()

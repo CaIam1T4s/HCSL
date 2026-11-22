@@ -64,8 +64,11 @@
                       <TextBlock Text="返回"/>
                     </StackPanel>
                   </arc:Button>
-                  <TextBlock x:Name="InstanceScopeName" Classes="section" TextTrimming="CharacterEllipsis"/>
-                  <arc:Badge x:Name="InstanceScopeBadge" Size="Small" HorizontalAlignment="Left"/>
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space2}">
+                    <TextBlock x:Name="InstanceScopeName" Classes="section" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"/>
+                    <arc:Badge x:Name="InstanceScopeBadge" Grid.Column="1" Size="Small" VerticalAlignment="Center"/>
+                  </Grid>
                 </StackPanel>
               </arc:Sidebar.Header>
               <arc:SidebarSection Header="实例">
