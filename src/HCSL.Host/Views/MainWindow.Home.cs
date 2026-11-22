@@ -13,12 +13,15 @@ namespace HCSL.Host.Views;
 public partial class MainWindow
 {
     private HostServerController? shellServers;
+    private ShellViewModel? shellModel;
     private bool themeTransitionInProgress;
+    private string BaseTitle = "";
     private (string Text, BadgeTone Tone, LucideIconKind Icon)? badgeState;
 
     private void InitializeHomeShell()
     {
         Title = $"Hello Counter Strike! Launcher v{ProductVersion.Current}";
+        BaseTitle = Title;
         ShellTitleBar.Title = Title;
         DataContextChanged += (_, _) =>
         {
@@ -27,7 +30,10 @@ public partial class MainWindow
                 shellServers.PropertyChanged -= ShellServerChanged;
                 shellServers.Server.ConnectionNotice -= ServerConnectionNotice;
             }
-            shellServers = (DataContext as ShellViewModel)?.Servers;
+            if (shellModel is not null) shellModel.PropertyChanged -= ShellPageChanged;
+            shellModel = DataContext as ShellViewModel;
+            if (shellModel is not null) shellModel.PropertyChanged += ShellPageChanged;
+            shellServers = shellModel?.Servers;
             if (shellServers is not null)
             {
                 shellServers.PropertyChanged += ShellServerChanged;
@@ -43,6 +49,8 @@ public partial class MainWindow
                 shellServers.PropertyChanged -= ShellServerChanged;
                 shellServers.Server.ConnectionNotice -= ServerConnectionNotice;
             }
+            if (shellModel is not null) shellModel.PropertyChanged -= ShellPageChanged;
+            shellModel = null;
             shellServers = null;
         };
         UpdateThemeText();
@@ -75,6 +83,12 @@ public partial class MainWindow
 
     private void ShellServerChanged(object? sender, PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(UpdateShellStatus);
 
+    /// <summary>Entering or leaving the instance scope changes the window title, not the server state.</summary>
+    private void ShellPageChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ShellViewModel.IsInstance)) Dispatcher.UIThread.Post(UpdateShellStatus);
+    }
+
     /// <summary>Link state changes are transient results, so they use the 3-second toast stack.</summary>
     private void ServerConnectionNotice(string message) => Dispatcher.UIThread.Post(() =>
         InstanceNotifications.Show(new ToastOptions
@@ -86,7 +100,11 @@ public partial class MainWindow
     {
         var server = shellServers?.Server;
         var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true, server?.Reconnecting == true);
-        InstanceScopeName.Text = shellServers?.Selected?.Entry.Definition?.Name ?? "未选择实例";
+        var scopedName = (DataContext as ShellViewModel)?.IsInstance == true ? shellServers?.Selected?.Entry.Definition?.Name : null;
+        InstanceScopeName.Text = scopedName ?? "未选择实例";
+        // The scope names the instance in the window title, the way the console window names its server.
+        var title = scopedName is { Length: > 0 } ? $"实例管理 · {scopedName}" : BaseTitle;
+        if (ShellTitleBar.Title != title) ShellTitleBar.Title = title;
         if (badgeState == next) return;
         badgeState = next;
         ServerStatusBadge.Content = next.Item1;

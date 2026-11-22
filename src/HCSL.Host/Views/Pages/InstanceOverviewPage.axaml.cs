@@ -68,15 +68,17 @@ public partial class InstanceOverviewPage : UserControl
         var entry = m.Selected?.Entry;
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
-        PresetText.Text = preset?.Name ?? "—";
-        MapText.Text = preset is null ? "—" : ServerMapRules.Label(new(preset.MapKind, preset.Map));
         PortText.Text = definition?.GamePort.ToString() ?? "—";
         AddressText.Text = m.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知";
-        PlayersText.Text = m.Server.Snapshot?.PlayerRoster is { Players.Length: var players } ? $"{players} 人" : "—";
-        IdText.Text = entry?.Id.ToString("D") ?? "—";
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
-        DetailText.Text = m.Server.DetailText;
+        NameRow.Description = entry?.Id.ToString("D") ?? "—";
+        var players = m.Server.Snapshot?.PlayerRoster is { Players.Length: var online } ? $"在线 {online} 人" : "在线 —";
+        ServerRow.Description = definition is null || preset is null
+            ? players
+            : $"预设 {preset.Name} · {ServerMapRules.Label(new(preset.MapKind, preset.Map))} · {players}";
+        DetailRow.Description = m.Server.DetailText;
         var idle = !operating && !watchingStart;
+        PortButton.IsEnabled = idle && m.CanMutate && definition is not null;
         StartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
@@ -95,6 +97,18 @@ public partial class InstanceOverviewPage : UserControl
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
+
+    /// <summary>Ports are part of the instance record, so this reuses the same editor as the instance list.</summary>
+    private async void EditPort(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } original) return;
+        var saved = await owner.EditInstanceAsync(original, async draft =>
+        {
+            var success = await m.UpdateInstanceAsync(original.Id, original.Revision, draft);
+            return success ? null : m.Error;
+        });
+        if (saved) Owner?.ShowInstanceNotification("实例已保存", null, ToastKind.Success);
+    });
 
     private async Task RunAsync(Func<Task> action)
     {
