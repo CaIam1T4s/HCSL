@@ -206,6 +206,11 @@ public sealed partial class ServerLogWindow
         notifications.Show(stopped
             ? new ToastOptions { Title = "已请求停止服务器", Kind = ToastKind.Success }
             : new ToastOptions { Title = "停服未提交", Description = model.Server.DetailText, Kind = ToastKind.Error });
+        // Arc's hold keeps its done state (and the accent fill that goes with it) until it is reset; without this the
+        // button stayed purple on "正在停止…" after the run had already stopped.
+        StopHold.IsConfirmed = false;
+        StopHoldCompact.IsConfirmed = false;
+        UpdateStopAction();
     }
 
     private void UpdateShellHeader()
