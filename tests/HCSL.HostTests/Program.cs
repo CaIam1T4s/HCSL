@@ -750,14 +750,26 @@ portField.Text = "27077";
 owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
 WaitUntil(() => daemon.InstanceWrites.Count == writes + 2);
 Check(daemon.InstanceWrites[^1].GamePort == 27077, "Inline port edit must save through the instance record.");
-// The scope's runtime entries are action rows in the sidebar, not buttons inside the pages.
+// Escape puts the stored value back instead of saving the half-typed one.
+nameField.Focus();
+nameField.Text = "temporary";
+owner.KeyPress(Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
+Check(nameField.Text == model.Selected!.Entry.Definition!.Name, "Escape must restore the stored name.");
+var copyId = overview.FindControl<TKCode.Arc.CopyButton>("CopyIdButton")!;
+Check(copyId.Value == model.Selected.Entry.Id.ToString("D"), "The instance ID row needs a copy button holding the full id.");
+Check(overview.GetVisualDescendants().OfType<TKCode.Arc.SettingsRow>().All(r => r.Header != "连接地址"),
+    "The connection-address row must be gone from the overview.");
+// The scope's runtime entries live in the sidebar footer, not as buttons inside the pages.
 var scopeSidebar = owner.FindControl<TKCode.Arc.Sidebar>("InstanceSidebar")!;
-var startItem = scopeSidebar.Sections.SelectMany(s => s.Items).Single(i => i.Key == "start");
-var consoleItem = scopeSidebar.Sections.SelectMany(s => s.Items).Single(i => i.Key == "console");
-Check(startItem.IsAction && consoleItem.IsAction && consoleItem.IsEnabled && consoleItem.IsVisible,
-    "The instance scope sidebar must offer 启动服务器 and 打开控制台 as action rows.");
+var footerSection = scopeSidebar.Footer as TKCode.Arc.SidebarSection;
+Check(footerSection is not null, "The runtime entries must sit in the sidebar footer.");
+var footerItems = footerSection!.Items;
+var startItem = footerItems.Single(i => i.Key == "start");
+var consoleItem = footerItems.Single(i => i.Key == "console");
+Check(!startItem.IsAction && !consoleItem.IsAction && consoleItem.IsEnabled && consoleItem.IsVisible,
+    "Footer rows must render like the navigation rows, not as muted action rows.");
 Check(!ReferenceEquals(scopeSidebar.SelectedItem, startItem) && !ReferenceEquals(scopeSidebar.SelectedItem, consoleItem),
-    "Action rows must never take the selection block.");
+    "Invoking a footer row must leave the section selection alone.");
 Check(!overview.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => Equals(b.Content, "启动服务器")),
     "Runtime actions must not be duplicated inside the overview page.");
 owner.InvokeInstanceScopeAction("console"); Layout();

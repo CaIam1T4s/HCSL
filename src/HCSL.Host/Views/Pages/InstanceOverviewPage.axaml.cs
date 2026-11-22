@@ -26,15 +26,14 @@ public partial class InstanceOverviewPage : UserControl
     public InstanceOverviewPage()
     {
         InitializeComponent();
-        Tooltip.SetTip(HelpButton, "这里只放实例自身的设置；启动、停服与换图在首页和控制台窗口完成");
         Tooltip.SetTip(RefreshButton, "刷新实例状态");
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
-        // Settings save in place: Enter commits immediately, leaving the field commits what is typed.
-        NameInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SaveNameAsync(); } };
+        // Settings save in place: Enter commits, Escape restores the stored value, leaving the field commits the edit.
+        NameInput.KeyDown += (_, e) => FieldKey(e, ResetName, () => _ = SaveNameAsync());
         NameInput.LostFocus += (_, _) => _ = SaveNameAsync();
-        PortInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SavePortAsync(); } };
+        PortInput.KeyDown += (_, e) => FieldKey(e, ResetPort, () => _ = SavePortAsync());
         PortInput.LostFocus += (_, _) => _ = SavePortAsync();
-        PasswordInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SavePasswordAsync(); } };
+        PasswordInput.KeyDown += (_, e) => FieldKey(e, ResetPassword, () => _ = SavePasswordAsync());
         PasswordInput.LostFocus += (_, _) => { if ((PasswordInput.Text ?? "").Length > 0) _ = SavePasswordAsync(); };
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
@@ -69,11 +68,12 @@ public partial class InstanceOverviewPage : UserControl
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
         if (!NameInput.IsFocused) NameInput.Text = definition?.Name ?? "";
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
-        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置（输入新密码替换，清空后回车移除）" : "未设置";
+        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置" : "未设置";
         IdText.Text = entry?.Id.ToString("D") ?? "—";
-        AddressText.Text = m.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知";
+        CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
+        CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
-        NameRow.Description = $"回车或离开输入框即保存 · 预设 {preset?.Name ?? "—"}";
+        NameRow.Description = preset is null ? "" : $"预设 {preset.Name}";
         var idle = !operating;
         NameInput.IsEnabled = PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
         RefreshButton.IsEnabled = !operating && !m.Busy;
@@ -83,7 +83,31 @@ public partial class InstanceOverviewPage : UserControl
         MigrateButton.IsEnabled = idle && m.CanMutate && m.Selected is not null;
         OpenRuntimeButton.IsEnabled = !operating && !m.Busy && m.Server.Connected;
         DeleteConfirm.IsEnabled = idle && definition is not null && m.CanCreate;
-        DeployRow.Description = m.Server.DetailText;
+    }
+
+    /// <summary>Enter commits the field, Escape puts the stored value back and clears the validation message.</summary>
+    private static void FieldKey(KeyEventArgs e, Action reset, Action commit)
+    {
+        if (e.Key is Key.Enter) { e.Handled = true; commit(); }
+        else if (e.Key is Key.Escape) { e.Handled = true; reset(); }
+    }
+
+    private void ResetName()
+    {
+        NameInput.Text = Model?.Selected?.Entry.Definition?.Name ?? "";
+        NameInput.ErrorMessage = null;
+    }
+
+    private void ResetPort()
+    {
+        PortInput.Text = Model?.Selected?.Entry.Definition?.GamePort.ToString() ?? "";
+        PortInput.ErrorMessage = null;
+    }
+
+    private void ResetPassword()
+    {
+        PasswordInput.Text = "";
+        PasswordInput.ErrorMessage = null;
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
@@ -132,13 +156,18 @@ public partial class InstanceOverviewPage : UserControl
             done ? ToastKind.Success : ToastKind.Error);
     });
 
-    /// <summary>Settings save in place, so a validation failure lands on the field instead of a dialog.</summary>
-    private async Task SaveInstanceAsync(string? name = null, int? port = null)
+    /// <summary>Settings save in place, so a validation failure lands on the edited field instead of a dialog.</summary>
+    private async Task SaveInstanceAsync(bool nameChanged, string? name = null, int? port = null)
     {
         if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
         var nextName = name ?? original.Name;
         var nextPort = port ?? original.GamePort;
         if (nextName == original.Name && nextPort == original.GamePort) return;
+        // Each field owns its message: a failed name must not paint the port row red.
+        void Fail(string message)
+        {
+            if (nameChanged) NameInput.ErrorMessage = message; else PortInput.ErrorMessage = message;
+        }
         operating = true;
         try
         {
@@ -146,13 +175,18 @@ public partial class InstanceOverviewPage : UserControl
             HostServerController.ValidateDraft(draft);
             if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft))
                 NameInput.ErrorMessage = PortInput.ErrorMessage = null;
-            else NameInput.ErrorMessage = PortInput.ErrorMessage = m.Error;
+            else Fail(m.Error);
         }
-        catch (InstanceException e) { PortInput.ErrorMessage = e.Message; PortInput.Text = original.GamePort.ToString(); }
+        catch (InstanceException e)
+        {
+            Fail(e.Message);
+            if (!nameChanged) PortInput.Text = original.GamePort.ToString();
+            else NameInput.Text = original.Name;
+        }
         finally { operating = false; Update(); }
     }
 
-    private async Task SaveNameAsync() => await SaveInstanceAsync(name: (NameInput.Text ?? "").Trim());
+    private async Task SaveNameAsync() => await SaveInstanceAsync(nameChanged: true, name: (NameInput.Text ?? "").Trim());
 
     private async Task SavePortAsync()
     {
@@ -163,7 +197,7 @@ public partial class InstanceOverviewPage : UserControl
             PortInput.Text = definition.GamePort.ToString();
             return;
         }
-        await SaveInstanceAsync(port: port);
+        await SaveInstanceAsync(nameChanged: false, port: port);
     }
 
     private async Task SavePasswordAsync()

@@ -2,6 +2,7 @@ using Avalonia.Threading;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
+using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views;
 
@@ -41,7 +42,7 @@ public partial class MainWindow
     /// <summary>The 运行 rows follow the host state; nothing else in the scope offers them.</summary>
     private void UpdateScopeFooter()
     {
-        if (ScopeItem("start") is not { } start || ScopeItem("console") is not { } console) return;
+        if (scopeStartItem is not { } start || scopeConsoleItem is not { } console) return;
         if (shellServers is not { } m)
         {
             start.IsEnabled = console.IsEnabled = false;
@@ -55,9 +56,17 @@ public partial class MainWindow
         console.IsVisible = m.Server.Connected;
     }
 
-    /// <summary>SidebarItem is not a control, so its rows are resolved by key rather than through generated fields.</summary>
-    private TKCode.Arc.SidebarItem? ScopeItem(string key) =>
-        InstanceSidebar.Sections.SelectMany(section => section.Items).FirstOrDefault(item => item.Key == key);
+    /// <summary>SidebarItem is not a control, so the footer rows are kept as fields once the footer exists.</summary>
+    private void ResolveScopeActions()
+    {
+        if (InstanceSidebar.Footer is not TKCode.Arc.SidebarSection footer) return;
+        scopeStartItem = footer.Items.FirstOrDefault(item => item.Key == "start");
+        scopeConsoleItem = footer.Items.FirstOrDefault(item => item.Key == "console");
+        if (scopeStartItem is not null) scopeStartItem.Icon = Lucide.Geometry(LucideIconKind.Play);
+        if (scopeConsoleItem is not null) scopeConsoleItem.Icon = Lucide.Geometry(LucideIconKind.Terminal);
+    }
+
+    private TKCode.Arc.SidebarItem? scopeStartItem, scopeConsoleItem;
 
     private async Task RunStartAsync()
     {

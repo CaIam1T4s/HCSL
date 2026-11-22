@@ -78,11 +78,13 @@
                 <arc:SidebarItem Key="pools" Label="地图池"/>
                 <arc:SidebarItem Key="admins" Label="管理员"/>
               </arc:SidebarSection>
-              <!-- Runtime entries are actions, not pages: IsAction rows are muted and never take the selection block. -->
-              <arc:SidebarSection Header="运行">
-                <arc:SidebarItem Key="start" Label="启动服务器" IsAction="True"/>
-                <arc:SidebarItem Key="console" Label="打开控制台" IsAction="True"/>
-              </arc:SidebarSection>
+              <!-- Runtime entries are actions, not pages: they sit at the bottom of the pane and never become a section. -->
+              <arc:Sidebar.Footer>
+                <arc:SidebarSection>
+                  <arc:SidebarItem Key="start" Label="启动服务器"/>
+                  <arc:SidebarItem Key="console" Label="打开控制台"/>
+                </arc:SidebarSection>
+              </arc:Sidebar.Footer>
             </arc:Sidebar>
             </Panel>
           </Border>
