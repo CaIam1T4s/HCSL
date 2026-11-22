@@ -43,6 +43,7 @@
                popover anchored to it, so the gesture stays identical. -->
           <arc:HoldToConfirm x:Name="StopHold" HorizontalAlignment="Stretch"
                              Height="{arc:ArcDesignTokenResource Space10}"
+                             MinHeight="0" MaxHeight="{arc:ArcDesignTokenResource Space10}"
                              Label="长按停止服务器" ConfirmedLabel="正在停止…"
                              HoldDuration="0:0:1" Tone="Danger" Confirmed="StopConfirmed"/>
           <arc:Button x:Name="StopIcon" Variant="Ghost" Size="Small"

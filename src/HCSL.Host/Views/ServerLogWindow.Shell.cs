@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using HCSL.UI.Shared.Controls;
 using Avalonia.Layout;
+using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Host.Services;
 using TKCode.Arc;
@@ -45,6 +46,19 @@ public sealed partial class ServerLogWindow
             shellBindings.Add(ConsoleTitleBar.Bind(BackgroundProperty, ownerTitleBar.GetObservable(BackgroundProperty)));
         SizeChanged += (_, _) => UpdateShellWidth();
         UpdateShellWidth();
+        // The stop button must read as one row of the sidebar, so its height follows a realized navigation row rather
+        // than a guessed token (Arc enforces its own minimum on HoldToConfirm).
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (closed) return;
+            var row = navigation.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(c => c.DataContext is SidebarItem && c.Bounds.Height > 0);
+            if (row is null) return;
+            var height = row.Bounds.Height;
+            StopHold.Height = height;
+            StopHold.MinHeight = height;
+            StopHold.MaxHeight = height;
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>The map page reads the selected instance/preset; without one it explains why it is empty.</summary>
@@ -169,7 +183,6 @@ public sealed partial class ServerLogWindow
         StopHold.Label = active ? "长按停止服务器" : "服务器未运行";
         StopHoldCompact.Label = StopHold.Label;
         AutomationProperties.SetName(StopIcon, active ? "停止服务器" : "服务器未运行");
-        Tooltip.SetTip(StopIcon, active ? "停止运行中的服务器" : "服务器未运行");
     }
 
     private void OpenStopPopover(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
