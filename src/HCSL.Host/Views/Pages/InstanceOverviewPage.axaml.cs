@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using HCSL.Core;
@@ -35,6 +36,13 @@ public partial class InstanceOverviewPage : UserControl
         Tooltip.SetTip(RefreshButton, "刷新实例状态");
         StopConfirm.Icon = Lucide.Geometry(LucideIconKind.Square);
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
+        // Settings save in place: Enter commits immediately, leaving the field commits what is typed.
+        NameInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SaveNameAsync(); } };
+        NameInput.LostFocus += (_, _) => _ = SaveNameAsync();
+        PortInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SavePortAsync(); } };
+        PortInput.LostFocus += (_, _) => _ = SavePortAsync();
+        PasswordInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SavePasswordAsync(); } };
+        PasswordInput.LostFocus += (_, _) => { if ((PasswordInput.Text ?? "").Length > 0) _ = SavePasswordAsync(); };
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -68,7 +76,9 @@ public partial class InstanceOverviewPage : UserControl
         var entry = m.Selected?.Entry;
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
-        PortText.Text = definition?.GamePort.ToString() ?? "—";
+        if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
+        if (!NameInput.IsFocused) NameInput.Text = definition?.Name ?? "";
+        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置（输入新密码替换，留空清除）" : "未设置";
         AddressText.Text = m.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知";
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
         NameRow.Description = entry?.Id.ToString("D") ?? "—";
@@ -78,17 +88,16 @@ public partial class InstanceOverviewPage : UserControl
             : $"预设 {preset.Name} · {ServerMapRules.Label(new(preset.MapKind, preset.Map))} · {players}";
         DetailRow.Description = m.Server.DetailText;
         var idle = !operating && !watchingStart;
-        PortButton.IsEnabled = idle && m.CanMutate && definition is not null;
         StartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
         RecoverButton.IsEnabled = !operating && m.Server.CanRecover;
         ChangeMapButton.IsEnabled = !operating && m.Server.CanSendConsole && !m.Server.Busy;
-        PasswordButton.IsEnabled = idle && m.CanMutate;
+        PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
         RefreshButton.IsEnabled = !operating && !m.Busy;
         LogsButton.IsEnabled = m.Server.Connected;
         StopConfirm.IsEnabled = !operating && m.Server.CanStop;
-        RenameButton.IsEnabled = idle && m.CanMutate && definition is not null;
+        NameInput.IsEnabled = PortInput.IsEnabled = idle && m.CanMutate && definition is not null;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
         MigrateButton.IsEnabled = idle && m.CanMutate && m.Selected is not null;
         OpenRuntimeButton.IsEnabled = !operating && !m.Busy && m.Server.Connected;
@@ -98,17 +107,63 @@ public partial class InstanceOverviewPage : UserControl
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
 
-    /// <summary>Ports are part of the instance record, so this reuses the same editor as the instance list.</summary>
-    private async void EditPort(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    /// <summary>
+    /// Instance settings are edited where they are shown: the row's field saves on Enter or when it loses focus, so no
+    /// dialog stands between the operator and the value.
+    /// </summary>
+    private async Task SaveInstanceAsync(string? name = null, int? port = null)
     {
-        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } original) return;
-        var saved = await owner.EditInstanceAsync(original, async draft =>
+        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
+        var nextName = name ?? original.Name;
+        var nextPort = port ?? original.GamePort;
+        if (nextName == original.Name && nextPort == original.GamePort) return;
+        operating = true;
+        try
         {
-            var success = await m.UpdateInstanceAsync(original.Id, original.Revision, draft);
-            return success ? null : m.Error;
-        });
-        if (saved) Owner?.ShowInstanceNotification("实例已保存", null, ToastKind.Success);
-    });
+            var draft = new HostInstanceDraft(nextName, nextPort, original.Network);
+            HostServerController.ValidateDraft(draft);
+            if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft))
+            {
+                NameInput.ErrorMessage = null;
+                PortInput.ErrorMessage = null;
+            }
+            else NameInput.ErrorMessage = PortInput.ErrorMessage = m.Error;
+        }
+        catch (InstanceException e) { PortInput.ErrorMessage = e.Message; PortInput.Text = original.GamePort.ToString(); }
+        finally { operating = false; Update(); }
+    }
+
+    private async Task SaveNameAsync()
+    {
+        var value = (NameInput.Text ?? "").Trim();
+        await SaveInstanceAsync(name: value);
+    }
+
+    private async Task SavePortAsync()
+    {
+        if (Model?.Selected?.Entry.Definition is not { } definition) return;
+        if (!int.TryParse(PortInput.Text, out var port))
+        {
+            PortInput.ErrorMessage = "端口必须为 1–65535 的整数。";
+            PortInput.Text = definition.GamePort.ToString();
+            return;
+        }
+        await SaveInstanceAsync(port: port);
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        if (operating || Model is not { } m) return;
+        var value = PasswordInput.Text ?? "";
+        PasswordInput.Text = "";
+        try
+        {
+            await m.SetPasswordAsync(value);
+            Owner?.ShowInstanceNotification(value.Length == 0 ? "已清除入服密码" : "已设置入服密码", null, ToastKind.Success);
+        }
+        catch (IOException error) { Error("密码未保存", error.Message); }
+        finally { Update(); }
+    }
 
     private async Task RunAsync(Func<Task> action)
     {
@@ -234,24 +289,6 @@ public partial class InstanceOverviewPage : UserControl
         if (await owner.ChooseAsync("恢复检查", "检查并清理会话遗留资源。", "取消", "恢复检查") != 1) return;
         if (run != m.Server.RunId) return;
         if (!await m.RecoverAsync()) Error("恢复未提交", m.Error + " " + m.Server.DetailText);
-    });
-
-    private async void EditPassword(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
-        var value = await owner.PasswordAsync(d.Name, m.Selected.Entry.HasPassword);
-        if (value is not null && m.Selected?.Entry.Id == d.Id) await m.SetPasswordAsync(value);
-    });
-
-    private async void RenameInstance(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } original) return;
-        var renamed = await owner.EditInstanceAsync(original, async draft =>
-        {
-            var success = await m.UpdateInstanceAsync(original.Id, original.Revision, draft);
-            return success ? null : m.Error;
-        }, nameOnly: true);
-        if (renamed) Owner?.ShowInstanceNotification("实例已重命名", null, ToastKind.Success);
     });
 
     private async void MigrateLayout(object? sender, RoutedEventArgs e) => await RunAsync(async () =>

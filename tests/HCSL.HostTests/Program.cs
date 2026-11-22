@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -687,7 +688,7 @@ if (only is "forms") return 0;
 
 HCSL.Host.Views.Pages.InstancePresetsPage presetPage = null!;
 PresetDefinition firstPreset = null!;
-if (only is null or "presets" or "admins" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
+if (only is null or "presets" or "overview" or "admins" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
 {
 firstPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Selected preset");
 var secondPreset = firstPreset with { Id = Guid.NewGuid(), Name = "Browsed preset", Map = "de_nuke" };
@@ -728,6 +729,29 @@ Check(adminTable.ItemsSource is System.Collections.IEnumerable adminRows && admi
 Check(((ShellViewModel)owner.DataContext!).IsInstanceOverview, "Leaving the 管理员 section must still switch pages.");
 Console.WriteLine("PASS gui.admins.single-read-no-reload-loop");
 if (only is "admins") return 0;
+}
+
+if (only is null or "overview")
+{
+((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
+var overview = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceOverviewPage>().Single();
+var nameField = overview.FindControl<TKCode.Arc.Input>("NameInput")!;
+var portField = overview.FindControl<TKCode.Arc.Input>("PortInput")!;
+var writes = daemon.InstanceWrites.Count;
+daemon.AllowInstanceWrites = true;
+nameField.Focus();
+nameField.Text = "Renamed by row";
+owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
+WaitUntil(() => daemon.InstanceWrites.Count == writes + 1);
+Check(daemon.InstanceWrites[^1].Action == InstanceAction.Update && daemon.InstanceWrites[^1].Name == "Renamed by row"
+    && daemon.InstanceWrites[^1].GamePort == 27015, "Inline name edit must save through the instance record.");
+portField.Focus();
+portField.Text = "27077";
+owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
+WaitUntil(() => daemon.InstanceWrites.Count == writes + 2);
+Check(daemon.InstanceWrites[^1].GamePort == 27077, "Inline port edit must save through the instance record.");
+Console.WriteLine("PASS gui.overview.inline-instance-settings-save-on-enter");
+if (only is "overview") return 0;
 }
 
 if (only is null or "pools")
@@ -991,7 +1015,7 @@ if (only is "start") return 0;
 
 if (only is not null)
 {
-    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, background, sidebar, instances, shadow, theme, theme-transition, theme-raster, home, logs, forms, presets, admins, pools, plugins, frameworks, cfg, maps, start, errors or all.");
+    Console.Error.WriteLine($"Unknown test section '{only}'. Use input, background, sidebar, instances, shadow, theme, theme-transition, theme-raster, home, logs, forms, presets, overview, admins, pools, plugins, frameworks, cfg, maps, start, errors or all.");
     return 2;
 }
 return 0;

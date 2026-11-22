@@ -32,12 +32,9 @@
             </StackPanel>
           </arc:SettingsRow>
 
-          <arc:SettingsRow Header="端口" Description="本机绑定端口；修改后下次启动生效">
-            <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-              <TextBlock x:Name="PortText" VerticalAlignment="Center"
-                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-              <arc:Button x:Name="PortButton" Content="修改" Variant="Secondary" Size="Small" Click="EditPort"/>
-            </StackPanel>
+          <arc:SettingsRow Header="端口" Description="本机绑定端口；修改后回车或离开输入框即保存，下次启动生效">
+            <arc:Input x:Name="PortInput" IsLabelVisible="False" PlaceholderText="27015" MaxLength="5"
+                       Width="120" TextAlignment="Right"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow Header="连接地址" Description="自动识别的本机网卡地址，访问范围由防火墙控制">
@@ -45,8 +42,8 @@
                        Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
           </arc:SettingsRow>
 
-          <arc:SettingsRow Header="入服密码">
-            <arc:Button x:Name="PasswordButton" Content="设置" Variant="Secondary" Size="Small" Click="EditPassword"/>
+          <arc:SettingsRow Header="入服密码" Description="输入后回车保存；清空后回车即移除密码，下次启动生效">
+            <arc:PasswordField x:Name="PasswordInput" PlaceholderText="未设置" Width="240"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow Header="即时换图" Description="只影响当前运行会话，不改预设">
@@ -67,8 +64,9 @@
         </arc:SettingsGroup>
 
         <arc:SettingsGroup Header="实例" Appearance="Card">
-          <arc:SettingsRow x:Name="NameRow" Header="名称">
-            <arc:Button x:Name="RenameButton" Content="重命名" Variant="Secondary" Size="Small" Click="RenameInstance"/>
+          <arc:SettingsRow x:Name="NameRow" Header="名称" Description="回车或离开输入框即保存">
+            <arc:Input x:Name="NameInput" IsLabelVisible="False" PlaceholderText="实例名称" MaxLength="80"
+                       Width="240" TextAlignment="Right"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow x:Name="LayoutRow" Header="目录布局">
