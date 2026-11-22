@@ -26,7 +26,6 @@ public partial class InstanceOverviewPage : UserControl
     public InstanceOverviewPage()
     {
         InitializeComponent();
-        Tooltip.SetTip(RefreshButton, "刷新实例状态");
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         // Settings save in place: Enter commits, Escape restores the stored value, leaving the field commits the edit.
         NameInput.KeyDown += (_, e) => FieldKey(e, ResetName, () => _ = SaveNameAsync());
@@ -73,10 +72,8 @@ public partial class InstanceOverviewPage : UserControl
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
-        NameRow.Description = preset is null ? "" : $"预设 {preset.Name}";
         var idle = !operating;
         NameInput.IsEnabled = PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
-        RefreshButton.IsEnabled = !operating && !m.Busy;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
@@ -121,13 +118,6 @@ public partial class InstanceOverviewPage : UserControl
         catch (Exception) { Error("操作未完成", "请检查宿主状态后重试。"); }
         finally { operating = false; Update(); }
     }
-
-    private async void Refresh(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m) return;
-        if (!m.Server.Connected) await m.InitializeAsync(); else await m.RefreshInstancesAsync();
-        if (m.Error.Length > 0) Error("读取实例失败", m.Error);
-    });
 
     private async void DeployServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {

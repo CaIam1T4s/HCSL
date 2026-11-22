@@ -78,29 +78,11 @@
                 <arc:SidebarItem Key="pools" Label="地图池"/>
                 <arc:SidebarItem Key="admins" Label="管理员"/>
               </arc:SidebarSection>
-              <!-- Runtime entries are actions, not pages. the footer takes real controls, so they read like two nav rows. -->
-              <arc:Sidebar.Footer>
-                <StackPanel Spacing="1" Margin="0,0,0,8">
-                  <arc:Button x:Name="ScopeStartButton" Variant="Ghost" Size="Small" Height="{arc:ArcDesignTokenResource Space8}"
-                              Padding="12,0" FontSize="{arc:ArcDesignTokenResource TypeBase}"
-                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="StartScopedInstance"
-                              Foreground="{arc:ArcDesignTokenResource TextSecondary}">
-                    <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-                      <lucide:LucideIcon Kind="Play" Width="16" Height="16"/>
-                      <TextBlock Text="启动服务器"/>
-                    </StackPanel>
-                  </arc:Button>
-                  <arc:Button x:Name="ScopeConsoleButton" Variant="Ghost" Size="Small" Height="{arc:ArcDesignTokenResource Space8}"
-                              Padding="12,0" FontSize="{arc:ArcDesignTokenResource TypeBase}"
-                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenScopedConsole"
-                              Foreground="{arc:ArcDesignTokenResource TextSecondary}">
-                    <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-                      <lucide:LucideIcon Kind="Terminal" Width="16" Height="16"/>
-                      <TextBlock Text="打开控制台"/>
-                    </StackPanel>
-                  </arc:Button>
-                </StackPanel>
-              </arc:Sidebar.Footer>
+              <!-- Runtime entries are actions, not pages: IsAction rows are muted and never take the selection block. -->
+              <arc:SidebarSection Header="运行">
+                <arc:SidebarItem Key="start" Label="启动服务器" IsAction="True"/>
+                <arc:SidebarItem Key="console" Label="打开控制台" IsAction="True"/>
+              </arc:SidebarSection>
             </arc:Sidebar>
             </Panel>
           </Border>

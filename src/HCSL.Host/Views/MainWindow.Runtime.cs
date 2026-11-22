@@ -25,9 +25,26 @@ public partial class MainWindow
 
     public Task StartSelectedAsync() => RunStartAsync();
 
-    private void StartScopedInstance(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _ = StartSelectedAsync();
+    /// <summary>SidebarItem is not a control, so the action rows are resolved by key inside the section list.</summary>
+    private TKCode.Arc.SidebarItem? ScopeItem(string key) =>
+        InstanceSidebar.Sections.SelectMany(section => section.Items).FirstOrDefault(item => item.Key == key);
 
-    private void OpenScopedConsole(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => ShowLogs();
+    /// <summary>The action rows follow the host state; nothing else in the scope offers them.</summary>
+    private void UpdateScopeFooter()
+    {
+        if (ScopeItem("start") is not { } start || ScopeItem("console") is not { } console) return;
+        if (shellServers is not { } m)
+        {
+            start.IsEnabled = console.IsEnabled = false;
+            start.IsVisible = true;
+            return;
+        }
+        var idle = !starting && m.Server.Connected && !m.Busy;
+        start.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        console.IsEnabled = idle;
+        start.IsVisible = !m.Server.Active;
+        console.IsVisible = m.Server.Connected;
+    }
 
     /// <summary>
     /// One dispatcher for the instance sidebar: the 运行 rows are actions, the others are sections. Public so the GUI test
@@ -41,22 +58,6 @@ public partial class MainWindow
             case "console": ShowLogs(); return;
             default: (DataContext as ShellViewModel)?.SelectInstanceSection(key); return;
         }
-    }
-
-    /// <summary>The 运行 rows follow the host state; nothing else in the scope offers them.</summary>
-    private void UpdateScopeFooter()
-    {
-        if (shellServers is not { } m)
-        {
-            ScopeStartButton.IsEnabled = ScopeConsoleButton.IsEnabled = false;
-            ScopeStartButton.IsVisible = true;
-            return;
-        }
-        var idle = !starting && m.Server.Connected && !m.Busy;
-        ScopeStartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
-        ScopeConsoleButton.IsEnabled = idle;
-        ScopeStartButton.IsVisible = !m.Server.Active;
-        ScopeConsoleButton.IsVisible = m.Server.Connected;
     }
 
     private async Task RunStartAsync()

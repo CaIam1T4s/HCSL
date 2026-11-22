@@ -63,13 +63,19 @@ public partial class MainWindow
                 "presets" => LucideIconKind.FileStack,
                 "content" => LucideIconKind.Puzzle,
                 "pools" => LucideIconKind.Map,
+                "start" => LucideIconKind.Play,
+                "console" => LucideIconKind.Terminal,
                 _ => LucideIconKind.ShieldCheck
             });
     }
 
     private void InstanceSidebarItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
     {
-        if (e.Item.Key is { } key) InvokeInstanceScopeAction(key);
+        if (e.Item.Key is not { } key) return;
+        InvokeInstanceScopeAction(key);
+        // The 运行 rows are actions rather than pages: keep the selection block on the current section.
+        if (key is "start" or "console" && DataContext is ShellViewModel shell)
+            InstanceSidebar.SelectedKey = shell.SelectedInstanceSection.Id;
     }
 
     private void LeaveInstanceScope(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>

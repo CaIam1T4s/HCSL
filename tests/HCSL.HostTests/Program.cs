@@ -759,16 +759,20 @@ var copyId = overview.FindControl<TKCode.Arc.CopyButton>("CopyIdButton")!;
 Check(copyId.Value == model.Selected.Entry.Id.ToString("D"), "The instance ID row needs a copy button holding the full id.");
 Check(overview.GetVisualDescendants().OfType<TKCode.Arc.SettingsRow>().All(r => r.Header != "连接地址"),
     "The connection-address row must be gone from the overview.");
-// The scope's runtime entries are the sidebar footer's two buttons, not controls inside the pages.
-var scopeStart = owner.FindControl<TKCode.Arc.Button>("ScopeStartButton")!;
-var scopeConsole = owner.FindControl<TKCode.Arc.Button>("ScopeConsoleButton")!;
-Check(scopeStart.IsEffectivelyVisible && scopeConsole.IsEffectivelyVisible && scopeConsole.IsEnabled,
-    "The instance scope footer must offer 启动服务器 and 打开控制台.");
+// The scope's runtime entries are action rows in the sidebar's 运行 section, not controls inside the pages.
+var scopeSidebar = owner.FindControl<TKCode.Arc.Sidebar>("InstanceSidebar")!;
+var scopeItems = scopeSidebar.Sections.SelectMany(s => s.Items).ToArray();
+var startItem = scopeItems.Single(i => i.Key == "start");
+var consoleItem = scopeItems.Single(i => i.Key == "console");
+Check(startItem.IsAction && consoleItem.IsAction && consoleItem.IsEnabled && consoleItem.IsVisible,
+    "The instance scope sidebar must offer 启动服务器 and 打开控制台 as action rows.");
+Check(!ReferenceEquals(scopeSidebar.SelectedItem, startItem) && !ReferenceEquals(scopeSidebar.SelectedItem, consoleItem),
+    "Invoking an action row must leave the section selection alone.");
 Check(!overview.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => Equals(b.Content, "启动服务器")),
     "Runtime actions must not be duplicated inside the overview page.");
-scopeConsole.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+owner.InvokeInstanceScopeAction("console"); Layout();
 Check(owner.OwnedWindows.Any(w => w is HCSL.Host.Views.ServerLogWindow),
-    "The footer console button must open the console window.");
+    "The console action row must open the console window.");
 foreach (var owned in owner.OwnedWindows.ToArray()) owned.Close();
 Layout();
 Console.WriteLine("PASS gui.overview.inline-instance-settings-save-on-enter");
