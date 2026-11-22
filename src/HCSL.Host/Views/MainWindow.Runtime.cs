@@ -24,6 +24,25 @@ public partial class MainWindow
 
     public Task StartSelectedAsync() => RunStartAsync();
 
+    private void StartScopedInstance(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _ = StartSelectedAsync();
+
+    private void OpenScopedConsole(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => ShowLogs();
+
+    /// <summary>The scope footer offers the two runtime entry points; their availability follows the host state.</summary>
+    private void UpdateScopeFooter()
+    {
+        if (shellServers is not { } m)
+        {
+            InstanceStartButton.IsEnabled = InstanceConsoleButton.IsEnabled = false;
+            return;
+        }
+        var idle = !starting && m.Server.Connected && !m.Busy;
+        InstanceStartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        InstanceConsoleButton.IsEnabled = idle;
+        InstanceStartButton.IsVisible = !m.Server.Active;
+        InstanceConsoleButton.IsVisible = m.Server.Connected;
+    }
+
     private async Task RunStartAsync()
     {
         if (starting || Servers is not { } m || m.Selected?.Entry.Definition is not { } d) return;
@@ -44,7 +63,7 @@ public partial class MainWindow
                 ShowInstanceNotification("启动未提交", m.Server.DetailText);
             }
         }
-        finally { starting = false; }
+        finally { starting = false; UpdateScopeFooter(); }
     }
 
     /// <summary>Watches the run that this window started, so a low-memory or failed start reports once.</summary>

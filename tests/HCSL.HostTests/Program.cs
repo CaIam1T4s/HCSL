@@ -750,6 +750,18 @@ portField.Text = "27077";
 owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
 WaitUntil(() => daemon.InstanceWrites.Count == writes + 2);
 Check(daemon.InstanceWrites[^1].GamePort == 27077, "Inline port edit must save through the instance record.");
+// The scope footer owns the two runtime entry points; they must not be duplicated inside the pages.
+var scopeStart = owner.FindControl<TKCode.Arc.Button>("InstanceStartButton")!;
+var scopeConsole = owner.FindControl<TKCode.Arc.Button>("InstanceConsoleButton")!;
+Check(scopeStart.IsEffectivelyVisible && scopeConsole.IsEffectivelyVisible && scopeConsole.IsEnabled,
+    "The instance scope footer must offer 启动服务器 and 打开控制台.");
+Check(!overview.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => Equals(b.Content, "启动服务器")),
+    "Runtime actions must not be duplicated inside the overview page.");
+scopeConsole.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+Check(owner.OwnedWindows.Any(w => w is HCSL.Host.Views.ServerLogWindow),
+    "The footer console button must open the console window.");
+foreach (var owned in owner.OwnedWindows.ToArray()) owned.Close();
+Layout();
 Console.WriteLine("PASS gui.overview.inline-instance-settings-save-on-enter");
 if (only is "overview") return 0;
 }

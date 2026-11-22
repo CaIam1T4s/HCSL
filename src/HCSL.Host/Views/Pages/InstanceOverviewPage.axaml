@@ -20,7 +20,7 @@
 
           <arc:SettingsRow x:Name="NameRow" Header="名称" Description="回车或离开输入框即保存">
             <arc:Input x:Name="NameInput" IsLabelVisible="False" PlaceholderText="实例名称" MaxLength="80"
-                       Width="{arc:ArcDesignTokenResource MediaSizeSM}" TextAlignment="Right"/>
+                       Width="{arc:ArcDesignTokenResource MediaSizeMD}" TextAlignment="Right"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow x:Name="IdRow" Header="实例 ID" Description="创建后固定不变">
@@ -30,12 +30,12 @@
 
           <arc:SettingsRow Header="端口" Description="本机绑定端口，修改后下次启动生效">
             <arc:Input x:Name="PortInput" IsLabelVisible="False" PlaceholderText="27015" MaxLength="5"
-                       Width="{arc:ArcDesignTokenResource MediaSizeSM}" TextAlignment="Right"/>
+                       Width="{arc:ArcDesignTokenResource MediaSizeMD}" TextAlignment="Right"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow Header="入服密码" Description="输入后回车保存；清空后回车即移除，下次启动生效">
             <arc:PasswordField x:Name="PasswordInput" PlaceholderText="未设置"
-                               Width="{arc:ArcDesignTokenResource MediaSizeSM}"/>
+                               Width="{arc:ArcDesignTokenResource MediaSizeMD}"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow Header="连接地址" Description="自动识别的本机网卡地址，访问范围由防火墙控制">

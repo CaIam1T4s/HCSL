@@ -105,6 +105,7 @@ public partial class MainWindow
     {
         var server = shellServers?.Server;
         var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true, server?.Reconnecting == true);
+        UpdateScopeFooter();
         var scopedName = (DataContext as ShellViewModel)?.IsInstance == true ? shellServers?.Selected?.Entry.Definition?.Name : null;
         InstanceScopeName.Text = scopedName ?? "未选择实例";
         // The scope names the instance in the window title, the way the console window names its server.

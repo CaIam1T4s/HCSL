@@ -78,6 +78,16 @@
                 <arc:SidebarItem Key="pools" Label="地图池"/>
                 <arc:SidebarItem Key="admins" Label="管理员"/>
               </arc:SidebarSection>
+              <arc:Sidebar.Footer>
+                <!-- Runtime entry points of the managed instance. They are actions, not navigation, so they sit in the footer
+                     and never replace the section list. -->
+                <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}" Margin="0,0,0,4">
+                  <arc:Button x:Name="InstanceStartButton" Content="启动服务器" Variant="Primary" Size="Medium"
+                              HorizontalAlignment="Stretch" Click="StartScopedInstance"/>
+                  <arc:Button x:Name="InstanceConsoleButton" Content="打开控制台" Variant="Secondary" Size="Medium"
+                              HorizontalAlignment="Stretch" Click="OpenScopedConsole"/>
+                </StackPanel>
+              </arc:Sidebar.Footer>
             </arc:Sidebar>
             </Panel>
           </Border>
