@@ -553,6 +553,11 @@ var mapRows = mapsTable.ItemsSource!.Cast<HCSL.Host.ViewModels.MapRow>().ToArray
 mapRows[1].IsSelected = true; Layout();
 Check(mapRows[1].IsSelected && mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled,
     "Selecting one map must enable switching it.");
+// The marks are Arc presence hosts, so the appear/disappear motion comes from Arc rather than hand-written transitions.
+var marks = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Primitives.PresenceHost>().ToArray();
+Check(marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Fade) && marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Pop),
+    $"The rail and the check must be PresenceHost marks with Arc's own motion: {marks.Length} host(s), modes {string.Join(",", marks.Select(m => m.Mode))}.");
+Check(marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Pop && m.IsPresent), "A selected row must present its check.");
 mapRows[3].IsSelected = true; Layout();
 Check(!mapRows[1].IsSelected && mapRows[3].IsSelected && mapsSelection.SelectedCount == 1,
     "Selecting another map must move the single selection.");

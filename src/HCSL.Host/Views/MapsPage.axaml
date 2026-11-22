@@ -6,41 +6,22 @@
              xmlns:views="using:HCSL.Host.Views"
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
-  <UserControl.Styles>
-    <!-- Arc's asymmetric tweens: reveal on the enter curve, hide on the exit curve (shorter, so unselecting feels
-         immediate). Reduced motion keeps both instant. -->
-    <Style Selector="Border.map-rail, lucide|LucideIcon.map-check">
-      <Setter Property="Opacity" Value="0"/>
-      <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Exit"/></Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Border.map-rail.selected, lucide|LucideIcon.map-check.selected">
-      <Setter Property="Opacity" Value="1"/>
-      <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Enter"/></Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Border.map-rail:motion-reduced, lucide|LucideIcon.map-check:motion-reduced">
-      <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
-      </Setter>
-    </Style>
-  </UserControl.Styles>
   <UserControl.Resources>
-    <!-- Selection reads as a table row, not as a tiny control: an accent rail on the left and a check on the right. -->
+    <!-- Selection reads as a table row: an accent rail on the left and a check on the right. Arc's PresenceHost owns
+         the motion (fade for the rail, a pop for the check), so motion levels and reduced motion are handled for us. -->
     <DataTemplate x:Key="MapRailCell" x:DataType="vm:MapRow">
-      <Border Width="3" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
-              Background="{arc:ArcDesignTokenResource Accent}"
-              Classes.selected="{Binding IsSelected}" Classes="map-rail" Margin="6,0,0,0"/>
+      <arc:PresenceHost Mode="Fade" IsPresent="{Binding IsSelected}" Margin="6,0,0,0">
+        <Border Width="3" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+                Background="{arc:ArcDesignTokenResource Accent}"/>
+      </arc:PresenceHost>
     </DataTemplate>
     <DataTemplate x:Key="MapSelectedCell" x:DataType="vm:MapRow">
-      <!-- Kept out of the scrollbar's lane and always laid out, so it fades instead of popping in. -->
-      <lucide:LucideIcon Kind="Check" Width="16" Height="16"
-                         Foreground="{arc:ArcDesignTokenResource Accent}"
-                         Classes.selected="{Binding IsSelected}" Classes="map-check"
-                         HorizontalAlignment="Right" Margin="0,0,16,0"
-                         arc:ArcMotion.Tracks="True" IsHitTestVisible="False"/>
+      <!-- Kept clear of the scrollbar's lane; the pop starts small so it reads as a state change. -->
+      <arc:PresenceHost Mode="Pop" EnterScale="0.6" IsPresent="{Binding IsSelected}"
+                        HorizontalAlignment="Right" Margin="0,0,16,0" IsHitTestVisible="False">
+        <lucide:LucideIcon Kind="Check" Width="16" Height="16"
+                           Foreground="{arc:ArcDesignTokenResource Accent}"/>
+      </arc:PresenceHost>
     </DataTemplate>
     <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
       <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
