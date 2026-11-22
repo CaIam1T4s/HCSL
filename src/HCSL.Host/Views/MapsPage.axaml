@@ -7,16 +7,18 @@
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
   <UserControl.Styles>
-    <!-- The selection marks fade in and out instead of appearing: Arc's transitions honour the motion level. -->
+    <!-- Arc's asymmetric tweens: reveal on the enter curve, hide on the exit curve (shorter, so unselecting feels
+         immediate). Reduced motion keeps both instant. -->
     <Style Selector="Border.map-rail, lucide|LucideIcon.map-check">
       <Setter Property="Opacity" Value="0"/>
+      <Setter Property="Transitions">
+        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Exit"/></Transitions>
+      </Setter>
     </Style>
     <Style Selector="Border.map-rail.selected, lucide|LucideIcon.map-check.selected">
       <Setter Property="Opacity" Value="1"/>
-    </Style>
-    <Style Selector="Border.map-rail:motion-full, lucide|LucideIcon.map-check:motion-full">
       <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
+        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Enter"/></Transitions>
       </Setter>
     </Style>
     <Style Selector="Border.map-rail:motion-reduced, lucide|LucideIcon.map-check:motion-reduced">
@@ -95,7 +97,7 @@
                                CellTemplate="{StaticResource MapSourceCell}"/>
           <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
                                CellTemplate="{StaticResource MapPoolsCell}"/>
-          <arc:DataTableColumn Header="" IsSortable="False" Width="36" CellTemplate="{StaticResource MapSelectedCell}"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="*" CellTemplate="{StaticResource MapSelectedCell}"/>
         </arc:Table.Columns>
       </arc:Table>
     </arc:SelectionToolbar>
