@@ -28,8 +28,6 @@ public partial class InstanceOverviewPage : UserControl
         InitializeComponent();
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         // Settings save in place: Enter commits, Escape restores the stored value, leaving the field commits the edit.
-        NameInput.KeyDown += (_, e) => FieldKey(e, ResetName, () => _ = SaveNameAsync());
-        NameInput.LostFocus += (_, _) => _ = SaveNameAsync();
         PortInput.KeyDown += (_, e) => FieldKey(e, ResetPort, () => _ = SavePortAsync());
         PortInput.LostFocus += (_, _) => _ = SavePortAsync();
         PasswordInput.KeyDown += (_, e) => FieldKey(e, ResetPassword, () => _ = SavePasswordAsync());
@@ -65,14 +63,13 @@ public partial class InstanceOverviewPage : UserControl
         var entry = m.Selected?.Entry;
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
-        if (!NameInput.IsFocused) NameInput.Text = definition?.Name ?? "";
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
         PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置" : "未设置";
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
         var idle = !operating;
-        NameInput.IsEnabled = PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
+        PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
@@ -86,12 +83,6 @@ public partial class InstanceOverviewPage : UserControl
     {
         if (e.Key is Key.Enter) { e.Handled = true; commit(); }
         else if (e.Key is Key.Escape) { e.Handled = true; reset(); }
-    }
-
-    private void ResetName()
-    {
-        NameInput.Text = Model?.Selected?.Entry.Definition?.Name ?? "";
-        NameInput.ErrorMessage = null;
     }
 
     private void ResetPort()
@@ -145,48 +136,27 @@ public partial class InstanceOverviewPage : UserControl
             done ? ToastKind.Success : ToastKind.Error);
     });
 
-    /// <summary>Settings save in place, so a validation failure lands on the edited field instead of a dialog.</summary>
-    private async Task SaveInstanceAsync(bool nameChanged, string? name = null, int? port = null)
-    {
-        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
-        var nextName = name ?? original.Name;
-        var nextPort = port ?? original.GamePort;
-        if (nextName == original.Name && nextPort == original.GamePort) return;
-        // Each field owns its message: a failed name must not paint the port row red.
-        void Fail(string message)
-        {
-            if (nameChanged) NameInput.ErrorMessage = message; else PortInput.ErrorMessage = message;
-        }
-        operating = true;
-        try
-        {
-            var draft = new HostInstanceDraft(nextName, nextPort, original.Network);
-            HostServerController.ValidateDraft(draft);
-            if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft))
-                NameInput.ErrorMessage = PortInput.ErrorMessage = null;
-            else Fail(m.Error);
-        }
-        catch (InstanceException e)
-        {
-            Fail(e.Message);
-            if (!nameChanged) PortInput.Text = original.GamePort.ToString();
-            else NameInput.Text = original.Name;
-        }
-        finally { operating = false; Update(); }
-    }
-
-    private async Task SaveNameAsync() => await SaveInstanceAsync(nameChanged: true, name: (NameInput.Text ?? "").Trim());
-
+    /// <summary>The port saves in place; a validation failure lands on the field instead of a dialog.</summary>
     private async Task SavePortAsync()
     {
-        if (Model?.Selected?.Entry.Definition is not { } definition) return;
+        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
         if (!int.TryParse(PortInput.Text, out var port))
         {
             PortInput.ErrorMessage = "端口必须为 1–65535 的整数。";
-            PortInput.Text = definition.GamePort.ToString();
+            PortInput.Text = original.GamePort.ToString();
             return;
         }
-        await SaveInstanceAsync(nameChanged: false, port: port);
+        if (port == original.GamePort) { PortInput.ErrorMessage = null; return; }
+        operating = true;
+        try
+        {
+            var draft = new HostInstanceDraft(original.Name, port, original.Network);
+            HostServerController.ValidateDraft(draft);
+            if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft)) PortInput.ErrorMessage = null;
+            else PortInput.ErrorMessage = m.Error;
+        }
+        catch (InstanceException e) { PortInput.ErrorMessage = e.Message; PortInput.Text = original.GamePort.ToString(); }
+        finally { operating = false; Update(); }
     }
 
     private async Task SavePasswordAsync()

@@ -735,26 +735,23 @@ if (only is null or "overview")
 {
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
 var overview = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceOverviewPage>().Single();
-var nameField = overview.FindControl<TKCode.Arc.Input>("NameInput")!;
 var portField = overview.FindControl<TKCode.Arc.Input>("PortInput")!;
 var writes = daemon.InstanceWrites.Count;
 daemon.AllowInstanceWrites = true;
-nameField.Focus();
-nameField.Text = "Renamed by row";
-owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
-WaitUntil(() => daemon.InstanceWrites.Count == writes + 1);
-Check(daemon.InstanceWrites[^1].Action == InstanceAction.Update && daemon.InstanceWrites[^1].Name == "Renamed by row"
-    && daemon.InstanceWrites[^1].GamePort == 27015, "Inline name edit must save through the instance record.");
+Check(overview.FindControl<TKCode.Arc.Input>("NameInput") is null,
+    "The overview must not edit the instance name; that belongs to the instance list.");
 portField.Focus();
 portField.Text = "27077";
 owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
-WaitUntil(() => daemon.InstanceWrites.Count == writes + 2);
-Check(daemon.InstanceWrites[^1].GamePort == 27077, "Inline port edit must save through the instance record.");
+WaitUntil(() => daemon.InstanceWrites.Count == writes + 1);
+Check(daemon.InstanceWrites[^1].Action == InstanceAction.Update && daemon.InstanceWrites[^1].GamePort == 27077
+    && daemon.InstanceWrites[^1].Name == model.Selected!.Entry.Definition!.Name,
+    "Inline port edit must save through the instance record without touching the name.");
 // Escape puts the stored value back instead of saving the half-typed one.
-nameField.Focus();
-nameField.Text = "temporary";
+portField.Focus();
+portField.Text = "27099";
 owner.KeyPress(Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
-Check(nameField.Text == model.Selected!.Entry.Definition!.Name, "Escape must restore the stored name.");
+Check(portField.Text == model.Selected!.Entry.Definition!.GamePort.ToString(), "Escape must restore the stored port.");
 var copyId = overview.FindControl<TKCode.Arc.CopyButton>("CopyIdButton")!;
 Check(copyId.Value == model.Selected.Entry.Id.ToString("D"), "The instance ID row needs a copy button holding the full id.");
 Check(overview.GetVisualDescendants().OfType<TKCode.Arc.SettingsRow>().All(r => r.Header != "连接地址"),

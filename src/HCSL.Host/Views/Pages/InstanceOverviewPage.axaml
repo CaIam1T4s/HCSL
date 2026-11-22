@@ -6,35 +6,34 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <!-- No cards: the settings sit directly on the page and keep their outer spacing. Runtime actions (start, stop, map
          change, logs) live in the console window, on the home page and in the sidebar's 运行 rows. -->
-    <StackPanel Margin="{DynamicResource ConsolePageInset}" Spacing="{arc:ArcDesignTokenResource Space5}">
-      <StackPanel Spacing="{arc:ArcDesignTokenResource Space3}">
-        <TextBlock Text="实例" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
-        <Grid ColumnDefinitions="*,20,*" RowDefinitions="Auto,20,Auto"
-              ColumnSpacing="{arc:ArcDesignTokenResource Space4}" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-          <arc:Input x:Name="NameInput" Label="名称" PlaceholderText="实例名称" MaxLength="80"
-                     Description="1–80 个字符"/>
-          <arc:Input x:Name="PortInput" Grid.Column="2" Label="端口" PlaceholderText="27015" MaxLength="5"
+    <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space8}">
+      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+        <TextBlock Text="实例" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="{arc:ArcDesignTokenResource Space5}"
+              RowSpacing="{arc:ArcDesignTokenResource Space4}">
+          <arc:Input x:Name="PortInput" Label="端口" PlaceholderText="27015" MaxLength="5"
                      Description="1–65535"/>
-          <arc:PasswordField x:Name="PasswordInput" Grid.Row="2" Label="入服密码" PlaceholderText="未设置"
-                             Description="留空表示无密码"/>
+          <arc:PasswordField x:Name="PasswordInput" Grid.Column="1" Label="入服密码" PlaceholderText="未设置"/>
         </Grid>
       </StackPanel>
 
-      <StackPanel Spacing="{arc:ArcDesignTokenResource Space3}">
-        <TextBlock Text="高级" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+        <TextBlock Text="高级" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
         <arc:SettingsGroup Appearance="Plain">
           <arc:SettingsRow Header="复制实例ID">
-            <arc:CopyButton x:Name="CopyIdButton" IsIconOnly="True" VerticalAlignment="Center"/>
+            <arc:CopyButton x:Name="CopyIdButton" Label="点击复制" Height="{arc:ArcDesignTokenResource Space8}"
+                            VerticalAlignment="Center"/>
           </arc:SettingsRow>
 
-          <arc:SettingsRow x:Name="DeployRow" Header="重新部署">
-            <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-              <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
-              <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
-            </StackPanel>
+          <arc:SettingsRow x:Name="DeployRow" Header="部署" Description="重写运行目录，不启动服务器">
+            <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
           </arc:SettingsRow>
 
-          <arc:SettingsRow Header="打开目录" Description="旧目录归档后仍可手动取回">
+          <arc:SettingsRow Header="恢复部署" Description="清理中断部署留下的 journal">
+            <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
+          </arc:SettingsRow>
+
+          <arc:SettingsRow Header="打开目录">
             <arc:Button x:Name="OpenRuntimeButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenRuntime"/>
           </arc:SettingsRow>
 
@@ -47,7 +46,7 @@
             </StackPanel>
           </arc:SettingsRow>
 
-          <arc:SettingsRow x:Name="DeleteRow" Header="删除实例" Description="目录移入回收区，删除后无法恢复">
+          <arc:SettingsRow x:Name="DeleteRow" Header="删除实例">
             <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
                                Height="{arc:ArcDesignTokenResource Space8}" MinHeight="0"
                                HoldDuration="0:0:1" Tone="Danger" Confirmed="DeleteInstance"/>

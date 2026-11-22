@@ -43,6 +43,8 @@ public static class ThemeCatalog
         // Console pages inset their content from the window edges; a Thickness resource because Arc's spacing
         // tokens are doubles and cannot be bound to Padding or Margin.
         ["ConsolePageInset"] = new Thickness(16),
+        // Instance settings pages breathe a little more than the console pages.
+        ["InstancePageInset"] = new Thickness(32),
         // Arc's edge rule plus one pixel: the roster frame reads better slightly heavier than a default rule.
         ["ConsoleFrameThickness"] = new Thickness(2),
         // Console search match colours are fixed, not accent-derived: a match must read the same in every theme
