@@ -68,24 +68,19 @@
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
       </arc:SelectionToolbar.Actions>
-      <Grid>
-        <arc:Table x:Name="Table" IsSelectable="False" Caption="地图目录"
-                   EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
-                   ItemNameOne="张地图" ItemNameOther="张地图">
-          <arc:Table.Columns>
-            <arc:DataTableColumn Header="" IsSortable="False" Width="16" CellTemplate="{StaticResource MapRailCell}"/>
-            <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
-            <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
-                                 CellTemplate="{StaticResource MapSourceCell}"/>
-            <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
-                                 CellTemplate="{StaticResource MapPoolsCell}"/>
-            <arc:DataTableColumn Header="" IsSortable="False" Width="*" CellTemplate="{StaticResource MapSelectedCell}"/>
-          </arc:Table.Columns>
-        </arc:Table>
-        <!-- Arc's own 1px rule is lost at fractional scaling; these are snapped to device pixels. -->
-        <views:TableRowSeparators Table="{Binding #Table}" IsHitTestVisible="False"
-                                  LineBrush="{arc:ArcDesignTokenResource Border}"/>
-      </Grid>
+      <arc:Table x:Name="Table" IsSelectable="False" Caption="地图目录"
+                 EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
+                 ItemNameOne="张地图" ItemNameOther="张地图">
+        <arc:Table.Columns>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="16" CellTemplate="{StaticResource MapRailCell}"/>
+          <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
+          <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
+                               CellTemplate="{StaticResource MapSourceCell}"/>
+          <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
+                               CellTemplate="{StaticResource MapPoolsCell}"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="*" CellTemplate="{StaticResource MapSelectedCell}"/>
+        </arc:Table.Columns>
+      </arc:Table>
     </arc:SelectionToolbar>
   </Grid>
   </Border>
