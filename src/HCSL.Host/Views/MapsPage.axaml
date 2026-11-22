@@ -34,22 +34,23 @@
   </UserControl.Resources>
 
   <Border Padding="{DynamicResource ConsolePageInset}">
-  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto">
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
-        <arc:Button x:Name="RulesButton" Variant="Ghost" Size="Small" Click="ShowRules">
-          <lucide:LucideIcon Kind="CircleQuestionMark"/>
-        </arc:Button>
-        <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh">
-          <lucide:LucideIcon Kind="RotateCw"/>
-        </arc:Button>
-      </StackPanel>
-    </Grid>
-
-    <arc:FilterToolbar Grid.Row="1" x:Name="Filters" IsSearchVisible="True"
+  <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+    <!-- No title row: the page name is already in the sidebar, so the filter bar carries the page actions instead of
+         leaving an empty band above the table. -->
+    <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True"
                        SearchPlaceholder="搜索地图名或工坊 ID" Label="地图筛选"
                        EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选"
                        FiltersChanged="FiltersChanged">
+      <arc:FilterToolbar.Actions>
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
+          <arc:Button x:Name="RulesButton" Variant="Ghost" Size="Small" Click="ShowRules">
+            <lucide:LucideIcon Kind="CircleQuestionMark"/>
+          </arc:Button>
+          <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh">
+            <lucide:LucideIcon Kind="RotateCw"/>
+          </arc:Button>
+        </StackPanel>
+      </arc:FilterToolbar.Actions>
       <arc:FilterToolbar.Fields>
         <arc:FilterField Id="source" Label="来源">
           <arc:FilterField.Options>
@@ -63,7 +64,7 @@
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
 
-    <arc:SelectionToolbar Grid.Row="2" x:Name="Selection" HorizontalAlignment="Stretch"
+    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" HorizontalAlignment="Stretch"
                           SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
