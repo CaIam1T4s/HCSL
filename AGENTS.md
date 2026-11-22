@@ -32,3 +32,11 @@ Load the matching skill before the work starts, not after it:
 | `skills/cs2-project-architecture/SKILL.md` | placing or moving host, player client, TUI, daemon or plugin code; project dependencies and feature boundaries |
 | `skills/hcsl-overlay-surfaces/SKILL.md` | adding or reviewing any dialog, drawer, popover, menu, toast, tooltip or other floating surface: 80% material opacity and backdrop blur |
 | `skills/tkcode-arc/SKILL.md` | any Avalonia/TKCode.Arc screen: component choice, design tokens, motion, copy, accessibility; finish by running its `checklist.md` |
+
+## Known UI limitations
+
+- **Arc table row rules at fractional scaling**: with `RowHeight = 52` and a display scale such as
+  1.104, Spyglass measured row pitches of 51.6 / 51.7 / 52.5, so the 1px rule Arc draws inside a
+  row is sometimes blended away between two rows' backgrounds. A self-drawn, pixel-snapped
+  separator layer was tried and reverted: the occasional missing rule is accepted for now. Do not
+  re-raise it without an operator decision.
