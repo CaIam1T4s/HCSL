@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             x:Class="HCSL.Host.Views.Pages.InstanceOverviewPage" Classes="instance-overview-page">
+  <Border Padding="{DynamicResource ConsolePageInset}">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+        <Border Classes="panel">
+          <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+            <Grid ColumnDefinitions="*,Auto">
+              <arc:Badge x:Name="StateBadge" Size="Medium" HorizontalAlignment="Left"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
+                <arc:Button x:Name="HelpButton" Variant="Ghost" Size="Small"
+                            Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"
+                            Padding="0">
+                  <lucide:LucideIcon Kind="CircleQuestionMark"/>
+                </arc:Button>
+                <arc:Button x:Name="RefreshButton" Variant="Ghost" Size="Small" Click="Refresh"
+                            Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"
+                            Padding="0">
+                  <lucide:LucideIcon Kind="RotateCw"/>
+                </arc:Button>
+              </StackPanel>
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                  ColumnSpacing="{arc:ArcDesignTokenResource Space6}" RowSpacing="{arc:ArcDesignTokenResource Space2}">
+              <TextBlock Text="预设"/>
+              <TextBlock x:Name="PresetText" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="1" Text="地图"/>
+              <TextBlock x:Name="MapText" Grid.Row="1" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="2" Text="端口"/>
+              <TextBlock x:Name="PortText" Grid.Row="2" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="3" Text="连接"/>
+              <TextBlock x:Name="AddressText" Grid.Row="3" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="4" Text="在线"/>
+              <TextBlock x:Name="PlayersText" Grid.Row="4" Grid.Column="1" Classes="instance-property-value"/>
+            </Grid>
+            <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
+              <arc:Button x:Name="StartButton" Content="启动服务器" Variant="Primary" Size="Medium" Click="StartServer"/>
+              <arc:Button x:Name="DeployButton" Content="部署（不启动）" Variant="Secondary" Size="Medium" Click="DeployServer"/>
+              <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Medium" Click="RecoverDeployment"/>
+              <arc:Button x:Name="RecoverButton" Content="恢复检查" Variant="Secondary" Size="Medium" Click="RecoverServer"/>
+              <arc:Button x:Name="ChangeMapButton" Content="即时换图" Variant="Secondary" Size="Medium" Click="ChangeMap"/>
+              <arc:Button x:Name="PasswordButton" Content="入服密码" Variant="Secondary" Size="Medium" Click="EditPassword"/>
+              <arc:Button x:Name="LogsButton" Content="打开日志" Variant="Secondary" Size="Medium" Click="OpenLogs"/>
+              <arc:HoldToConfirm x:Name="StopConfirm" Label="长按停服" ConfirmedLabel="正在停止…"
+                                 HoldDuration="0:0:1" Tone="Danger" Confirmed="StopServer"/>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="panel">
+          <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
+            <TextBlock Text="属性" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto"
+                  ColumnSpacing="{arc:ArcDesignTokenResource Space6}" RowSpacing="{arc:ArcDesignTokenResource Space2}">
+              <TextBlock Text="实例 ID"/>
+              <TextBlock x:Name="IdText" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="1" Text="布局版本"/>
+              <TextBlock x:Name="LayoutText" Grid.Row="1" Grid.Column="1" Classes="instance-property-value"/>
+              <TextBlock Grid.Row="2" Text="运行目录"/>
+              <TextBlock x:Name="DetailText" Grid.Row="2" Grid.Column="1" Classes="instance-property-value"/>
+            </Grid>
+            <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
+              <arc:Button x:Name="RenameButton" Content="重命名实例" Variant="Secondary" Size="Medium" Click="RenameInstance"/>
+              <arc:Button x:Name="MigrateButton" Content="迁移布局" Variant="Secondary" Size="Medium" IsVisible="False" Click="MigrateLayout"/>
+              <arc:Button x:Name="OpenRuntimeButton" Content="打开运行目录" Variant="Secondary" Size="Medium" Click="OpenRuntime"/>
+              <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
+                                 HoldDuration="0:0:1" Tone="Danger" Confirmed="DeleteInstance"/>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</UserControl>

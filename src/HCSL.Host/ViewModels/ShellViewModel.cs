@@ -13,6 +13,15 @@ public sealed class NavigationItem(string id, string label, string description) 
     public bool IsSelected { get => _isSelected; set { _isSelected = value; Notify(); } }
 }
 
+/// <summary>One page of the instance scope. Entering 实例管理 swaps the whole sidebar for these sections.</summary>
+public sealed class InstanceSection(string id, string label) : ObservableObject
+{
+    public string Id { get; } = id;
+    public string Label { get; } = label;
+    private bool _isSelected;
+    public bool IsSelected { get => _isSelected; set { _isSelected = value; Notify(); } }
+}
+
 public sealed class ShellViewModel : ObservableObject
 {
     public SteamCmdController SteamCmd { get; }
@@ -25,7 +34,71 @@ public sealed class ShellViewModel : ObservableObject
         new("instances", "实例列表", "实例只保存配置与插件，共用全局最新版 CS2 服务端。"),
         new("downloads", "下载中心", "统一管理 CS2 服务端更新与插件下载。"),
         new("settings", "设置", "调整外观与应用偏好。")
+    ];    public IReadOnlyList<InstanceSection> InstanceSections { get; } =
+    [
+        new("overview", "概览"),
+        new("presets", "预设与配置"),
+        new("content", "内容与插件"),
+        new("pools", "地图池"),
+        new("admins", "管理员")
     ];
+
+    private InstanceSection? _selectedInstanceSection;
+    private string? returnPageId;
+
+    /// <summary>The section shown while 实例管理 is open; the sidebar selects it.</summary>
+    public InstanceSection SelectedInstanceSection
+    {
+        get => _selectedInstanceSection ??= InstanceSections[0];
+        private set
+        {
+            if (ReferenceEquals(SelectedInstanceSection, value)) return;
+            SelectedInstanceSection.IsSelected = false;
+            _selectedInstanceSection = value;
+            value.IsSelected = true;
+            Notify(nameof(SelectedInstanceSection));
+            Notify(nameof(IsInstanceOverview));
+            Notify(nameof(IsInstancePresets));
+            Notify(nameof(IsInstanceContent));
+            Notify(nameof(IsInstancePools));
+            Notify(nameof(IsInstanceAdmins));
+        }
+    }
+
+    public bool IsInstanceOverview => IsInstance && SelectedInstanceSection.Id == "overview";
+    public bool IsInstancePresets => IsInstance && SelectedInstanceSection.Id == "presets";
+    public bool IsInstanceContent => IsInstance && SelectedInstanceSection.Id == "content";
+    public bool IsInstancePools => IsInstance && SelectedInstanceSection.Id == "pools";
+    public bool IsInstanceAdmins => IsInstance && SelectedInstanceSection.Id == "admins";
+
+    public void SelectInstanceSection(string id)
+    {
+        if (InstanceSections.FirstOrDefault(section => section.Id == id) is { } section)
+            SelectedInstanceSection = section;
+    }
+
+    /// <summary>
+    /// 实例管理 is a scope, not a peer page: entering it records where the operator came from and manages the startup
+    /// instance chosen in 实例列表, so the back button restores exactly that one page.
+    /// </summary>
+    private void EnterInstanceScope()
+    {
+        if (!IsInstance) returnPageId = SelectedPage.Id;
+        if (Pages.FirstOrDefault(page => page.Id == "instance") is not { } page) return;
+        if (StartupInstanceId is { } startup && Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
+            Servers.Selected = item;
+        SelectedPage = page;
+        SelectedInstanceSection = InstanceSections[0];
+    }
+
+    public void ExitInstanceScope() => NavigateCommand.Execute(returnPageId ?? "instances");
+
+    /// <summary>Used by entry points that name one section, such as the home page's map-pool button.</summary>
+    public void OpenInstanceSection(string section)
+    {
+        EnterInstanceScope();
+        SelectInstanceSection(section);
+    }
 
     private Guid? startupInstanceId;
     public Guid? StartupInstanceId => startupInstanceId is { } id && Servers.Instances.Any(i => i.Entry.Id == id)
@@ -104,13 +177,13 @@ public sealed class ShellViewModel : ObservableObject
         SetThemeCommand = new RelayCommand(value => { if (value is string theme) SelectedTheme = theme; });
         NavigateCommand = new RelayCommand(value =>
         {
-            if (!DownloadsBlocked && value is string id && Pages.FirstOrDefault(page => page.Id == id) is { } page)
-            {
-                if (id == "home" && StartupInstanceId is { } startup &&
-                    Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
-                    Servers.Selected = item;
-                SelectedPage = page;
-            }
+            if (DownloadsBlocked || value is not string id || Pages.FirstOrDefault(page => page.Id == id) is not { } page) return;
+            if (id == "instance") { EnterInstanceScope(); return; }
+            returnPageId = null;
+            if (id == "home" && StartupInstanceId is { } startup &&
+                Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
+                Servers.Selected = item;
+            SelectedPage = page;
         });
         _themeService = themeService;
     }
@@ -126,6 +199,8 @@ public sealed class ShellViewModel : ObservableObject
             _selectedPage = value;
             _selectedPage.IsSelected = true;
             Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads));
+            Notify(nameof(IsInstanceOverview)); Notify(nameof(IsInstancePresets)); Notify(nameof(IsInstanceContent));
+            Notify(nameof(IsInstancePools)); Notify(nameof(IsInstanceAdmins));
         }
     }
     public bool IsHome => SelectedPage.Id == "home";

@@ -71,6 +71,13 @@
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
     <Setter Property="FontSize" Value="{arc:ArcDesignTokenResource TypeXS}"/>
   </Style>
+  <!-- Right-aligned read-only value of a property row; shared by the instance pages. -->
+  <Style Selector="TextBlock.instance-property-value">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
+    <Setter Property="HorizontalAlignment" Value="Right"/>
+    <Setter Property="TextAlignment" Value="Right"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
   <Style Selector="Window">
     <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
   </Style>

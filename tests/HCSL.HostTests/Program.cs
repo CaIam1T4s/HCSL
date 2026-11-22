@@ -685,7 +685,7 @@ Console.WriteLine("PASS gui.maps.workshop-preset-invalid-target-preserved-and-ca
 if (only is "forms") return 0;
 }
 
-HCSL.Host.Views.Pages.InstancePage presetPage = null!;
+HCSL.Host.Views.Pages.InstancePresetsPage presetPage = null!;
 PresetDefinition firstPreset = null!;
 if (only is null or "presets" or "pools" or "plugins" or "frameworks" or "cfg" or "maps" or "start")
 {
@@ -695,16 +695,19 @@ var presetInstanceId = Guid.NewGuid();
 daemon.Catalog = new([new(presetInstanceId, new(1, presetInstanceId, 1, "Preset GUI fixture", 27015, firstPreset.Id), [firstPreset, secondPreset])]);
 daemon.IdleForPresetTests = true;
 PumpUntil(server.RefreshAsync()); PumpUntil(model.RefreshInstancesAsync());
-((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("instance"); Layout();
-presetPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstancePage>().Single();
-var presetSelect = presetPage.FindControl<TKCode.Arc.Select>("PresetSelect")!;
-Check(presetSelect.ItemsSource!.Cast<HostPresetItem>().Count() == 2, "GUI preset list missing catalog entries.");
-presetSelect.SelectedIndex = 1; Layout();
+((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("instance");
+((ShellViewModel)owner.DataContext!).SelectInstanceSection("presets");
+Layout();
+presetPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstancePresetsPage>().Single();
+var presetChoices = presetPage.FindControl<TKCode.Arc.RadioGroup>("PresetChoices")!;
+var presetItems = ((System.Collections.IEnumerable)presetChoices.ItemsSource!).Cast<HostPresetItem>().ToArray();
+Check(presetItems.Length == 2, "GUI preset list missing catalog entries.");
+presetChoices.SelectedItem = presetItems[1]; Layout();
 Check(model.Selected!.Entry.Definition!.SelectedPresetId == firstPreset.Id, "Browsing changed persisted selection.");
-Click(owner, "设为当前所选");
+Click(owner, "设为当前");
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "选择配置预设"));
 Click(owner, "取消");
-WaitUntil(() => presetPage.FindControl<TKCode.Arc.Button>("CreatePresetButton")!.IsEnabled);
+WaitUntil(() => presetPage?.FindControl<TKCode.Arc.Button>("CreateButton") is { IsEnabled: true });
 Check(model.Selected.Entry.Definition.SelectedPresetId == firstPreset.Id, "Cancelled selection changed preset.");
 if (only is "presets") { Console.WriteLine("PASS only presets"); return 0; }
 }
@@ -913,7 +916,7 @@ if (only is "maps")
 }
 var beforeMaps = daemon.Queries;
 Click(owner, "即时换图"); Layout(); Click(owner, "取消");
-WaitUntil(() => presetPage.FindControl<TKCode.Arc.Button>("ChangeMapButton")!.IsEnabled);
+WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.Name == "ChangeMapButton" && b.IsEffectivelyEnabled));
 Check(daemon.Queries == beforeMaps, "Cancelled map change sent a command.");
 Click(owner, "即时换图"); Layout();
 owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Single(s => s.IsEffectivelyVisible && s.ItemsSource is string[]).SelectedIndex = 1;
@@ -921,7 +924,7 @@ owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().Single(t => t.IsEffectiv
 Click(owner, "下一步"); WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "确认即时换图"));
 Click(owner, "换图"); WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "换图投递结果"));
 Check(daemon.Queries == beforeMaps + 1 && daemon.LastConsole is { Text: "host_workshop_map 3070244462" } && daemon.LastConsole.RunId == server.RunId, "Confirmed map change target changed.");
-Click(owner, "返回"); WaitUntil(() => presetPage.FindControl<TKCode.Arc.Button>("ChangeMapButton")!.IsEnabled);
+Click(owner, "返回"); WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.Name == "ChangeMapButton" && b.IsEffectivelyEnabled));
 Console.WriteLine("PASS gui.maps.cancel-confirmed-run-bound-workshop-command-no-preset-write");
 if (only is "maps") return 0;
 }
@@ -930,7 +933,7 @@ if (only is null or "start")
 {
 daemon.IdleForPresetTests = false;
 daemon.CfgRunIdentity = false; PumpUntil(server.RefreshAsync()); Layout();
-Check(!presetPage.FindControl<TKCode.Arc.Button>("CreatePresetButton")!.IsEnabled && !presetPage.FindControl<TKCode.Arc.Button>("EditPresetButton")!.IsEnabled, "Active run must disable preset writes.");
+Check(!presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled && !presetPage.FindControl<TKCode.Arc.Button>("EditButton")!.IsEnabled, "Active run must disable preset writes.");
 ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home"); Layout();
 Console.WriteLine("PASS gui.presets.catalog-browse-without-switch-cancel-selection-and-active-write-guards");
 var normalStart = owner.ConfirmStartAsync("测试启动确认");

@@ -225,7 +225,7 @@ public partial class HomePage : UserControl
     {
         if (!PoolButton.IsEnabled) return;
         ConfigurationPopover.IsOpen = false;
-        (DataContext as ShellViewModel)?.NavigateCommand.Execute("instance");
+        (DataContext as ShellViewModel)?.OpenInstanceSection("pools");
     }
     private async void RetryPool(object? sender, RoutedEventArgs e) => await ReadPoolAsync();
 }

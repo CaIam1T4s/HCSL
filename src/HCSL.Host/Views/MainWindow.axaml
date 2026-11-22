@@ -1,4 +1,4 @@
-<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
+<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:lucide="using:TKCode.Arc.Icons.Lucide" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto" Background="Transparent">
       <arc:TitleBar.LeftContent>
@@ -13,8 +13,9 @@
     <Grid x:Name="ShellContent" ColumnDefinitions="216,*">
       <Grid ZIndex="1">
           <Border Classes="sidebar">
+            <Panel>
             <arc:Sidebar x:Name="MainSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
-                         IsCollapseButtonVisible="False" IsFilterVisible="False"
+                         IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding !IsInstance}"
                          Background="Transparent" Label="主导航"
                          SelectedKey="{Binding SelectedPage.Id, Mode=OneWay}" ItemInvoked="SidebarItemInvoked">
               <arc:Sidebar.Header>
@@ -48,11 +49,45 @@
               </StackPanel>
               </arc:Sidebar.Footer>
             </arc:Sidebar>
+            <!-- 实例管理 is a scope of its own: it replaces the whole navigation instead of nesting under it. The back
+                 button returns to the single page the operator came from. -->
+            <arc:Sidebar x:Name="InstanceSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
+                         IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding IsInstance}"
+                         Background="Transparent" Label="实例管理导航"
+                         SelectedKey="{Binding SelectedInstanceSection.Id, Mode=OneWay}" ItemInvoked="InstanceSidebarItemInvoked">
+              <arc:Sidebar.Header>
+                <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}" Margin="0,0,0,8">
+                  <arc:Button x:Name="InstanceBackButton" Variant="Ghost" Size="Medium" HorizontalAlignment="Stretch"
+                              Click="LeaveInstanceScope">
+                    <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+                      <lucide:LucideIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                      <TextBlock Text="返回"/>
+                    </StackPanel>
+                  </arc:Button>
+                  <TextBlock x:Name="InstanceScopeName" Classes="section" TextTrimming="CharacterEllipsis"/>
+                  <arc:Badge x:Name="InstanceScopeBadge" Size="Small" HorizontalAlignment="Left"/>
+                </StackPanel>
+              </arc:Sidebar.Header>
+              <arc:SidebarSection Header="实例">
+                <arc:SidebarItem Key="overview" Label="概览"/>
+                <arc:SidebarItem Key="presets" Label="预设与配置"/>
+                <arc:SidebarItem Key="content" Label="内容与插件"/>
+                <arc:SidebarItem Key="pools" Label="地图池"/>
+                <arc:SidebarItem Key="admins" Label="管理员"/>
+              </arc:SidebarSection>
+            </arc:Sidebar>
+            </Panel>
           </Border>
         </Grid>
         <Grid Grid.Column="1">
           <pages:HomePage IsVisible="{Binding IsHome}"/>
-          <pages:InstancePage x:Name="InstanceManagementPage" IsVisible="{Binding IsInstance}"/>
+          <Grid x:Name="InstanceScopeHost" IsVisible="{Binding IsInstance}">
+            <pages:InstanceOverviewPage x:Name="InstanceOverview" IsVisible="{Binding IsInstanceOverview}"/>
+            <pages:InstancePresetsPage x:Name="InstancePresets" IsVisible="{Binding IsInstancePresets}"/>
+            <pages:InstanceContentPage x:Name="InstanceContent" IsVisible="{Binding IsInstanceContent}"/>
+            <pages:InstanceMapPoolsPage x:Name="InstanceMapPools" IsVisible="{Binding IsInstancePools}"/>
+            <pages:InstanceAdminsPage x:Name="InstanceAdmins" IsVisible="{Binding IsInstanceAdmins}"/>
+          </Grid>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>
           <pages:SettingsPage x:Name="SettingsPageView" IsVisible="{Binding IsSettings}"/>

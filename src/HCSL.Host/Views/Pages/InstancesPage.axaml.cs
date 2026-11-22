@@ -303,7 +303,7 @@ public partial class InstancesPage : UserControl
         {
             if (row.CanViewLogs && Model?.Server.Snapshot?.InstanceId == row.Id && Browse(row)) Owner?.OpenSelectedInstanceLogs();
         });
-        Entry("实例管理", LucideIconKind.Settings, nameof(row.CanSelect), () => { if (Browse(row)) shell!.NavigateCommand.Execute("instance"); });
+        // 实例管理 has a single entry point: the main sidebar. The list only chooses the startup instance.
         Entry("重命名实例", LucideIconKind.PencilLine, nameof(row.CanEdit), async () => await EditAsync(row));
         if (row.Item.Entry.Definition?.LayoutVersion < InstanceRules.CurrentLayoutVersion)
             Entry("迁移布局", LucideIconKind.FolderSync, nameof(row.CanMigrate), async () => await MigrateAsync(row));

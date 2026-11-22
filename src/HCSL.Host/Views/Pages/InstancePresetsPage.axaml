@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             xmlns:frontend="using:HCSL.Frontend"
+             x:Class="HCSL.Host.Views.Pages.InstancePresetsPage" Classes="instance-presets-page">
+  <Border Padding="{DynamicResource ConsolePageInset}">
+    <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+      <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
+        <arc:Button x:Name="CreateButton" Content="新建预设" Variant="Primary" Size="Medium" Click="CreatePreset"/>
+        <arc:Button x:Name="CopyButton" Content="复制预设" Variant="Secondary" Size="Medium" Click="CopyPreset"/>
+        <arc:Button x:Name="EditButton" Content="编辑预设" Variant="Secondary" Size="Medium" Click="EditPreset"/>
+        <arc:Button x:Name="SelectButton" Content="设为当前" Variant="Secondary" Size="Medium" Click="SelectPreset"/>
+        <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除预设" ConfirmedLabel="正在删除…"
+                           HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePreset"/>
+        <arc:Button x:Name="CfgButton" Content="CFG 管理" Variant="Secondary" Size="Medium" Click="EditCfg"/>
+        <arc:Button x:Name="OpenCfgButton" Content="打开 CFG 目录" Variant="Secondary" Size="Medium" Click="OpenCfg"/>
+        <arc:Button x:Name="OpenAddonsButton" Content="打开 addons" Variant="Secondary" Size="Medium" Click="OpenAddons"/>
+      </WrapPanel>
+      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <arc:RadioGroup x:Name="PresetChoices" AutomationProperties.Name="配置预设"
+                        SelectionChanged="PresetSelected">
+          <arc:RadioGroup.ItemTemplate>
+            <DataTemplate x:DataType="frontend:HostPresetItem">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+                <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Definition.Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
+                  <TextBlock Text="{Binding Definition.Map}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                             FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
+                </StackPanel>
+                <arc:PresenceHost Grid.Column="1" Mode="Fade" IsPresent="{Binding Selected}"
+                                  VerticalAlignment="Center">
+                  <arc:Badge Size="Small" Tone="Success" Content="当前"/>
+                </arc:PresenceHost>
+              </Grid>
+            </DataTemplate>
+          </arc:RadioGroup.ItemTemplate>
+        </arc:RadioGroup>
+      </ScrollViewer>
+    </Grid>
+  </Border>
+</UserControl>

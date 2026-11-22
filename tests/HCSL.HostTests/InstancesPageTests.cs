@@ -178,7 +178,7 @@ internal static class InstancesPageTests
             Check(shell.StartupInstanceId == second && choices.SelectedItem is InstanceListRow { Id: var selected } && selected == second,
                 "Right-click must not change startup selection.");
             Check(menu.Items.OfType<GlassMenuItem>().Select(i => i.Content?.ToString()).SequenceEqual(new[]
-                { "启动实例", "查看日志", "实例管理", "重命名实例", "属性", "删除实例" }), "Context actions must replace the operations column and include properties.");
+                { "启动实例", "查看日志", "重命名实例", "属性", "删除实例" }), "Context actions must replace the operations column and include properties.");
             var menuPosition = menu.PointToScreen(default);
             Invoke(menu, "属性");
             var propertyAnchor = page.FindControl<Border>("PropertiesAnchor")!;
@@ -211,9 +211,16 @@ internal static class InstancesPageTests
                 "Property panel must also replace the pointer-positioned context menu at its actual origin.");
             properties.IsOpen = false; Layout();
             var poolReads = daemon.PoolReads;
-            Invoke(OpenMenu(first), "实例管理"); Layout();
-            Check(shell.IsInstance && model.Selected?.Entry.Id == first && shell.StartupInstanceId == second && daemon.PoolReads == poolReads,
-                "Only explicit management action may navigate, without changing startup or reading hidden home pools.");
+            // 实例管理 has a single entry point (the sidebar) and always manages the startup instance; the row menu no
+            // longer offers it, so browsing a row must not navigate.
+            Check(OpenMenu(first).Items.OfType<GlassMenuItem>().All(i => i.Content?.ToString() != "实例管理"),
+                "The instance row menu must not offer a second management entry.");
+            Menu("rowMenu").Close(); Layout();
+            shell.NavigateCommand.Execute("instance"); Layout();
+            Check(shell.IsInstance && shell.IsInstanceOverview && model.Selected?.Entry.Id == second && daemon.PoolReads == poolReads,
+                "The sidebar entry must manage the startup instance without reading hidden pools.");
+            shell.ExitInstanceScope(); Layout();
+            Check(shell.IsInstances && model.Selected?.Entry.Id == second, "Back must restore the page management was opened from.");
             shell.NavigateCommand.Execute("home"); Layout();
             Check(model.Selected?.Entry.Id == second, "Home must restore startup choice.");
             shell.NavigateCommand.Execute("instances"); Layout();
