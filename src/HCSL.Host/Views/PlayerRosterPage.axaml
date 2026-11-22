@@ -97,6 +97,8 @@
     <!-- Row confirmations open at the context menu's own origin, exactly like the instance list. -->
     <Canvas x:Name="AnchorLayer" IsHitTestVisible="False">
       <Border x:Name="Anchor" Classes="popover-anchor"/>
+      <!-- Anchors the row menu at the pointer: PlacementMode.Pointer misplaces a window's first popup. -->
+      <Border x:Name="MenuAnchor" Width="{arc:ArcDesignTokenResource Space1}" Height="{arc:ArcDesignTokenResource Space1}"/>
     </Canvas>
     <arc:Popover x:Name="HoldPopover" Placement="Bottom" Alignment="Start" Offset="0"
                  TriggerMode="Manual" HasShadow="False">

@@ -271,13 +271,17 @@ public partial class InstancesPage : UserControl
         if (container?.DataContext is not InstanceListRow row) return;
         e.Handled = true;
         sortMenu?.Close(); rowMenu?.Close();
-        var menu = rowMenu = new GlassMenu
+        // The menu is anchored at the pointer point ourselves: PlacementMode.Pointer misplaces the very first menu of a
+        // window, because its popup root does not exist yet when the position is resolved.
+        var pointer = e.TryGetPosition(container, out var position) ? container.TranslatePoint(position, PropertyAnchorLayer) : null;
+        if (pointer is { } origin)
         {
-            Name = "InstanceRowMenu",
-            Placement = e.TryGetPosition(container, out _) ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedRight
-        };
+            Canvas.SetLeft(MenuAnchor, origin.X);
+            Canvas.SetTop(MenuAnchor, origin.Y);
+        }
+        var menu = rowMenu = new GlassMenu { Name = "InstanceRowMenu" };
         AutomationProperties.SetName(menu, row.OperationsLabel);
-        Point? menuOrigin = null;
+        Point? menuOrigin = pointer;
         void CaptureMenuOrigin()
         {
             if (menu.IsAttachedToVisualTree())
@@ -303,7 +307,13 @@ public partial class InstancesPage : UserControl
         {
             if (row.CanViewLogs && Model?.Server.Snapshot?.InstanceId == row.Id && Browse(row)) Owner?.OpenSelectedInstanceLogs();
         });
-        // 实例管理 has a single entry point: the main sidebar. The list only chooses the startup instance.
+        Entry("实例管理", LucideIconKind.Settings, nameof(row.CanSelect), () =>
+        {
+            // Management always works on the startup instance, so this row becomes the startup instance first.
+            if (!Browse(row) || Model?.Selected is not { } item) return;
+            shell!.SelectStartupInstance(item);
+            shell.NavigateCommand.Execute("instance");
+        });
         Entry("重命名实例", LucideIconKind.PencilLine, nameof(row.CanEdit), async () => await EditAsync(row));
         if (row.Item.Entry.Definition?.LayoutVersion < InstanceRules.CurrentLayoutVersion)
             Entry("迁移布局", LucideIconKind.FolderSync, nameof(row.CanMigrate), async () => await MigrateAsync(row));
@@ -327,7 +337,7 @@ public partial class InstancesPage : UserControl
             AutomationProperties.SetName(DeleteConfirm, "长按删除实例：" + target.Name);
             ShowAtMenuOrigin(DeletePopover, DeleteAnchor, container, menuOrigin);
         }), true, true);
-        menu.Open(container);
+        menu.Open(pointer is null ? container : MenuAnchor);
     }
 
     private void ShowAtMenuOrigin(Popover popover, Border anchor, Control container, Point? menuOrigin)

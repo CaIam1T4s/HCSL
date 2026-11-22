@@ -199,6 +199,9 @@
     <Canvas x:Name="PropertyAnchorLayer" Grid.RowSpan="3" IsHitTestVisible="False">
       <Border x:Name="PropertiesAnchor" Width="{arc:ArcDesignTokenResource Space1}" Height="{arc:ArcDesignTokenResource Space1}"/>
       <Border x:Name="DeleteAnchor" Width="{arc:ArcDesignTokenResource Space1}" Height="{arc:ArcDesignTokenResource Space1}"/>
+      <!-- Anchors the context menu at the exact pointer point: Avalonia's Pointer placement was unreliable on the
+           panel's first popup, when its popup root did not exist yet. -->
+      <Border x:Name="MenuAnchor" Width="{arc:ArcDesignTokenResource Space1}" Height="{arc:ArcDesignTokenResource Space1}"/>
     </Canvas>
     <arc:Popover x:Name="PropertiesPopover" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>

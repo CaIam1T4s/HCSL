@@ -132,19 +132,22 @@ public sealed partial class PlayerRosterPage : UserControl
         if (rowControl is null || row is null || row.IsBot) return;
         e.Handled = true;
         rowMenu?.Close();
-        var menu = rowMenu = new GlassMenu
+        // Same rule as the instance list: anchor the menu at the pointer ourselves, because PlacementMode.Pointer
+        // misplaces a window's first popup (its popup root does not exist yet when the position is resolved).
+        var pointer = e.TryGetPosition(rowControl, out var menuPoint) ? rowControl.TranslatePoint(menuPoint, AnchorLayer) : null;
+        if (pointer is { } menuOriginPoint)
         {
-            Name = "PlayerRowMenu",
-            // Same rule as the instance list: at the pointer when we know it, otherwise aligned to the row.
-            Placement = e.TryGetPosition(rowControl, out _) ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedRight
-        };
+            Canvas.SetLeft(MenuAnchor, menuOriginPoint.X);
+            Canvas.SetTop(MenuAnchor, menuOriginPoint.Y);
+        }
+        var menu = rowMenu = new GlassMenu { Name = "PlayerRowMenu" };
         AutomationProperties.SetName(menu, "玩家操作");
         // The confirmations anchor where the menu opened, so they appear at the menu, not at the row. The origin
         // is read when a command is clicked: by then the popup is placed, whereas LayoutUpdated can fire first.
-        Point? menuOrigin = null;
+        Point? menuOrigin = pointer;
         void CaptureOrigin()
         {
-            if (menu.IsAttachedToVisualTree())
+            if (menuOrigin is null && menu.IsAttachedToVisualTree())
                 menuOrigin = AnchorLayer.PointToClient(menu.PointToScreen(default));
         }
         menu.LayoutUpdated += (_, _) => { if (menu.IsOpen) CaptureOrigin(); };
@@ -166,7 +169,7 @@ public sealed partial class PlayerRosterPage : UserControl
                         () => RevokeAdminAsync(row));
                 else OpenGrant(row);
             });
-        menu.Open(rowControl);
+        menu.Open(pointer is null ? rowControl : MenuAnchor);
     }
 
     /// <summary>
