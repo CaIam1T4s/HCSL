@@ -4,68 +4,63 @@
              x:Class="HCSL.Host.Views.Pages.InstanceOverviewPage"
              x:CompileBindings="False" Classes="instance-overview-page">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="{DynamicResource ConsolePageInset}" Spacing="{arc:ArcDesignTokenResource Space4}">
-      <!-- Runtime actions (start, stop, map change, logs) live in the console window, on the home page and in the
-           sidebar's action rows; this scope only holds the instance's own configuration. -->
-      <Border Classes="panel">
-        <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
-          <TextBlock Text="实例" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+    <!-- No cards: the settings sit directly on the page and keep their outer spacing. Runtime actions (start, stop, map
+         change, logs) live in the console window, on the home page and in the sidebar's 运行 rows. -->
+    <StackPanel Margin="{DynamicResource ConsolePageInset}" Spacing="{arc:ArcDesignTokenResource Space5}">
+      <StackPanel Spacing="{arc:ArcDesignTokenResource Space3}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="实例" VerticalAlignment="Center"
+                     FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+          <arc:CopyButton x:Name="CopyIdButton" Grid.Column="1" Label="复制实例ID"
+                          VerticalAlignment="Center"/>
+        </Grid>
+        <Border Height="1" Background="{arc:ArcDesignTokenResource Border}"/>
 
-          <!-- Fields carry their own label and hint, so the form reads top-down and stays compact. -->
-          <Grid ColumnDefinitions="*,20,*" RowDefinitions="Auto,20,Auto"
-                ColumnSpacing="{arc:ArcDesignTokenResource Space4}" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-            <arc:Input x:Name="NameInput" Label="名称" PlaceholderText="实例名称" MaxLength="80"
-                       Description="1–80 个字符"/>
-            <arc:Input x:Name="PortInput" Grid.Column="2" Label="端口" PlaceholderText="27015" MaxLength="5"
-                       Description="1–65535"/>
-            <arc:PasswordField x:Name="PasswordInput" Grid.Row="2" Label="入服密码" PlaceholderText="未设置"
-                               Description="留空表示无密码"/>
-          </Grid>
+        <Grid ColumnDefinitions="*,20,*" RowDefinitions="Auto,20,Auto"
+              ColumnSpacing="{arc:ArcDesignTokenResource Space4}" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+          <arc:Input x:Name="NameInput" Label="名称" PlaceholderText="实例名称" MaxLength="80"
+                     Description="1–80 个字符"/>
+          <arc:Input x:Name="PortInput" Grid.Column="2" Label="端口" PlaceholderText="27015" MaxLength="5"
+                     Description="1–65535"/>
+          <arc:PasswordField x:Name="PasswordInput" Grid.Row="2" Label="入服密码" PlaceholderText="未设置"
+                             Description="留空表示无密码"/>
+        </Grid>
+      </StackPanel>
 
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}"
-                Margin="0,0,0,4">
-            <TextBlock Text="实例 ID" VerticalAlignment="Center"/>
-            <SelectableTextBlock x:Name="IdText" Grid.Column="1" VerticalAlignment="Center"
-                                 TextTrimming="CharacterEllipsis"
-                                 Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-            <arc:CopyButton x:Name="CopyIdButton" Grid.Column="2" IsIconOnly="True" VerticalAlignment="Center"/>
-          </Grid>
-        </StackPanel>
-      </Border>
+      <arc:Accordion>
+        <arc:AccordionItem>
+          <arc:AccordionItem.Header>
+            <TextBlock Text="高级" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="Medium"/>
+          </arc:AccordionItem.Header>
+          <arc:SettingsGroup Appearance="Plain">
+            <arc:SettingsRow x:Name="DeployRow" Header="重新部署">
+              <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+                <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
+                <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
+              </StackPanel>
+            </arc:SettingsRow>
 
-      <Border Classes="panel">
-        <arc:Accordion>
-          <arc:AccordionItem Header="高级">
-            <arc:SettingsGroup Appearance="Plain">
-              <arc:SettingsRow x:Name="DeployRow" Header="重新部署">
-                <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-                  <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
-                  <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
-                </StackPanel>
-              </arc:SettingsRow>
+            <arc:SettingsRow Header="打开目录" Description="旧目录归档后仍可手动取回">
+              <arc:Button x:Name="OpenRuntimeButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenRuntime"/>
+            </arc:SettingsRow>
 
-              <arc:SettingsRow Header="打开目录" Description="旧目录归档后仍可手动取回">
-                <arc:Button x:Name="OpenRuntimeButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenRuntime"/>
-              </arc:SettingsRow>
+            <arc:SettingsRow x:Name="LayoutRow" Header="目录布局">
+              <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+                <TextBlock x:Name="LayoutText" VerticalAlignment="Center"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+                <arc:Button x:Name="MigrateButton" Content="迁移" Variant="Secondary" Size="Small" IsVisible="False"
+                            Click="MigrateLayout"/>
+              </StackPanel>
+            </arc:SettingsRow>
 
-              <arc:SettingsRow x:Name="LayoutRow" Header="目录布局">
-                <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-                  <TextBlock x:Name="LayoutText" VerticalAlignment="Center"
-                             Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-                  <arc:Button x:Name="MigrateButton" Content="迁移" Variant="Secondary" Size="Small" IsVisible="False"
-                              Click="MigrateLayout"/>
-                </StackPanel>
-              </arc:SettingsRow>
-
-              <arc:SettingsRow x:Name="DeleteRow" Header="删除实例" Description="目录移入回收区，删除后无法恢复">
-                <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
-                                   Height="{arc:ArcDesignTokenResource Space8}" MinHeight="0"
-                                   HoldDuration="0:0:1" Tone="Danger" Confirmed="DeleteInstance"/>
-              </arc:SettingsRow>
-            </arc:SettingsGroup>
-          </arc:AccordionItem>
-        </arc:Accordion>
-      </Border>
+            <arc:SettingsRow x:Name="DeleteRow" Header="删除实例" Description="目录移入回收区，删除后无法恢复">
+              <arc:HoldToConfirm x:Name="DeleteConfirm" Label="长按删除实例" ConfirmedLabel="正在删除…"
+                                 Height="{arc:ArcDesignTokenResource Space8}" MinHeight="0"
+                                 HoldDuration="0:0:1" Tone="Danger" Confirmed="DeleteInstance"/>
+            </arc:SettingsRow>
+          </arc:SettingsGroup>
+        </arc:AccordionItem>
+      </arc:Accordion>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

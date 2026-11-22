@@ -80,8 +80,8 @@
               </arc:SidebarSection>
               <!-- Runtime entries are actions, not pages: IsAction rows are muted and never take the selection block. -->
               <arc:SidebarSection Header="运行">
-                <arc:SidebarItem Key="start" Label="启动服务器" IsAction="True"/>
-                <arc:SidebarItem Key="console" Label="打开控制台" IsAction="True"/>
+                <arc:SidebarItem Key="start" Label="启动服务器"/>
+                <arc:SidebarItem Key="console" Label="打开控制台"/>
               </arc:SidebarSection>
             </arc:Sidebar>
             </Panel>

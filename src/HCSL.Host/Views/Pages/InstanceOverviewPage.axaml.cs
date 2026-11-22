@@ -68,7 +68,6 @@ public partial class InstanceOverviewPage : UserControl
         if (!NameInput.IsFocused) NameInput.Text = definition?.Name ?? "";
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
         PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置" : "未设置";
-        IdText.Text = entry?.Id.ToString("D") ?? "—";
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";

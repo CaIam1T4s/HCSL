@@ -764,8 +764,8 @@ var scopeSidebar = owner.FindControl<TKCode.Arc.Sidebar>("InstanceSidebar")!;
 var scopeItems = scopeSidebar.Sections.SelectMany(s => s.Items).ToArray();
 var startItem = scopeItems.Single(i => i.Key == "start");
 var consoleItem = scopeItems.Single(i => i.Key == "console");
-Check(startItem.IsAction && consoleItem.IsAction && consoleItem.IsEnabled && consoleItem.IsVisible,
-    "The instance scope sidebar must offer 启动服务器 and 打开控制台 as action rows.");
+Check(!startItem.IsAction && !consoleItem.IsAction && consoleItem.IsEnabled && consoleItem.IsVisible,
+    "The 运行 rows must render like the navigation rows they sit beside.");
 Check(!ReferenceEquals(scopeSidebar.SelectedItem, startItem) && !ReferenceEquals(scopeSidebar.SelectedItem, consoleItem),
     "Invoking an action row must leave the section selection alone.");
 Check(!overview.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => Equals(b.Content, "启动服务器")),
