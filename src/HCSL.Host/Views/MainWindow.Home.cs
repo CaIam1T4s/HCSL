@@ -76,12 +76,17 @@ public partial class MainWindow
     private void LeaveInstanceScope(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         (DataContext as ShellViewModel)?.ExitInstanceScope();
 
-    public Task StartHomeServerAsync() => InstanceOverview.StartSelectedAsync();
-    public void OpenSelectedInstanceLogs() => InstanceOverview.ShowSelectedLogs();
     public void ShowInstanceNotification(string title, string? detail = null, ToastKind kind = ToastKind.Error) =>
         InstanceNotifications.Show(new ToastOptions { Title = title, Description = detail, Kind = kind });
 
-    private void ShellServerChanged(object? sender, PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(UpdateShellStatus);
+    private void ShellServerChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            UpdateShellStatus();
+            _ = CheckStartOutcomeAsync();
+        });
+    }
 
     /// <summary>Entering or leaving the instance scope changes the window title, not the server state.</summary>
     private void ShellPageChanged(object? sender, PropertyChangedEventArgs e)

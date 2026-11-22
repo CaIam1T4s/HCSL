@@ -1,13 +1,11 @@
 using System.ComponentModel;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using HCSL.Core;
-using HCSL.Frontend;
 using HCSL.Frontend.Dev;
-using HCSL.Host.Services;
+using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
@@ -15,26 +13,21 @@ using TKCode.Arc.Icons.Lucide;
 namespace HCSL.Host.Views.Pages;
 
 /// <summary>
-/// 概览: what this instance is doing right now and every runtime action for it. Destructive instance operations live here
-/// too, so the scope does not need a separate "高级" page.
+/// 概览: the instance's own configuration. Runtime actions (start, stop, map change, logs) stay in the console window and
+/// on the home page, so this scope never duplicates them.
 /// </summary>
 public partial class InstanceOverviewPage : UserControl
 {
     private HostServerController? subscribed;
-    private bool operating, watchingStart, handlingOutcome;
-    private Guid? baselineRun;
-    private Guid startTarget;
-    private long baselineApplied;
-    private ServerLogWindow? logs;
+    private bool operating;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public InstanceOverviewPage()
     {
         InitializeComponent();
-        Tooltip.SetTip(HelpButton, "启动会先按需部署；停服不会退出界面，也不会取消 SteamCMD");
+        Tooltip.SetTip(HelpButton, "这里只放实例自身的设置；启动、停服与换图在首页和控制台窗口完成");
         Tooltip.SetTip(RefreshButton, "刷新实例状态");
-        StopConfirm.Icon = Lucide.Geometry(LucideIconKind.Square);
         DeleteConfirm.Icon = Lucide.Geometry(LucideIconKind.Trash);
         // Settings save in place: Enter commits immediately, leaving the field commits what is typed.
         NameInput.KeyDown += (_, e) => { if (e.Key is Key.Enter) { e.Handled = true; _ = SaveNameAsync(); } };
@@ -65,9 +58,7 @@ public partial class InstanceOverviewPage : UserControl
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (!IsVisible) return;
-        Update();
-        _ = CheckStartOutcomeAsync();
+        if (IsVisible) Dispatcher.UIThread.Post(Update);
     }
 
     private void Update()
@@ -76,94 +67,26 @@ public partial class InstanceOverviewPage : UserControl
         var entry = m.Selected?.Entry;
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
-        if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
         if (!NameInput.IsFocused) NameInput.Text = definition?.Name ?? "";
-        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置（输入新密码替换，留空清除）" : "未设置";
+        if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
+        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置（输入新密码替换，清空后回车移除）" : "未设置";
+        IdText.Text = entry?.Id.ToString("D") ?? "—";
         AddressText.Text = m.ConnectionAddressText is { Length: > 0 } addresses ? addresses : "未知";
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
-        NameRow.Description = entry?.Id.ToString("D") ?? "—";
-        var players = m.Server.Snapshot?.PlayerRoster is { Players.Length: var online } ? $"在线 {online} 人" : "在线 —";
-        ServerRow.Description = definition is null || preset is null
-            ? players
-            : $"预设 {preset.Name} · {ServerMapRules.Label(new(preset.MapKind, preset.Map))} · {players}";
-        DetailRow.Description = m.Server.DetailText;
-        var idle = !operating && !watchingStart;
-        StartButton.IsEnabled = idle && m.Selected?.Entry.Definition is not null && m.Server.CanStart;
+        NameRow.Description = $"回车或离开输入框即保存 · 预设 {preset?.Name ?? "—"}";
+        var idle = !operating;
+        NameInput.IsEnabled = PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
+        RefreshButton.IsEnabled = !operating && !m.Busy;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
-        RecoverButton.IsEnabled = !operating && m.Server.CanRecover;
-        ChangeMapButton.IsEnabled = !operating && m.Server.CanSendConsole && !m.Server.Busy;
-        PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
-        RefreshButton.IsEnabled = !operating && !m.Busy;
-        LogsButton.IsEnabled = m.Server.Connected;
-        StopConfirm.IsEnabled = !operating && m.Server.CanStop;
-        NameInput.IsEnabled = PortInput.IsEnabled = idle && m.CanMutate && definition is not null;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
         MigrateButton.IsEnabled = idle && m.CanMutate && m.Selected is not null;
         OpenRuntimeButton.IsEnabled = !operating && !m.Busy && m.Server.Connected;
         DeleteConfirm.IsEnabled = idle && definition is not null && m.CanCreate;
-        if (!m.Server.Active) StopConfirm.IsConfirmed = false;
+        DeployRow.Description = m.Server.DetailText;
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
-
-    /// <summary>
-    /// Instance settings are edited where they are shown: the row's field saves on Enter or when it loses focus, so no
-    /// dialog stands between the operator and the value.
-    /// </summary>
-    private async Task SaveInstanceAsync(string? name = null, int? port = null)
-    {
-        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
-        var nextName = name ?? original.Name;
-        var nextPort = port ?? original.GamePort;
-        if (nextName == original.Name && nextPort == original.GamePort) return;
-        operating = true;
-        try
-        {
-            var draft = new HostInstanceDraft(nextName, nextPort, original.Network);
-            HostServerController.ValidateDraft(draft);
-            if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft))
-            {
-                NameInput.ErrorMessage = null;
-                PortInput.ErrorMessage = null;
-            }
-            else NameInput.ErrorMessage = PortInput.ErrorMessage = m.Error;
-        }
-        catch (InstanceException e) { PortInput.ErrorMessage = e.Message; PortInput.Text = original.GamePort.ToString(); }
-        finally { operating = false; Update(); }
-    }
-
-    private async Task SaveNameAsync()
-    {
-        var value = (NameInput.Text ?? "").Trim();
-        await SaveInstanceAsync(name: value);
-    }
-
-    private async Task SavePortAsync()
-    {
-        if (Model?.Selected?.Entry.Definition is not { } definition) return;
-        if (!int.TryParse(PortInput.Text, out var port))
-        {
-            PortInput.ErrorMessage = "端口必须为 1–65535 的整数。";
-            PortInput.Text = definition.GamePort.ToString();
-            return;
-        }
-        await SaveInstanceAsync(port: port);
-    }
-
-    private async Task SavePasswordAsync()
-    {
-        if (operating || Model is not { } m) return;
-        var value = PasswordInput.Text ?? "";
-        PasswordInput.Text = "";
-        try
-        {
-            await m.SetPasswordAsync(value);
-            Owner?.ShowInstanceNotification(value.Length == 0 ? "已清除入服密码" : "已设置入服密码", null, ToastKind.Success);
-        }
-        catch (IOException error) { Error("密码未保存", error.Message); }
-        finally { Update(); }
-    }
 
     private async Task RunAsync(Func<Task> action)
     {
@@ -172,7 +95,7 @@ public partial class InstanceOverviewPage : UserControl
         Update();
         try { await action(); }
         catch (Exception) { Error("操作未完成", "请检查宿主状态后重试。"); }
-        finally { operating = false; Update(); await CheckStartOutcomeAsync(); }
+        finally { operating = false; Update(); }
     }
 
     private async void Refresh(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
@@ -209,87 +132,53 @@ public partial class InstanceOverviewPage : UserControl
             done ? ToastKind.Success : ToastKind.Error);
     });
 
-    public Task StartSelectedAsync() => RunAsync(async () =>
+    /// <summary>Settings save in place, so a validation failure lands on the field instead of a dialog.</summary>
+    private async Task SaveInstanceAsync(string? name = null, int? port = null)
     {
-        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
-        var text = m.SelectionText + "\n\n" + m.ConnectionEndpoints(d.GamePort);
-        var confirmation = await owner.ConfirmStartAsync(text);
-        if (!confirmation.Confirmed || m.Selected?.Entry.Id != d.Id) return;
-        startTarget = d.Id;
-        baselineRun = m.Server.RunId;
-        baselineApplied = m.Server.Applied;
-        watchingStart = true;
-        if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory)) ShowLogs();
-        else { watchingStart = false; Error("启动未提交", m.Server.DetailText); }
-    });
-
-    private async void StartServer(object? sender, RoutedEventArgs e) => await StartSelectedAsync();
-
-    private async Task CheckStartOutcomeAsync()
-    {
-        if (!watchingStart || handlingOutcome || operating || Model is not { } m || Owner is not { } owner || m.Server.Busy) return;
-        var s = m.Server;
-        if (s.ConnectionUnknown || s.Applied <= baselineApplied || s.RunId == baselineRun) { if (s.ConnectionUnknown) watchingStart = false; return; }
-        if (s.State is ServerState.Idle or ServerState.Stopped or ServerState.Running) { watchingStart = false; Update(); return; }
-        if (s.State is not (ServerState.Failed or ServerState.RecoveryRequired)) return;
-        handlingOutcome = true;
-        watchingStart = false;
-        Update();
+        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } original) return;
+        var nextName = name ?? original.Name;
+        var nextPort = port ?? original.GamePort;
+        if (nextName == original.Name && nextPort == original.GamePort) return;
+        operating = true;
         try
         {
-            if (s.Code == "HCSL-SERVER-MEMORY-WARNING")
-            {
-                var failedRun = s.RunId;
-                if (await owner.ChooseAsync("低内存启动确认", s.DetailText, "取消", "仍然启动") == 1 &&
-                    s.RunId == failedRun && m.Selected?.Entry.Id == startTarget && s.CanStart)
-                {
-                    baselineRun = s.RunId;
-                    baselineApplied = s.Applied;
-                    watchingStart = true;
-                    if (!await m.StartAsync(allowLowMemory: true)) watchingStart = false;
-                }
-            }
-            else Error("服务器启动失败", s.DetailText);
+            var draft = new HostInstanceDraft(nextName, nextPort, original.Network);
+            HostServerController.ValidateDraft(draft);
+            if (await m.UpdateInstanceAsync(original.Id, original.Revision, draft))
+                NameInput.ErrorMessage = PortInput.ErrorMessage = null;
+            else NameInput.ErrorMessage = PortInput.ErrorMessage = m.Error;
         }
-        finally { handlingOutcome = false; Update(); }
+        catch (InstanceException e) { PortInput.ErrorMessage = e.Message; PortInput.Text = original.GamePort.ToString(); }
+        finally { operating = false; Update(); }
     }
 
-    private async void ChangeMap(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    private async Task SaveNameAsync() => await SaveInstanceAsync(name: (NameInput.Text ?? "").Trim());
+
+    private async Task SavePortAsync()
     {
-        if (Model is not { } m || Owner is not { } owner || m.Server.Snapshot is not { RunId: { } run, InstanceId: { } id }) return;
-        var target = await owner.MapTargetAsync();
-        if (target is null) return;
-        if (await owner.ChooseAsync("确认即时换图", ServerMapRules.Label(target) + "\n" + ServerMapRules.ChangeCommand(target), "取消", "换图") != 1) return;
+        if (Model?.Selected?.Entry.Definition is not { } definition) return;
+        if (!int.TryParse(PortInput.Text, out var port))
+        {
+            PortInput.ErrorMessage = "端口必须为 1–65535 的整数。";
+            PortInput.Text = definition.GamePort.ToString();
+            return;
+        }
+        await SaveInstanceAsync(port: port);
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        if (operating || Model is not { } m) return;
+        var value = PasswordInput.Text ?? "";
+        PasswordInput.Text = "";
         try
         {
-            var receipt = await new ServerMapClient(m.Server).ChangeAsync(id, run, target);
-            Owner?.ShowInstanceNotification("换图已投递", ServerMapClient.ReceiptText(receipt), ToastKind.Success);
+            await m.SetPasswordAsync(value);
+            Owner?.ShowInstanceNotification(value.Length == 0 ? "已清除入服密码" : "已设置入服密码", null, ToastKind.Success);
         }
-        catch (IOException error) { Error("换图未完成", error.Message); }
-    });
-
-    /// <summary>The hold is the confirmation, so stopping needs no extra dialog.</summary>
-    private async void StopServer(object? sender, RoutedEventArgs e)
-    {        if (Model is not { } m) return;
-        var run = m.Server.RunId;
-        if (run is null) { StopConfirm.IsConfirmed = false; return; }
-        Owner?.ShowInstanceNotification("正在停止服务器", null, ToastKind.Info);
-        var stopped = await m.Server.StopAsync();
-        StopConfirm.IsConfirmed = false;
-        if (m.Server.RunId != run && m.Server.Active) return;
-        Owner?.ShowInstanceNotification(stopped ? "已请求停止服务器" : "停服未提交",
-            stopped ? null : m.Server.DetailText, stopped ? ToastKind.Success : ToastKind.Error);
-        Update();
+        catch (IOException error) { Error("密码未保存", error.Message); }
+        finally { Update(); }
     }
-
-    private async void RecoverServer(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || Owner is not { } owner) return;
-        var run = m.Server.RunId;
-        if (await owner.ChooseAsync("恢复检查", "检查并清理会话遗留资源。", "取消", "恢复检查") != 1) return;
-        if (run != m.Server.RunId) return;
-        if (!await m.RecoverAsync()) Error("恢复未提交", m.Error + " " + m.Server.DetailText);
-    });
 
     private async void MigrateLayout(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
@@ -323,18 +212,5 @@ public partial class InstanceOverviewPage : UserControl
             else Owner?.ShowInstanceNotification("实例已删除", target.Name, ToastKind.Success);
         }
         finally { operating = false; Update(); }
-    }
-
-    public void ShowSelectedLogs() => ShowLogs();
-
-    private void OpenLogs(object? sender, RoutedEventArgs e) => ShowLogs();
-
-    private void ShowLogs()
-    {
-        if (logs is not null) { logs.Activate(); return; }
-        if (Model is not { } m || Owner is not { } owner) return;
-        logs = new ServerLogWindow(m, owner);
-        logs.Closed += (_, _) => logs = null;
-        logs.Show(owner);
     }
 }
