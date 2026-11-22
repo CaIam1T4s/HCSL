@@ -508,6 +508,17 @@ Check(!downloads.GetVisualDescendants().OfType<Textarea>().Any(),
     "Download page must not keep the removed task log.");
 downloadWindow.Close();
 Console.WriteLine("PASS gui.downloads.measured-progress-instead-of-task-log");
+// Stop lives in the sidebar footer: a hold in the wide layout, a trash icon that opens the same hold in the rail.
+var stopWindow = new ServerLogWindow(model, owner); stopWindow.Show(owner); Layout();
+var stopHold = stopWindow.FindControl<TKCode.Arc.HoldToConfirm>("StopHold")!;
+var stopIcon = stopWindow.FindControl<TKCode.Arc.Button>("StopIcon")!;
+Check(stopHold.IsVisible && !stopIcon.IsVisible, "The wide console must show the hold-to-stop control in the sidebar footer.");
+stopWindow.Width = 820; Layout();
+Check(!stopHold.IsVisible && stopIcon.IsVisible, "The collapsed rail must swap the stop hold for its trash icon.");
+stopWindow.Width = 1100; Layout();
+Check(stopHold.IsVisible && !stopIcon.IsVisible, "Widening the console must restore the hold-to-stop control.");
+stopWindow.Close(); Layout();
+Console.WriteLine("PASS gui.logs.stop-action-hold-and-rail-icon");
 if (only is "logs") return 0;
 }
 if (only is null or "roster")

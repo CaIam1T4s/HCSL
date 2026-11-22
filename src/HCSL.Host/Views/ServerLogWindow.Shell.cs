@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -153,6 +154,45 @@ public sealed partial class ServerLogWindow
         navigation.IsCollapsed = width < 900;
         mapBadge.IsVisible = width >= 900;
         playersBadge.IsVisible = width >= 1080;
+        // The rail has no room for a label: it shows a trash icon that opens the same hold in a popover.
+        StopHold.IsVisible = !navigation.IsCollapsed;
+        StopIcon.IsVisible = navigation.IsCollapsed;
+        if (navigation.IsCollapsed) StopPopover.IsOpen = false;
+    }
+
+    /// <summary>Stop is offered only while a server runs; the button stays in place so the action is discoverable.</summary>
+    private void UpdateStopAction()
+    {
+        var active = model.Server.Active;
+        StopHold.IsEnabled = active;
+        StopIcon.IsEnabled = active;
+        var tip = active ? "停止运行中的服务器" : "服务器未运行";
+        Tooltip.SetTip(StopHold, tip);
+        Tooltip.SetTip(StopIcon, tip);
+        AutomationProperties.SetName(StopIcon, tip);
+    }
+
+    private void OpenStopPopover(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!model.Server.Active) return;
+        StopPopover.ShowAt(StopIcon);
+    }
+
+    /// <summary>Hold confirmed: report progress through the toast stack, then stop the run that was current.</summary>
+    private async void StopConfirmed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        StopPopover.IsOpen = false;
+        if (model.Server.RunId is not { } run || !model.Server.Active)
+        {
+            notifications.Show(new ToastOptions { Title = "没有可停止的服务器", Kind = ToastKind.Warning });
+            return;
+        }
+        notifications.Show(new ToastOptions { Title = "正在停止服务器", Kind = ToastKind.Info });
+        var stopped = await model.Server.StopAsync();
+        if (closed || model.Server.RunId != run && model.Server.Active) return;
+        notifications.Show(stopped
+            ? new ToastOptions { Title = "已请求停止服务器", Kind = ToastKind.Success }
+            : new ToastOptions { Title = "停服未提交", Description = model.Server.DetailText, Kind = ToastKind.Error });
     }
 
     private void UpdateShellHeader()

@@ -306,6 +306,7 @@ public sealed partial class ServerLogWindow : ArcWindow
     private void Update()
     {
         UpdateShellHeader();
+        UpdateStopAction();
         UpdateCertificateBadge();
         UpdateStatusBadgeTip();
         SyncShareDialog();

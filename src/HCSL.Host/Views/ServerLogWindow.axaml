@@ -2,6 +2,7 @@
                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
                xmlns:ui="using:HCSL.UI.Shared.Services"
+               xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
                x:Class="HCSL.Host.Views.ServerLogWindow"
                x:Name="ConsoleRoot"
                Classes="wallpaper-shell"
@@ -33,6 +34,32 @@
           <arc:SidebarItem Key="players" Label="在线玩家" Icon="{x:Static arc:ArcIcons.Users}"/>
           <arc:SidebarItem Key="maps" Label="地图切换"/>
         </arc:SidebarSection>
+        <arc:Sidebar.Footer>
+          <Panel Margin="0,0,0,12" HorizontalAlignment="Stretch">
+            <!-- Wide sidebar: the hold itself is the confirmation. Collapsed rail: an icon opens the same hold in a
+                 popover anchored to it, so the gesture stays identical. -->
+            <arc:HoldToConfirm x:Name="StopHold" HorizontalAlignment="Stretch"
+                               Label="长按停止服务器" ConfirmedLabel="正在停止…"
+                               HoldDuration="0:0:1" Tone="Danger" Confirmed="StopConfirmed"/>
+            <arc:Button x:Name="StopIcon" Variant="Ghost" Size="Small"
+                        Width="{arc:ArcDesignTokenResource Space8}" Height="{arc:ArcDesignTokenResource Space8}"
+                        Padding="0" HorizontalAlignment="Center" IsVisible="False" Click="OpenStopPopover">
+              <lucide:LucideIcon Kind="Trash"/>
+            </arc:Button>
+            <arc:Popover x:Name="StopPopover" Placement="Right" Alignment="Center"
+                         TriggerMode="Manual" HasShadow="False">
+              <arc:Popover.Styles>
+                <Style Selector="arc|PopoverSurface">
+                  <Setter Property="Background" Value="Transparent"/>
+                  <Setter Property="BorderThickness" Value="0"/>
+                  <Setter Property="Padding" Value="0"/>
+                </Style>
+              </arc:Popover.Styles>
+              <arc:HoldToConfirm x:Name="StopHoldCompact" Label="长按停止服务器" ConfirmedLabel="正在停止…"
+                                 HoldDuration="0:0:1" Tone="Danger" Confirmed="StopConfirmed"/>
+            </arc:Popover>
+          </Panel>
+        </arc:Sidebar.Footer>
       </arc:Sidebar>
     </Border>
 
