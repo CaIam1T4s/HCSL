@@ -7,58 +7,16 @@
              x:Class="HCSL.Host.Views.MapsPage"
              x:DataType="vm:MapRow">
   <UserControl.Resources>
-    <!-- One row at a time: a compact dot whose fill and ring animate through Arc's tokens and motion levels. -->
-    <ControlTheme x:Key="MapSelectRadio" TargetType="RadioButton">
-      <!-- No padding or margin of its own: the dot must sit exactly in the middle of the ring. -->
-      <Setter Property="Width" Value="14"/>
-      <Setter Property="Height" Value="14"/>
-      <Setter Property="MinWidth" Value="0"/>
-      <Setter Property="MinHeight" Value="0"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="Margin" Value="0"/>
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Cursor" Value="Hand"/>
-      <Setter Property="Template">
-        <ControlTemplate>
-          <!-- Two ellipses: a stroke is centred on its own bounds, so no border inset can move the dot. -->
-          <Grid Width="14" Height="14" Background="Transparent">
-            <Ellipse Name="Ring" Width="14" Height="14" StrokeThickness="1"
-                     Stroke="{arc:ArcDesignTokenResource BorderStrong}"/>
-            <Ellipse Name="Dot" Width="6" Height="6"
-                     Fill="{arc:ArcDesignTokenResource Accent}"
-                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                     arc:ArcMotion.Tracks="True" Opacity="0"/>
-          </Grid>
-        </ControlTemplate>
-      </Setter>
-      <Style Selector="^:checked /template/ Ellipse#Dot">
-        <Setter Property="Opacity" Value="1"/>
-      </Style>
-      <Style Selector="^:checked /template/ Ellipse#Ring">
-        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Accent}"/>
-      </Style>
-      <Style Selector="^:pointerover /template/ Ellipse#Ring">
-        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource AccentStrong}"/>
-      </Style>
-      <Style Selector="^:checked:pointerover /template/ Ellipse#Ring">
-        <Setter Property="Stroke" Value="{arc:ArcDesignTokenResource Accent}"/>
-      </Style>
-      <Style Selector="^/template/ Ellipse#Dot:motion-full">
-        <Setter Property="Transitions">
-          <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
-        </Setter>
-      </Style>
-      <Style Selector="^/template/ Ellipse#Dot:motion-reduced">
-        <Setter Property="Transitions">
-          <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
-        </Setter>
-      </Style>
-    </ControlTheme>
-    <DataTemplate x:Key="MapSelectCell" x:DataType="vm:MapRow">
-      <RadioButton Theme="{StaticResource MapSelectRadio}" GroupName="map-selection"
-                   IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                   HorizontalAlignment="Left" VerticalAlignment="Center"/>
+    <!-- Selection reads as a table row, not as a tiny control: an accent rail on the left and a check on the right. -->
+    <DataTemplate x:Key="MapRailCell" x:DataType="vm:MapRow">
+      <Border Width="3" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
+              Background="{arc:ArcDesignTokenResource Accent}"
+              IsVisible="{Binding IsSelected}" Margin="6,0,0,0"/>
+    </DataTemplate>
+    <DataTemplate x:Key="MapSelectedCell" x:DataType="vm:MapRow">
+      <lucide:LucideIcon Kind="Check" Width="16" Height="16"
+                         Foreground="{arc:ArcDesignTokenResource Accent}"
+                         IsVisible="{Binding IsSelected}" HorizontalAlignment="Center"/>
     </DataTemplate>
     <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
       <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
@@ -109,12 +67,13 @@
                  EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
                  ItemNameOne="张地图" ItemNameOther="张地图">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="" IsSortable="False" Width="36" CellTemplate="{StaticResource MapSelectCell}"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="16" CellTemplate="{StaticResource MapRailCell}"/>
           <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
           <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
                                CellTemplate="{StaticResource MapSourceCell}"/>
           <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
                                CellTemplate="{StaticResource MapPoolsCell}"/>
+          <arc:DataTableColumn Header="" IsSortable="False" Width="36" CellTemplate="{StaticResource MapSelectedCell}"/>
         </arc:Table.Columns>
       </arc:Table>
     </arc:SelectionToolbar>

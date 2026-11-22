@@ -39,21 +39,37 @@ public sealed partial class MapsPage : UserControl
         {
             if (e.Property == SelectionToolbar.SelectedCountProperty) UpdateActions();
         };
-        // The whole row selects its map: clicking a 36 px dot should not be the only way to choose a map.
+        // The whole row selects its map: text cells are drawn by the table itself and carry no control to click.
         Table.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, OnRowClicked,
             Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
-    /// <summary>Maps a click anywhere in a row to that row's selection; the radio still works for the keyboard.</summary>
+    /// <summary>
+    /// Maps a click anywhere in a row to that row's selection. The row container has no data context and plain text
+    /// cells are self-drawn, so the row band is found first and the player is then read from any templated cell in it.
+    /// </summary>
     private void OnRowClicked(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
         if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left) return;
         var point = e.GetPosition(Table);
+        double? bandTop = null, bandBottom = null;
+        foreach (var container in Table.GetVisualDescendants().OfType<Control>())
+        {
+            if (container.GetType().Name != "TableRow") continue;
+            if (container.TranslatePoint(default, Table) is not { } origin) continue;
+            var bottom = origin.Y + container.Bounds.Height;
+            if (point.Y < origin.Y || point.Y >= bottom) continue;
+            bandTop = origin.Y;
+            bandBottom = bottom;
+            break;
+        }
+        if (bandTop is not { } top || bandBottom is not { } limit) return;
         foreach (var cell in Table.GetVisualDescendants().OfType<Control>())
         {
             if (cell.DataContext is not MapRow row) continue;
             if (cell.TranslatePoint(default, Table) is not { } origin) continue;
-            if (!new Avalonia.Rect(origin, cell.Bounds.Size).Contains(point)) continue;
+            var center = origin.Y + cell.Bounds.Height / 2;
+            if (center < top || center >= limit) continue;
             row.IsSelected = true;
             e.Handled = true;
             return;

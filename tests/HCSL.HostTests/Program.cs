@@ -540,7 +540,7 @@ Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page 
 var poolOptions = mapsFilter.Fields.Single(f => f.Id == "pool").Options;
 Check(poolOptions.Count == 1 && poolOptions[0].Hint?.Contains("张", StringComparison.Ordinal) == true,
     "The pool filter must list the instance pools with their map counts.");
-Check(mapsTable.Columns.Count == 4 && !mapsTable.IsSelectable, "The map table needs a single-select column, name, source and pool membership.");
+Check(mapsTable.Columns.Count == 5 && !mapsTable.IsSelectable, "The map table needs a rail, name, source, pool membership and a selected mark.");
 var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
 Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图" }),
     "With one map selectable, the bar must offer only the switch.");
