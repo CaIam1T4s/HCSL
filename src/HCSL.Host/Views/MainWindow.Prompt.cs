@@ -9,7 +9,9 @@ namespace HCSL.Host.Views;
 /// <summary>Small single-field prompt shared by the instance pages (pool names, future renames).</summary>
 public partial class MainWindow
 {
-    public async Task<string?> TextAsync(string title, string label, string? initial = null, int maxLength = 40)
+    internal Task<int> ShowWorkshopPreviewAsync(StackPanel content, string[] choices) => ShowOverlayAsync(content, choices, hideConsole: false);
+
+    public async Task<string?> TextAsync(string title, string label, string? initial = null, int maxLength = 40, bool hideConsole = true, string confirmLabel = "保存")
     {
         var content = new StackPanel { Spacing = 12 };
         content.Classes.Add("instance-editor");
@@ -27,7 +29,7 @@ public partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         content.Children.Add(new ElevatedSurface(input) { HorizontalAlignment = HorizontalAlignment.Stretch });
-        while (await ShowOverlayAsync(content, ["取消", "保存"]) == 1)
+        while (await ShowOverlayAsync(content, ["取消", confirmLabel], hideConsole) == 1)
             if ((input.Text ?? "").Trim() is { Length: > 0 } text) return text;
         return null;
     }

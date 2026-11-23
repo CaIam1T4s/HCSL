@@ -165,20 +165,21 @@ public partial class MainWindow : ArcWindow
         try { InstanceRules.Password(value); return value; }
         catch (InstanceException e) { await ChooseAsync("密码无效", e.Message, "返回"); return null; }
     }
-    private async Task<int> ShowOverlayAsync(StackPanel content, string[] choices)
+    private async Task<int> ShowOverlayAsync(StackPanel content, string[] choices, bool hideConsole = true)
     {
         // Async server failures must not be silently discarded while another prompt is open.
         await promptGate.WaitAsync();
-        try { return windowClosed ? -1 : await ShowOverlayCoreAsync(content, choices); }
+        try { return windowClosed ? -1 : await ShowOverlayCoreAsync(content, choices, hideConsole); }
         finally { promptGate.Release(); }
     }
-    private async Task<int> ShowOverlayCoreAsync(StackPanel content, string[] choices)
+    private async Task<int> ShowOverlayCoreAsync(StackPanel content, string[] choices, bool hideConsole)
     {
         var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         prompt = completion;
         var isInstanceEditor = content.Classes.Contains("instance-editor");
-        DialogSurface.Width = isInstanceEditor ? 320 : double.NaN;
-        DialogSurface.MaxWidth = isInstanceEditor ? 320 : 640;
+        var isCollectionPreview = content.Classes.Contains("workshop-collection-preview");
+        DialogSurface.Width = isCollectionPreview ? 560 : isInstanceEditor ? 320 : double.NaN;
+        DialogSurface.MaxWidth = isCollectionPreview ? 560 : isInstanceEditor ? 320 : 640;
         var buttons = new WrapPanel { Orientation = Orientation.Horizontal,
             HorizontalAlignment = isInstanceEditor ? HorizontalAlignment.Right : HorizontalAlignment.Left };
         TKCode.Arc.Button? firstButton = null;
@@ -200,7 +201,7 @@ public partial class MainWindow : ArcWindow
         DialogPresence.IsPresent = true;
         // Owned tool windows stay above their owner on many window managers. Hide
         // them while an in-window confirmation is active so it cannot be obscured.
-        PromptVisibilityChanged?.Invoke(true);
+        if (hideConsole) PromptVisibilityChanged?.Invoke(true);
         Activate();
         var initialFocus = isInstanceEditor ? content.GetVisualDescendants().OfType<Input>().FirstOrDefault() as Control : firstButton;
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -214,7 +215,7 @@ public partial class MainWindow : ArcWindow
             else DialogPresence.IsPresent = false;
             content.Children.Remove(buttons);
             DialogContent.Content = null; DialogOverlay.IsVisible = false; ShellContent.IsEnabled = true; prompt = null;
-            PromptVisibilityChanged?.Invoke(false);
+            if (hideConsole) PromptVisibilityChanged?.Invoke(false);
         }
     }
     private async void OnClosing(object? sender, WindowClosingEventArgs e)
