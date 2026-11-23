@@ -40,7 +40,7 @@ public partial class MainWindow
         {
             if (snapshot is null && error is null)
             {
-                try { snapshot = (await model.AdminsAsync(offset, 0, activeQuery)).Snapshot; }
+                try { snapshot = (await model.AdminsAsync(instance.Id, preset.Id, offset, 0, activeQuery)).Snapshot; }
                 catch (Exception e) { error = Describe(e); }
             }
             source.Text = (error is not null) ? error
@@ -65,7 +65,7 @@ public partial class MainWindow
                 case 8:
                     try
                     {
-                        var reloaded = await model.ReloadAdminsAsync();
+                        var reloaded = await model.ReloadAdminsAsync(instance.Id, preset.Id);
                         message = reloaded.Reload ?? "该来源没有重载命令。";
                         snapshot = reloaded.Snapshot;
                     }

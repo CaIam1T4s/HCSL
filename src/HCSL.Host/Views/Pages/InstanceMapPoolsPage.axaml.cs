@@ -101,12 +101,8 @@ public partial class InstanceMapPoolsPage : UserControl
         if (Model is not { } m) return;
         var connected = !operating && m.Server.Connected;
         var writable = connected && m.CanEditMapPool;
-        var preset = Instance is { } definition
-            ? m.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId)
-            : null;
         CreateButton.IsEnabled = writable;
         RenameButton.IsEnabled = writable && browsed is not null;
-        AssignButton.IsEnabled = writable && browsed is not null && preset is not null && library?.PoolOf(preset.Id)?.Id != browsed.Pool.Id;
         DeleteButton.IsEnabled = writable && browsed is not null;
         RefreshButton.IsEnabled = connected;
         MapsText.Text = browsed is not { Pool.Maps.Length: > 0 } row
@@ -152,16 +148,6 @@ public partial class InstanceMapPoolsPage : UserControl
         DeleteButton.IsConfirmed = false;
         await WriteAsync(instance => new MapPoolLibraryCommand(MapPoolLibraryAction.Delete,
             instance.Id, instance.Revision, pool.Id));
-    }
-
-    private async void AssignPool(object? sender, RoutedEventArgs e)
-    {
-        if (operating || Instance is not { } current || browsed is null) return;
-        var preset = Model?.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == current.SelectedPresetId);
-        if (preset is null) return;
-        var pool = browsed.Pool;
-        await WriteAsync(instance => new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset,
-            instance.Id, instance.Revision, pool.Id, preset.Id));
     }
 
     private async void Refresh(object? sender, RoutedEventArgs e)

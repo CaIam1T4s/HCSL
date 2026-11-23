@@ -49,17 +49,25 @@ public partial class InstanceContentPage : UserControl
         // Framework/plugin reads flip Busy; only a different instance or preset justifies another read.
         if (loading || operating || Model is not { } m || m.Busy) return;
         if (m.Selected?.Entry.Definition is not { } definition) return;
-        if ((definition.Id, definition.SelectedPresetId) == loadedKey) return;
+        if ((definition.Id, ScopedPreset(definition)?.Id ?? definition.SelectedPresetId) == loadedKey) return;
         Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
     }
 
     private (Guid Instance, Guid Preset) loadedKey;
 
+    /// <summary>The preset scope names its preset; outside it the instance's current preset applies.</summary>
+    private PresetDefinition? ScopedPreset(InstanceDefinition definition)
+    {
+        if (Model is not { } m) return null;
+        var id = (DataContext as ShellViewModel)?.ManagedPresetId ?? definition.SelectedPresetId;
+        return m.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == id);
+    }
+
     private void Update()
     {
-        if (Model is not { } m) return;
+        if (Model is not { } m || m.Selected?.Entry.Definition is not { } definition) return;
         var connected = m.Server.Connected && !m.Busy;
-        var preset = m.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == m.Selected.Entry.Definition?.SelectedPresetId);
+        var preset = ScopedPreset(definition);
         FrameworkButton.IsEnabled = connected && !operating && preset is not null;
         PluginButton.IsEnabled = connected && !operating && preset is not null;
         RefreshButton.IsEnabled = connected && !operating;
@@ -73,7 +81,8 @@ public partial class InstanceContentPage : UserControl
         if (Model is not { } m || !m.Server.Connected) return;
         loading = true;
         loaded = true;
-        if (m.Selected?.Entry.Definition is { } target) loadedKey = (target.Id, target.SelectedPresetId);
+        if (m.Selected?.Entry.Definition is { } target)
+            loadedKey = (target.Id, ScopedPreset(target)?.Id ?? target.SelectedPresetId);
         try
         {
             var check = await m.CheckFrameworksAsync();
@@ -82,9 +91,9 @@ public partial class InstanceContentPage : UserControl
                 f.InstalledVersion ?? "未安装",
                 f.LatestVersion ?? "—",
                 f.Error is { Length: > 0 } error ? error : f.UpdateAvailable ? "可更新" : f.InstalledVersion is null ? "未安装" : "已是最新")).ToArray();
-            if (m.Selected?.Entry.Definition is { } definition)
+            if (m.Selected?.Entry.Definition is { } definition && ScopedPreset(definition) is { } scoped)
             {
-                var plugins = await m.PluginsAsync(new PluginCommand(PluginAction.List, definition.Id, definition.SelectedPresetId));
+                var plugins = await m.PluginsAsync(new PluginCommand(PluginAction.List, definition.Id, scoped.Id));
                 PluginSummary.Text = plugins.Selected.Length == 0
                     ? "插件：未启用"
                     : "插件：" + string.Join("、", plugins.Selected.Select(p => p.Id + " " + p.Version));
@@ -107,7 +116,7 @@ public partial class InstanceContentPage : UserControl
     {
         if (operating || Model is not { } m || Owner is not { } owner ||
             m.Selected?.Entry.Definition is not { } instance ||
-            m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == instance.SelectedPresetId) is not { } preset) return;
+            ScopedPreset(instance) is not { } preset) return;
         operating = true;
         Update();
         try { await owner.EditFrameworksAsync(m, instance, preset); }
@@ -118,7 +127,7 @@ public partial class InstanceContentPage : UserControl
     {
         if (operating || Model is not { } m || Owner is not { } owner ||
             m.Selected?.Entry.Definition is not { } instance ||
-            m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == instance.SelectedPresetId) is not { } preset) return;
+            ScopedPreset(instance) is not { } preset) return;
         operating = true;
         Update();
         try { await owner.EditPluginsAsync(m, instance, preset); }

@@ -57,11 +57,13 @@ public partial class MainWindow
     private async Task ProbeAdminAvailabilityAsync()
     {
         if (Servers is not { } m || m.Selected?.Entry.Definition is not { } definition || !m.Server.Connected) return;
-        var key = (definition.Id, definition.SelectedPresetId);
+        // In the preset scope the availability belongs to that preset, not to the instance's current one.
+        var presetId = (DataContext as ShellViewModel)?.ManagedPresetId ?? definition.SelectedPresetId;
+        var key = (definition.Id, presetId);
         if (adminProbe == key) return;
         adminProbe = key;
         var available = true;
-        try { await m.AdminsAsync(); }
+        try { await m.AdminsAsync(definition.Id, presetId); }
         catch (IOException) { available = false; }
         catch (Exception) { return; }
         ApplyAdminAvailability(available);
@@ -76,10 +78,14 @@ public partial class MainWindow
 
     private void ApplyAdminAvailability(bool available)
     {
-        if (ScopeItem("admins") is { } admins) admins.IsVisible = available;
-        if (!available && DataContext is ShellViewModel { IsInstanceAdmins: true } shell)
-            shell.SelectInstanceSection("overview");
+        if (PresetItem("admins") is { } admins) admins.IsVisible = available;
+        if (!available && DataContext is ShellViewModel { IsPresetAdmins: true } shell)
+            shell.SelectPresetSection("cfg");
     }
+
+    /// <summary>The preset sidebar's rows are resolved by key, the same way the instance rows are.</summary>
+    private TKCode.Arc.SidebarItem? PresetItem(string key) =>
+        PresetSidebar.Sections.SelectMany(section => section.Items).FirstOrDefault(item => item.Key == key);
 
     private (Guid Instance, Guid Preset)? adminProbe;
 

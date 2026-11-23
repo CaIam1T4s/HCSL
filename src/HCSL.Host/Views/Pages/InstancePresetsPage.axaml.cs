@@ -78,6 +78,7 @@ public partial class InstancePresetsPage : UserControl
         var editable = !operating && m.CanMutate;
         var preset = BrowsedPreset;
         CreateButton.IsEnabled = editable;
+        ManageButton.IsEnabled = preset is not null;
         CopyButton.IsEnabled = EditButton.IsEnabled = editable && preset is not null;
         SelectButton.IsEnabled = editable && preset is not null && preset.Id != m.Selected?.Entry.Definition?.SelectedPresetId;
         DeleteButton.IsEnabled = editable && preset is not null && m.Selected?.Entry.Presets.Length > 1
@@ -104,6 +105,12 @@ public partial class InstancePresetsPage : UserControl
         try { await action(); }
         catch (Exception) { Error("操作未完成", "请检查宿主状态后重试。"); }
         finally { operating = false; Update(); }
+    }
+
+    private void ManagePreset(object? sender, RoutedEventArgs e)
+    {
+        if (BrowsedPreset is not { } preset || DataContext is not ShellViewModel shell) return;
+        shell.OpenPresetScope(preset.Id);
     }
 
     private async void CreatePreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(0);

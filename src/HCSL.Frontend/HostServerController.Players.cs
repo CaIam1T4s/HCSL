@@ -41,17 +41,24 @@ public sealed partial class HostServerController
     public async Task<AdminResult> AdminsAsync(int offset = 0, int limit = 0, string? query = null)
     {
         if (Selected is not { } item) throw new IOException("HCSL-ADMIN-REQUEST: Select an instance first.");
-        if (!Server.Connected) throw new IOException("HCSL-ADMIN-REQUEST: Host is disconnected.");
         var preset = SelectedPreset ?? throw new IOException("HCSL-ADMIN-REQUEST: Select a preset first.");
+        return await AdminsAsync(item.Entry.Id, preset.Id, offset, limit, query);
+    }
+
+    /// <summary>Admin list of one named preset, so the preset scope can work on a preset that is not the instance's current one.</summary>
+    public async Task<AdminResult> AdminsAsync(Guid instanceId, Guid presetId, int offset = 0, int limit = 0, string? query = null)
+    {
+        if (!Server.Connected) throw new IOException("HCSL-ADMIN-REQUEST: Host is disconnected.");
+        if (InstancePreset(instanceId, presetId) is null) throw new IOException("HCSL-ADMIN-REQUEST: Refresh the instance/preset selection.");
         Busy = true; Notify();
-        try { return await Admins.ListAsync(item.Entry.Id, preset.Id, offset, limit, query); }
+        try { return await Admins.ListAsync(instanceId, presetId, offset, limit, query); }
         finally { Busy = false; Notify(); }
     }
 
     public async Task<AdminResult> ApplyAdminAsync(AdminCommand command)
     {
         if (!CanEditAdmins) throw new IOException("HCSL-ADMIN-CONFLICT: Another operation is active; retry when it finishes.");
-        if (Selected is not { } item || SelectedPreset is not { } preset || command.InstanceId != item.Entry.Id || command.PresetId != preset.Id)
+        if (InstancePreset(command.InstanceId, command.PresetId) is null)
             throw new IOException("HCSL-ADMIN-REQUEST: Refresh the instance/preset selection.");
         Busy = true; Notify();
         try { return await Admins.ApplyAsync(command); }
@@ -62,9 +69,21 @@ public sealed partial class HostServerController
     {
         if (Selected is not { } item || SelectedPreset is not { } preset)
             throw new IOException("HCSL-ADMIN-REQUEST: Select an instance and preset first.");
+        return await ReloadAdminsAsync(item.Entry.Id, preset.Id);
+    }
+
+    public async Task<AdminResult> ReloadAdminsAsync(Guid instanceId, Guid presetId)
+    {
+        if (InstancePreset(instanceId, presetId) is null)
+            throw new IOException("HCSL-ADMIN-REQUEST: Refresh the instance/preset selection.");
         if (!Server.Connected) throw new IOException("HCSL-ADMIN-REQUEST: Host is disconnected.");
         Busy = true; Notify();
-        try { return await Admins.ReloadAsync(item.Entry.Id, preset.Id); }
+        try { return await Admins.ReloadAsync(instanceId, presetId); }
         finally { Busy = false; Notify(); }
     }
+
+    /// <summary>The catalog entry when both ids still belong together; null after a stale selection.</summary>
+    private (HostInstanceItem Item, PresetDefinition Preset)? InstancePreset(Guid instanceId, Guid presetId) =>
+        Instances.FirstOrDefault(i => i.Entry.Id == instanceId) is { } item &&
+        item.Entry.Presets.FirstOrDefault(p => p.Id == presetId) is { } preset ? (item, preset) : null;
 }

@@ -7,7 +7,8 @@
   <Border Padding="{DynamicResource ConsolePageInset}">
     <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
       <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-        <arc:Button x:Name="CreateButton" Content="新建预设" Variant="Primary" Size="Medium" Click="CreatePreset"/>
+        <arc:Button x:Name="ManageButton" Content="管理此预设" Variant="Primary" Size="Medium" Click="ManagePreset"/>
+        <arc:Button x:Name="CreateButton" Content="新建预设" Variant="Secondary" Size="Medium" Click="CreatePreset"/>
         <arc:Button x:Name="CopyButton" Content="复制预设" Variant="Secondary" Size="Medium" Click="CopyPreset"/>
         <arc:Button x:Name="EditButton" Content="编辑预设" Variant="Secondary" Size="Medium" Click="EditPreset"/>
         <arc:Button x:Name="SelectButton" Content="设为当前" Variant="Secondary" Size="Medium" Click="SelectPreset"/>

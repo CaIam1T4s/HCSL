@@ -63,15 +63,13 @@
             <!-- 实例管理 is a scope of its own: it replaces the whole navigation instead of nesting under it. The back
                  button and the instance name live in the title bar, so the sidebar starts with the section list. -->
             <arc:Sidebar x:Name="InstanceSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
-                         IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding IsInstance}"
+                         IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding IsInstanceScopeVisible}"
                          Background="Transparent" Label="实例管理导航"
                          SelectedKey="{Binding SelectedInstanceSection.Id, Mode=OneWay}" ItemInvoked="InstanceSidebarItemInvoked">
               <arc:SidebarSection Header="实例">
                 <arc:SidebarItem Key="overview" Label="概览"/>
-                <arc:SidebarItem Key="presets" Label="预设与配置"/>
-                <arc:SidebarItem Key="content" Label="内容与插件"/>
+                <arc:SidebarItem Key="presets" Label="预设"/>
                 <arc:SidebarItem Key="pools" Label="地图池"/>
-                <arc:SidebarItem Key="admins" Label="管理员"/>
               </arc:SidebarSection>
               <!-- Runtime entries are actions, not pages: IsAction rows are muted and never take the selection block. -->
               <arc:SidebarSection Header="运行">
@@ -79,17 +77,33 @@
                 <arc:SidebarItem Key="console" Label="打开控制台"/>
               </arc:SidebarSection>
             </arc:Sidebar>
+            <!-- One preset of the managed instance; everything here belongs to that preset rather than the instance. -->
+            <arc:Sidebar x:Name="PresetSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
+                         IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding IsPresetScope}"
+                         Background="Transparent" Label="预设导航"
+                         SelectedKey="{Binding SelectedPresetSection.Id, Mode=OneWay}" ItemInvoked="PresetSidebarItemInvoked">
+              <arc:SidebarSection Header="预设">
+                <arc:SidebarItem Key="cfg" Label="CFG"/>
+                <arc:SidebarItem Key="content" Label="框架与插件"/>
+                <arc:SidebarItem Key="pools" Label="地图池"/>
+                <arc:SidebarItem Key="admins" Label="管理员"/>
+              </arc:SidebarSection>
+            </arc:Sidebar>
             </Panel>
           </Border>
         </Grid>
         <Grid Grid.Column="1">
           <pages:HomePage IsVisible="{Binding IsHome}"/>
-          <Grid x:Name="InstanceScopeHost" IsVisible="{Binding IsInstance}">
+          <Grid x:Name="InstanceScopeHost" IsVisible="{Binding IsInstanceScopeVisible}">
             <pages:InstanceOverviewPage x:Name="InstanceOverview" IsVisible="{Binding IsInstanceOverview}"/>
             <pages:InstancePresetsPage x:Name="InstancePresets" IsVisible="{Binding IsInstancePresets}"/>
-            <pages:InstanceContentPage x:Name="InstanceContent" IsVisible="{Binding IsInstanceContent}"/>
             <pages:InstanceMapPoolsPage x:Name="InstanceMapPools" IsVisible="{Binding IsInstancePools}"/>
-            <pages:InstanceAdminsPage x:Name="InstanceAdmins" IsVisible="{Binding IsInstanceAdmins}"/>
+          </Grid>
+          <Grid x:Name="PresetScopeHost" IsVisible="{Binding IsPresetScope}">
+            <pages:PresetCfgPage x:Name="PresetCfg" IsVisible="{Binding IsPresetCfg}"/>
+            <pages:InstanceContentPage x:Name="PresetContent" IsVisible="{Binding IsPresetContent}"/>
+            <pages:PresetMapPoolPage x:Name="PresetPools" IsVisible="{Binding IsPresetPools}"/>
+            <pages:InstanceAdminsPage x:Name="PresetAdmins" IsVisible="{Binding IsPresetAdmins}"/>
           </Grid>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>

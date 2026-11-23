@@ -37,14 +37,23 @@ public sealed class ShellViewModel : ObservableObject
     ];    public IReadOnlyList<InstanceSection> InstanceSections { get; } =
     [
         new("overview", "概览"),
-        new("presets", "预设与配置"),
-        new("content", "内容与插件"),
+        new("presets", "预设"),
+        new("pools", "地图池")
+    ];
+
+    /// <summary>Sections of the preset scope: everything that belongs to one preset rather than to the instance.</summary>
+    public IReadOnlyList<InstanceSection> PresetSections { get; } =
+    [
+        new("cfg", "CFG"),
+        new("content", "框架与插件"),
         new("pools", "地图池"),
         new("admins", "管理员")
     ];
 
     private InstanceSection? _selectedInstanceSection;
+    private InstanceSection? _selectedPresetSection;
     private string? returnPageId;
+    private Guid? managedPresetId;
 
     /// <summary>The section shown while 实例管理 is open; the sidebar selects it.</summary>
     public InstanceSection SelectedInstanceSection
@@ -59,17 +68,82 @@ public sealed class ShellViewModel : ObservableObject
             Notify(nameof(SelectedInstanceSection));
             Notify(nameof(IsInstanceOverview));
             Notify(nameof(IsInstancePresets));
-            Notify(nameof(IsInstanceContent));
             Notify(nameof(IsInstancePools));
-            Notify(nameof(IsInstanceAdmins));
+            Notify(nameof(IsInstanceScopeVisible));
         }
+    }
+
+    /// <summary>The preset being managed inside the preset scope; null means the instance scope is showing.</summary>
+    public Guid? ManagedPresetId => managedPresetId;
+    public bool IsPresetScope => IsInstance && managedPresetId is { } id &&
+        Servers.Selected?.Entry.Presets.Any(p => p.Id == id) == true;
+    public bool IsInstanceScopeVisible => IsInstance && !IsPresetScope;
+    public string ManagedPresetName => managedPresetId is { } id
+        ? Servers.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == id)?.Name ?? ""
+        : "";
+
+    public InstanceSection SelectedPresetSection
+    {
+        get => _selectedPresetSection ??= PresetSections[0];
+        private set
+        {
+            if (ReferenceEquals(SelectedPresetSection, value)) return;
+            SelectedPresetSection.IsSelected = false;
+            _selectedPresetSection = value;
+            value.IsSelected = true;
+            Notify(nameof(SelectedPresetSection));
+            Notify(nameof(IsPresetCfg));
+            Notify(nameof(IsPresetContent));
+            Notify(nameof(IsPresetPools));
+            Notify(nameof(IsPresetAdmins));
+        }
+    }
+
+    public bool IsPresetCfg => IsPresetScope && SelectedPresetSection.Id == "cfg";
+    public bool IsPresetContent => IsPresetScope && SelectedPresetSection.Id == "content";
+    public bool IsPresetPools => IsPresetScope && SelectedPresetSection.Id == "pools";
+    public bool IsPresetAdmins => IsPresetScope && SelectedPresetSection.Id == "admins";
+
+    public void SelectPresetSection(string id)
+    {
+        if (PresetSections.FirstOrDefault(section => section.Id == id) is { } section)
+            SelectedPresetSection = section;
+    }
+
+    /// <summary>Opens one preset of the managed instance; the back arrow returns to the instance scope.</summary>
+    public void OpenPresetScope(Guid presetId)
+    {
+        if (!IsInstance) return;
+        managedPresetId = presetId;
+        Notify(nameof(ManagedPresetId));
+        Notify(nameof(IsPresetScope));
+        Notify(nameof(IsInstanceScopeVisible));
+        Notify(nameof(ManagedPresetName));
+        SelectedPresetSection = PresetSections[0];
+        NotifyPresetSections();
+    }
+
+    public void ExitPresetScope()
+    {
+        managedPresetId = null;
+        Notify(nameof(ManagedPresetId));
+        Notify(nameof(IsPresetScope));
+        Notify(nameof(IsInstanceScopeVisible));
+        Notify(nameof(ManagedPresetName));
+        SelectedInstanceSection = InstanceSections.First(section => section.Id == "presets");
+        NotifyPresetSections();
+    }
+    private void NotifyPresetSections()
+    {
+        Notify(nameof(IsPresetCfg));
+        Notify(nameof(IsPresetContent));
+        Notify(nameof(IsPresetPools));
+        Notify(nameof(IsPresetAdmins));
     }
 
     public bool IsInstanceOverview => IsInstance && SelectedInstanceSection.Id == "overview";
     public bool IsInstancePresets => IsInstance && SelectedInstanceSection.Id == "presets";
-    public bool IsInstanceContent => IsInstance && SelectedInstanceSection.Id == "content";
     public bool IsInstancePools => IsInstance && SelectedInstanceSection.Id == "pools";
-    public bool IsInstanceAdmins => IsInstance && SelectedInstanceSection.Id == "admins";
 
     public void SelectInstanceSection(string id)
     {
@@ -90,7 +164,19 @@ public sealed class ShellViewModel : ObservableObject
         else if (StartupInstanceId is { } startup && Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
             Servers.Selected = item;
         SelectedPage = page;
+        ClearPresetScope();
         SelectedInstanceSection = InstanceSections[0];
+    }
+
+    private void ClearPresetScope()
+    {
+        if (managedPresetId is null) return;
+        managedPresetId = null;
+        Notify(nameof(ManagedPresetId));
+        Notify(nameof(IsPresetScope));
+        Notify(nameof(IsInstanceScopeVisible));
+        Notify(nameof(ManagedPresetName));
+        NotifyPresetSections();
     }
 
     /// <summary>
@@ -99,7 +185,11 @@ public sealed class ShellViewModel : ObservableObject
     /// </summary>
     public void OpenInstanceScope(HostInstanceItem? instance = null) => EnterInstanceScope(instance);
 
-    public void ExitInstanceScope() => NavigateCommand.Execute(returnPageId ?? "instances");
+    public void ExitInstanceScope()
+    {
+        ClearPresetScope();
+        NavigateCommand.Execute(returnPageId ?? "instances");
+    }
 
     /// <summary>Used by entry points that name one section, such as the home page's map-pool button.</summary>
     public void OpenInstanceSection(string section)
@@ -207,8 +297,8 @@ public sealed class ShellViewModel : ObservableObject
             _selectedPage = value;
             _selectedPage.IsSelected = true;
             Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads));
-            Notify(nameof(IsInstanceOverview)); Notify(nameof(IsInstancePresets)); Notify(nameof(IsInstanceContent));
-            Notify(nameof(IsInstancePools)); Notify(nameof(IsInstanceAdmins));
+            Notify(nameof(IsInstanceOverview)); Notify(nameof(IsInstancePresets));
+            Notify(nameof(IsInstancePools)); Notify(nameof(IsInstanceScopeVisible));
         }
     }
     public bool IsHome => SelectedPage.Id == "home";

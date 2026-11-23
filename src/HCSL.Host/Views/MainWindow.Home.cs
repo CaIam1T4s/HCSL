@@ -55,18 +55,31 @@ public partial class MainWindow
         };
         UpdateThemeText();
         UpdateShellStatus();
-        // The instance sidebar is a plain section list; its icons are geometry, so they are resolved once here.
+        // The sidebars are plain section lists; their icons are geometry, so they are resolved once here.
         foreach (var item in InstanceSidebar.Sections.SelectMany(section => section.Items))
             item.Icon = Lucide.Geometry(item.Key switch
             {
                 "overview" => LucideIconKind.Gauge,
                 "presets" => LucideIconKind.FileStack,
-                "content" => LucideIconKind.Puzzle,
                 "pools" => LucideIconKind.Map,
                 "start" => LucideIconKind.Play,
                 "console" => LucideIconKind.Terminal,
                 _ => LucideIconKind.ShieldCheck
             });
+        foreach (var item in PresetSidebar.Sections.SelectMany(section => section.Items))
+            item.Icon = Lucide.Geometry(item.Key switch
+            {
+                "cfg" => LucideIconKind.FileCode,
+                "content" => LucideIconKind.Puzzle,
+                "pools" => LucideIconKind.Map,
+                _ => LucideIconKind.ShieldCheck
+            });
+    }
+
+    private void PresetSidebarItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
+    {
+        if (e.Item.Key is { } key && DataContext is ShellViewModel shell)
+            shell.SelectPresetSection(key);
     }
 
     private void InstanceSidebarItemInvoked(object? sender, SidebarItemInvokedEventArgs e)
@@ -78,8 +91,13 @@ public partial class MainWindow
             InstanceSidebar.SelectedKey = shell.SelectedInstanceSection.Id;
     }
 
-    private void LeaveInstanceScope(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
-        (DataContext as ShellViewModel)?.ExitInstanceScope();
+    /// <summary>The same arrow walks the scope stack: preset → instance → the page the scope was opened from.</summary>
+    private void LeaveInstanceScope(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not ShellViewModel shell) return;
+        if (shell.IsPresetScope) { shell.ExitPresetScope(); return; }
+        shell.ExitInstanceScope();
+    }
 
     public void ShowInstanceNotification(string title, string? detail = null, ToastKind kind = ToastKind.Error) =>
         InstanceNotifications.Show(new ToastOptions { Title = title, Description = detail, Kind = kind });
@@ -95,10 +113,12 @@ public partial class MainWindow
         });
     }
 
-    /// <summary>Entering or leaving the instance scope changes the window title, not the server state.</summary>
+    /// <summary>Entering or leaving a scope changes the window title, not the server state.</summary>
     private void ShellPageChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ShellViewModel.IsInstance)) Dispatcher.UIThread.Post(UpdateShellStatus);
+        if (e.PropertyName is nameof(ShellViewModel.IsInstance) or nameof(ShellViewModel.IsPresetScope)
+            or nameof(ShellViewModel.ManagedPresetName))
+            Dispatcher.UIThread.Post(UpdateShellStatus);
     }
 
     /// <summary>Link state changes are transient results, so they use the 3-second toast stack.</summary>
@@ -113,13 +133,16 @@ public partial class MainWindow
         var server = shellServers?.Server;
         var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true, server?.Reconnecting == true);
         UpdateScopeFooter();
-        // In the instance scope the title bar carries the back arrow and the instance name, like the reference launcher;
-        // the scope name replaces the icon and title text so both stay in one place.
-        var scopedName = (DataContext as ShellViewModel)?.IsInstance == true ? shellServers?.Selected?.Entry.Definition?.Name : null;
+        // In a scope the title bar carries the back arrow and the breadcrumb, like the reference launcher; the scope name
+        // replaces the icon and title text so both stay in one place.
+        var shell = DataContext as ShellViewModel;
+        var scopedName = shell?.IsInstance == true ? shellServers?.Selected?.Entry.Definition?.Name : null;
         var inScope = scopedName is { Length: > 0 };
         ScopeBackButton.IsVisible = inScope;
         ScopeTitleText.IsVisible = inScope;
-        ScopeTitleText.Text = inScope ? $"实例管理 · {scopedName}" : "";
+        ScopeTitleText.Text = !inScope ? ""
+            : shell?.IsPresetScope == true ? $"预设管理 · {scopedName} / {shell.ManagedPresetName}"
+            : $"实例管理 · {scopedName}";
         if (ShellTitleBar.Title != (inScope ? "" : BaseTitle)) ShellTitleBar.Title = inScope ? "" : BaseTitle;
         if (inScope != (ShellTitleBar.Icon is null))
             ShellTitleBar.Icon = inScope ? null : new ArcGlyph { Data = ArcIcons.Server, Size = 16 };

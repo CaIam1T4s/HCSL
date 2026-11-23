@@ -9,7 +9,6 @@
       <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
         <arc:Button x:Name="CreateButton" Content="新建图池" Variant="Primary" Size="Medium" Click="CreatePool"/>
         <arc:Button x:Name="RenameButton" Content="重命名" Variant="Secondary" Size="Medium" Click="RenamePool"/>
-        <arc:Button x:Name="AssignButton" Content="本预设使用该池" Variant="Secondary" Size="Medium" Click="AssignPool"/>
         <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
                            HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
         <arc:Button x:Name="RefreshButton" Content="刷新" Variant="Secondary" Size="Medium" Click="Refresh"/>

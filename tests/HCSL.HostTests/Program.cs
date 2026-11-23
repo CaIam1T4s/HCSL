@@ -716,18 +716,20 @@ if (only is "presets") { Console.WriteLine("PASS only presets"); return 0; }
 
 if (only is null or "admins")
 {
-// The section hides itself when no enabled framework exposes an admin list, and returns once one does.
+// 管理员 belongs to a preset: the preset scope owns it, and the row hides when the preset has no admin framework.
+var shellForAdmins = (ShellViewModel)owner.DataContext!;
+shellForAdmins.OpenPresetScope(firstPreset.Id); Layout();
 daemon.AdminUnavailable = true;
 ((MainWindow)owner).RefreshAdminAvailability();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
-var sidebar = owner.FindControl<TKCode.Arc.Sidebar>("InstanceSidebar")!;
-var adminItem = sidebar.Sections.SelectMany(s => s.Items).Single(i => i.Key == "admins");
+var presetSidebar = owner.FindControl<TKCode.Arc.Sidebar>("PresetSidebar")!;
+var adminItem = presetSidebar.Sections.SelectMany(s => s.Items).Single(i => i.Key == "admins");
 Check(!adminItem.IsVisible, "The 管理员 section must be hidden when the preset has no admin-capable framework.");
 daemon.AdminUnavailable = false;
 ((MainWindow)owner).RefreshAdminAvailability();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
 Check(adminItem.IsVisible, "The 管理员 section must return once an admin-capable framework is enabled.");
-((ShellViewModel)owner.DataContext!).SelectInstanceSection("admins"); Layout();
+shellForAdmins.SelectPresetSection("admins"); Layout();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
 var adminReads = daemon.AdminReads;
 for (var frame = 0; frame < 12; frame++) { Layout(); Thread.Sleep(10); }
@@ -737,8 +739,8 @@ Check(daemon.AdminReads == adminReads && adminReads <= 4,
     $"The admin page must settle after at most the initial read, not reload on its own Busy notifications ({adminReads} -> {daemon.AdminReads}).");
 Check(adminTable.ItemsSource is System.Collections.IEnumerable adminRows && adminRows.Cast<object>().Count() == 1,
     "Admin table missing entries (source: " + (adminTable.ItemsSource?.GetType().Name ?? "null") + ").");
-((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
-Check(((ShellViewModel)owner.DataContext!).IsInstanceOverview, "Leaving the 管理员 section must still switch pages.");
+shellForAdmins.ExitPresetScope(); Layout();
+Check(!shellForAdmins.IsPresetScope && shellForAdmins.IsInstancePresets, "Leaving the preset scope must return to the preset list of the instance.");
 Console.WriteLine("PASS gui.admins.single-read-no-reload-loop");
 if (only is "admins") return 0;
 }

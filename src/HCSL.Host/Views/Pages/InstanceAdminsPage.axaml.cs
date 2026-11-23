@@ -52,23 +52,31 @@ public partial class InstanceAdminsPage : UserControl
         // log growth) must not start another read, or the page reloads itself forever.
         if (loading || operating || Model is not { } m || m.Busy) return;
         if (m.Selected?.Entry.Definition is not { } definition) return;
-        if ((definition.Id, definition.SelectedPresetId) == loadedKey) return;
+        if ((definition.Id, ScopedPreset(definition)?.Id ?? definition.SelectedPresetId) == loadedKey) return;
         Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
     }
 
     private (Guid Instance, Guid Preset) loadedKey;
 
+    /// <summary>The preset scope names its preset; outside it the instance's current preset applies.</summary>
+    private PresetDefinition? ScopedPreset(InstanceDefinition definition)
+    {
+        if (Model is not { } m) return null;
+        var id = (DataContext as ShellViewModel)?.ManagedPresetId ?? definition.SelectedPresetId;
+        return m.Selected?.Entry.Presets.FirstOrDefault(p => p.Id == id);
+    }
+
     private async Task LoadAsync()
     {
         if (loading) return;
         if (Model is not { } m || m.Selected?.Entry.Definition is not { } definition || !m.Server.Connected || operating) return;
-        if (m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId) is not { } preset) return;
+        if (ScopedPreset(definition) is not { } preset) return;
         loading = true;
         loaded = true;
-        loadedKey = (definition.Id, definition.SelectedPresetId);
+        loadedKey = (definition.Id, preset.Id);
         try
         {
-            var result = await m.AdminsAsync();
+            var result = await m.AdminsAsync(definition.Id, preset.Id);
             Admins.ItemsSource = result.Snapshot.Entries.Select(admin => new AdminRow(
                 admin.DisplayName ?? "—", admin.SteamId64,
                 admin.Groups.Length == 0 ? "—" : string.Join("、", admin.Groups))).ToArray();
@@ -94,7 +102,7 @@ public partial class InstanceAdminsPage : UserControl
     {
         if (operating || Model is not { } m || Owner is not { } owner ||
             m.Selected?.Entry.Definition is not { } instance ||
-            m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == instance.SelectedPresetId) is not { } preset) return;
+            ScopedPreset(instance) is not { } preset) return;
         operating = true;
         Update();
         try { await owner.EditAdminsAsync(m, instance, preset); }
@@ -103,12 +111,13 @@ public partial class InstanceAdminsPage : UserControl
 
     private async void Reload(object? sender, RoutedEventArgs e)
     {
-        if (operating || Model is not { } m) return;
+        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } definition) return;
+        if (ScopedPreset(definition) is not { } preset) return;
         operating = true;
         Update();
         try
         {
-            var result = await m.ReloadAdminsAsync();
+            var result = await m.ReloadAdminsAsync(definition.Id, preset.Id);
             Owner?.ShowInstanceNotification("已重载权限", result.Reload ?? result.Code,
                 result.Reload is null ? ToastKind.Info : ToastKind.Success);
         }
