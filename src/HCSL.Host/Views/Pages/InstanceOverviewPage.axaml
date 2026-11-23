@@ -1,19 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              x:Class="HCSL.Host.Views.Pages.InstanceOverviewPage"
              x:CompileBindings="False" Classes="instance-overview-page">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <!-- No cards: the settings sit directly on the page and keep their outer spacing. Runtime actions (start, stop, map
          change, logs) live in the console window, on the home page and in the sidebar's 运行 rows. -->
-    <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space8}">
+    <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space12}">
       <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
         <TextBlock Text="实例" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
         <Grid ColumnDefinitions="*,*" ColumnSpacing="{arc:ArcDesignTokenResource Space5}"
               RowSpacing="{arc:ArcDesignTokenResource Space4}">
           <arc:Input x:Name="PortInput" Label="端口" PlaceholderText="27015" MaxLength="5"
                      Description="1–65535"/>
-          <arc:PasswordField x:Name="PasswordInput" Grid.Column="1" Label="入服密码" PlaceholderText="未设置"/>
+          <StackPanel Grid.Column="1" Orientation="Horizontal"
+                      Spacing="{arc:ArcDesignTokenResource Space2}" VerticalAlignment="Bottom">
+            <arc:PasswordField x:Name="PasswordInput" Label="入服密码" PlaceholderText="无密码"
+                               Width="{arc:ArcDesignTokenResource MediaSizeLG}"/>
+            <arc:Button x:Name="ClearPasswordButton" Content="清除" Variant="Secondary" Size="Small"
+                        IsVisible="False" VerticalAlignment="Bottom" Click="ClearPassword"/>
+          </StackPanel>
         </Grid>
       </StackPanel>
 
@@ -25,12 +32,19 @@
                             VerticalAlignment="Center"/>
           </arc:SettingsRow>
 
-          <arc:SettingsRow x:Name="DeployRow" Header="部署" Description="重写运行目录，不启动服务器">
-            <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
+          <arc:SettingsRow x:Name="DeployRow" Header="部署">
+            <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+              <arc:Button x:Name="DeployHelpButton" Variant="Ghost" Size="Small"
+                          Width="{arc:ArcDesignTokenResource Space6}" Height="{arc:ArcDesignTokenResource Space6}"
+                          Padding="0">
+                <lucide:LucideIcon Kind="CircleQuestionMark"/>
+              </arc:Button>
+              <arc:Button x:Name="DeployButton" Content="部署" Variant="Secondary" Size="Small" Click="DeployServer"/>
+            </StackPanel>
           </arc:SettingsRow>
 
-          <arc:SettingsRow Header="恢复部署" Description="清理中断部署留下的 journal">
-            <arc:Button x:Name="RecoverDeployButton" Content="恢复部署" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
+          <arc:SettingsRow Header="清理无用部署" Description="上次部署中断留下的 journal 与临时目录；运行目录不受影响">
+            <arc:Button x:Name="RecoverDeployButton" Content="清理" Variant="Secondary" Size="Small" Click="RecoverDeployment"/>
           </arc:SettingsRow>
 
           <arc:SettingsRow Header="打开目录">

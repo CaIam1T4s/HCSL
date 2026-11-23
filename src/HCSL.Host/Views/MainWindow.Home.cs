@@ -86,6 +86,8 @@ public partial class MainWindow
 
     private void ShellServerChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // A failure snapshot can be overwritten by the next poll, so it is captured before any dispatch.
+        CaptureStartFailure();
         Dispatcher.UIThread.Post(() =>
         {
             UpdateShellStatus();

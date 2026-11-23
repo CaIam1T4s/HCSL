@@ -17,6 +17,9 @@ public partial class MainWindow
     private Guid? baselineRun;
     private Guid startTarget;
     private long baselineApplied;
+    // A failed start can be one transient snapshot: a status poll arriving right after it overwrites the state, so the
+    // failure is captured on the notifying thread instead of being read back later.
+    private (string Code, string Detail)? pendingStartFailure;
     private HostServerController? Servers => shellServers;
 
     public Task StartHomeServerAsync() => StartSelectedAsync();
@@ -73,32 +76,43 @@ public partial class MainWindow
             baselineRun = m.Server.RunId;
             baselineApplied = m.Server.Applied;
             watchingStart = true;
+            pendingStartFailure = null;
             if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory)) ShowLogs();
             else
             {
+                // A rejected start already carries the daemon's code and next step; show it in full, not as a toast.
                 watchingStart = false;
-                ShowInstanceNotification("启动未提交", m.Server.DetailText);
+                if (m.Server.DetailText is { Length: > 0 } detail) await ChooseAsync("服务器启动失败", detail, "返回");
+                else ShowInstanceNotification("启动未提交", m.Error);
             }
         }
-        finally { starting = false; UpdateScopeFooter(); }
+        finally { starting = false; UpdateScopeFooter(); _ = CheckStartOutcomeAsync(); }
+    }
+
+    /// <summary>Remembers a failed start while its snapshot is current; called from the change notification.</summary>
+    private void CaptureStartFailure()
+    {
+        if (!watchingStart || Servers is not { } m) return;
+        var s = m.Server;
+        if (s.State is not (ServerState.Failed or ServerState.RecoveryRequired) || s.RunId == baselineRun) return;
+        pendingStartFailure = (s.Code, s.DetailText);
     }
 
     /// <summary>Watches the run that this window started, so a low-memory or failed start reports once.</summary>
     private async Task CheckStartOutcomeAsync()
     {
-        if (!watchingStart || handlingOutcome || starting || Servers is not { } m || m.Server.Busy) return;
+        if (!watchingStart || handlingOutcome || Servers is not { } m) return;
         var s = m.Server;
-        if (s.ConnectionUnknown || s.Applied <= baselineApplied || s.RunId == baselineRun)
+        var failure = pendingStartFailure;
+        if (failure is null)
         {
-            if (s.ConnectionUnknown) watchingStart = false;
-            return;
+            if (s.ConnectionUnknown) { watchingStart = false; return; }
+            if (s.Applied <= baselineApplied || s.RunId == baselineRun) return;
+            if (s.State is ServerState.Idle or ServerState.Stopped or ServerState.Running) { watchingStart = false; return; }
+            if (s.State is not (ServerState.Failed or ServerState.RecoveryRequired)) return;
+            failure = (s.Code, s.DetailText);
         }
-        if (s.State is ServerState.Idle or ServerState.Stopped or ServerState.Running)
-        {
-            watchingStart = false;
-            return;
-        }
-        if (s.State is not (ServerState.Failed or ServerState.RecoveryRequired)) return;
+        pendingStartFailure = null;
         handlingOutcome = true;
         watchingStart = false;
         try
@@ -115,7 +129,7 @@ public partial class MainWindow
                     if (!await m.StartAsync(allowLowMemory: true)) watchingStart = false;
                 }
             }
-            else ShowInstanceNotification("服务器启动失败", s.DetailText);
+            else await ChooseAsync("服务器启动失败", failure.Value.Detail, "返回");
         }
         finally { handlingOutcome = false; }
     }

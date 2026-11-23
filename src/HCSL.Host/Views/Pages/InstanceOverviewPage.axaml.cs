@@ -31,7 +31,7 @@ public partial class InstanceOverviewPage : UserControl
         PortInput.KeyDown += (_, e) => FieldKey(e, ResetPort, () => _ = SavePortAsync());
         PortInput.LostFocus += (_, _) => _ = SavePortAsync();
         PasswordInput.KeyDown += (_, e) => FieldKey(e, ResetPassword, () => _ = SavePasswordAsync());
-        PasswordInput.LostFocus += (_, _) => { if ((PasswordInput.Text ?? "").Length > 0) _ = SavePasswordAsync(); };
+        Tooltip.SetTip(DeployHelpButton, "插件或游戏更新时实例不会自动更新，需要部署以更新运行目录");
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -64,12 +64,18 @@ public partial class InstanceOverviewPage : UserControl
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
-        PasswordInput.PlaceholderText = entry?.HasPassword == true ? "已设置" : "未设置";
+        // The password itself is never returned by the daemon; a set password shows as a mask, and the clear action is
+        // the only way to remove it. The mask is not saved back as a literal password.
+        var hasPassword = entry?.HasPassword == true;
+        PasswordInput.PlaceholderText = hasPassword ? "" : "无密码";
+        if (!PasswordInput.IsFocused) PasswordInput.Text = hasPassword ? PasswordMask : "";
+        ClearPasswordButton.IsVisible = hasPassword;
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
         var idle = !operating;
         PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
+        ClearPasswordButton.IsEnabled = idle && m.CanMutate;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
@@ -93,8 +99,8 @@ public partial class InstanceOverviewPage : UserControl
 
     private void ResetPassword()
     {
-        PasswordInput.Text = "";
         PasswordInput.ErrorMessage = null;
+        Update();
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
@@ -115,7 +121,7 @@ public partial class InstanceOverviewPage : UserControl
         var preset = m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == d.SelectedPresetId);
         var plan = await m.DeployPreviewAsync(d.Id, d.SelectedPresetId);
         if (plan is null) { Error("无法获取部署预览", "宿主未连接或已有操作。"); return; }
-        if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "部署") != 1) return;
+        if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "确认部署") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
         if (!await m.DeployAsync()) { Error("部署未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
         for (var waited = 0; m.Server.Active && waited < 1800; waited++) await Task.Delay(500);
@@ -127,12 +133,12 @@ public partial class InstanceOverviewPage : UserControl
     private async void RecoverDeployment(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
-        if (await owner.ChooseAsync("恢复部署", "保留旧运行目录并删除 journal，不会启动 CS2。", "取消", "恢复") != 1) return;
+        if (await owner.ChooseAsync("清理无用部署", "删除上次部署中断留下的 journal 与临时目录；运行目录不受影响，不会启动 CS2。", "取消", "确认清理") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
-        if (!await m.RecoverDeploymentAsync()) { Error("恢复未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
+        if (!await m.RecoverDeploymentAsync()) { Error("清理未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
         for (var waited = 0; m.Server.Active && waited < 1200; waited++) await Task.Delay(500);
         var done = m.Server.Code == "HCSL-SERVER-DEPLOY-RECOVERED";
-        Owner?.ShowInstanceNotification(done ? "恢复完成" : "恢复未完成", m.Server.DetailText,
+        Owner?.ShowInstanceNotification(done ? "已清理无用部署" : "清理未完成", m.Server.DetailText,
             done ? ToastKind.Success : ToastKind.Error);
     });
 
@@ -159,10 +165,14 @@ public partial class InstanceOverviewPage : UserControl
         finally { operating = false; Update(); }
     }
 
+    /// <summary>The mask in the field is not a value: only what the operator typed may replace the stored password.</summary>
+    private const string PasswordMask = "••••••••";
+
     private async Task SavePasswordAsync()
     {
         if (operating || Model is not { } m) return;
         var value = PasswordInput.Text ?? "";
+        if (value == PasswordMask) { Update(); return; }
         PasswordInput.Text = "";
         try
         {
@@ -172,6 +182,18 @@ public partial class InstanceOverviewPage : UserControl
         catch (IOException error) { Error("密码未保存", error.Message); }
         finally { Update(); }
     }
+
+    private async void ClearPassword(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
+    {
+        if (Model is not { } m) return;
+        try
+        {
+            await m.SetPasswordAsync("");
+            Owner?.ShowInstanceNotification("已清除入服密码", null, ToastKind.Success);
+        }
+        catch (IOException error) { Error("密码未清除", error.Message); }
+        finally { Update(); }
+    });
 
     private async void MigrateLayout(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {

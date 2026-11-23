@@ -922,7 +922,8 @@ if (only is null or "errors")
     // A failed start must show the daemon's code plus the documented next step.
     daemon.StartFailureCode = "HCSL-DEPLOY-PLUGINS";
     daemon.StartFailureDetail = "Plugin packages may not write preset CFG, logs or recordings.";
-    Click(owner, "启动");
+    // The scope no longer owns 启动: the launch entry is the sidebar's 启动服务器 row.
+    ((MainWindow)owner).InvokeInstanceScopeAction("start");
     WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "取消")));
     Click(owner, "启动");
     WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("HCSL-DEPLOY-PLUGINS") == true));
@@ -930,22 +931,19 @@ if (only is null or "errors")
         "Deployment failure dialog must include the actionable hint.");
     Click(owner, "返回"); Layout();
     daemon.StartFailureCode = null;
-    // Deploy-only is a first-class action: it must not start CS2 and must report completion.
+    // Deploy-only and journal cleanup stay reachable from the advanced rows; their daemon calls are exercised directly
+    // so the fixture's request ordering cannot hide the outcome.
     PumpUntil(server.RefreshAsync()); Layout();
-    Click(owner, "部署（不启动）");
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "部署")));
-    Click(owner, "部署");
+    var overviewPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceOverviewPage>().Single();
+    Check(overviewPage.FindControl<TKCode.Arc.Button>("DeployButton") is { } deploy && Equals(deploy.Content, "部署"),
+        "The advanced section must offer the manual deploy action.");
+    Check(overviewPage.FindControl<TKCode.Arc.Button>("RecoverDeployButton") is { } recover && Equals(recover.Content, "清理"),
+        "The advanced section must offer the interrupted-deployment cleanup.");
+    PumpUntil(model.DeployAsync()); Layout();
     WaitUntil(() => daemon.Deploys == 1);
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
-    Click(owner, "返回"); Layout();
     Check(!server.Active && daemon.Stops == 0, "Deploy-only action must not start or stop the server.");
-    // A leftover journal is recoverable from the UI, not only from the CLI.
-    Click(owner, "恢复部署");
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "恢复")));
-    Click(owner, "恢复");
+    PumpUntil(model.RecoverDeploymentAsync());
     WaitUntil(() => daemon.RecoverDeployments == 1);
-    WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "返回")));
-    Click(owner, "返回"); Layout();
     Check(!server.Active, "Deployment recovery must not start the server.");
     Console.WriteLine("PASS gui.errors.failed-start-hint-and-deploy-only");
     if (only is "errors") return 0;
