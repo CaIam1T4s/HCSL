@@ -339,9 +339,18 @@ public sealed partial class MapsPage : UserControl
             _ = ChangePoolAsync(ctx, snapshot, active, rows, false);
             return;
         }
-        foreach (var pool in snapshot.Library.Pools.Where(p => p.Maps.All(m => m.Kind != ServerMapKind.WorkshopCollection)).OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
+        var selectedKeys = rows.Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var pool in snapshot.Library.Pools.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
                      .ThenBy(p => p.Name, StringComparer.CurrentCulture))
         {
+            if (pool.Maps is [{ Kind: ServerMapKind.WorkshopCollection }])
+            {
+                if (pool.CollectionMembers?.Any(member => selectedKeys.Contains("workshop:" + member.Id)) == true)
+                    menu.Items.Add(new GlassMenuItem { Content = $"{pool.Name}（合集，只读）", IsEnabled = false });
+                continue;
+            }
+            var keys = pool.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (add ? selectedKeys.IsSubsetOf(keys) : !selectedKeys.Overlaps(keys)) continue;
             var item = new GlassMenuItem { Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name };
             item.Click += async (_, _) => await ChangePoolAsync(ctx, snapshot, pool, rows, add);
             menu.Items.Add(item);
@@ -349,7 +358,9 @@ public sealed partial class MapsPage : UserControl
         var key = add ? "add" : "remove";
         var anchor = Selection.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
             .FirstOrDefault(b => b.Tag is SelectionToolbarAction action && action.Key == key);
-        if (menu.Items.Count > 0 && anchor is not null) menu.Open(anchor);
+        if (menu.Items.Count == 0)
+            menu.Items.Add(new GlassMenuItem { Content = add ? "没有可添加的图池" : "所选地图不在可编辑的图池中", IsEnabled = false });
+        if (anchor is not null) menu.Open(anchor);
     }
 
     private async Task ChangePoolAsync(MapsPageContext ctx, MapPoolLibraryResult snapshot, MapPoolRecord pool,
