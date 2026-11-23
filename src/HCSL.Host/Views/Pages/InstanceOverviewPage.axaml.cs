@@ -20,6 +20,9 @@ public partial class InstanceOverviewPage : UserControl
 {
     private HostServerController? subscribed;
     private bool operating;
+    // Last password loaded from the daemon for the selected instance; Escape restores it and the poll never rewrites it.
+    private Guid? passwordInstance;
+    private string storedPassword = "";
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
@@ -65,13 +68,22 @@ public partial class InstanceOverviewPage : UserControl
         var definition = entry?.Definition;
         var preset = entry?.Presets.FirstOrDefault(p => p.Id == definition?.SelectedPresetId);
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
-        // The password itself is never returned by the daemon; a set password shows as a mask, and the clear action is
-        // the only way to remove it. The mask is not saved back as a literal password.
-        // The daemon never returns the password, so the field stays empty: the placeholder states whether one is set, and
-        // an empty Enter clears it. A mask would look like a value that can be revealed and never changes.
+        // The stored password is loaded once per instance and then left alone: polling must never rewrite the field, or
+        // a half-typed value disappears on the next status tick. A successful save replaces the cache.
         var hasPassword = entry?.HasPassword == true;
         PasswordInput.PlaceholderText = hasPassword ? "已设置，输入新值替换；空回车清除" : "无密码";
-        if (!PasswordInput.IsFocused) PasswordInput.Text = "";
+        if (entry is not null && passwordInstance != entry.Id)
+        {
+            passwordInstance = entry.Id;
+            storedPassword = "";
+            if (!PasswordInput.IsFocused) PasswordInput.Text = "";
+            if (hasPassword) _ = LoadPasswordAsync(entry.Id);
+        }
+        else if (!hasPassword && storedPassword.Length > 0)
+        {
+            storedPassword = "";
+            if (!PasswordInput.IsFocused) PasswordInput.Text = "";
+        }
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
@@ -101,7 +113,21 @@ public partial class InstanceOverviewPage : UserControl
     private void ResetPassword()
     {
         PasswordInput.ErrorMessage = null;
-        Update();
+        PasswordInput.Text = storedPassword;
+    }
+
+    /// <summary>Loads the stored password once; the field keeps it masked until the eye toggle reveals it.</summary>
+    private async Task LoadPasswordAsync(Guid instanceId)
+    {
+        if (Model is not { } m) return;
+        try
+        {
+            var value = await m.RevealPasswordAsync();
+            if (passwordInstance != instanceId) return;
+            storedPassword = value;
+            if (!PasswordInput.IsFocused) PasswordInput.Text = value;
+        }
+        catch (IOException error) { Error("无法读取入服密码", error.Message); }
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
@@ -170,13 +196,15 @@ public partial class InstanceOverviewPage : UserControl
     {
         if (operating || Model is not { } m) return;
         var value = PasswordInput.Text ?? "";
-        PasswordInput.Text = "";
         try
         {
             await m.SetPasswordAsync(value);
+            // The save accepted the value, so it becomes the cached one; the field then shows it masked.
+            storedPassword = value;
+            PasswordInput.Text = value;
             Owner?.ShowInstanceNotification(value.Length == 0 ? "已清除入服密码" : "已设置入服密码", null, ToastKind.Success);
         }
-        catch (IOException error) { Error("密码未保存", error.Message); }
+        catch (IOException error) { PasswordInput.Text = storedPassword; Error("密码未保存", error.Message); }
         finally { Update(); }
     }
 

@@ -31,6 +31,10 @@ public static class InstancePasswordTests
             Check(File.GetUnixFileMode(Path.GetDirectoryName(source)!) == (UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute), "secret directory must be 0700");
             Check(!File.ReadAllText(Path.Combine(instance, "instance.json")).Contains("test pass"), "metadata exposed secret");
             Check(!JsonSerializer.Serialize(entry).Contains("test pass"), "catalog exposed secret");
+            // The secret is available on demand and only there: a list request still carries none.
+            var revealed = store.Execute(workspace, new(InstanceAction.RevealPassword, id));
+            Check(revealed.RevealedPassword == "test pass?#% 世界", "reveal did not return the stored password");
+            Check(store.Execute(workspace, new(InstanceAction.List)).RevealedPassword is null, "list request carried the password");
             Check(InstancePasswordConfig.Read(instance) == "test pass?#% 世界", "secret changed during encoding");
             using (var binding = InstancePasswordConfig.Bind(instance, preset.ToString("D")))
             {

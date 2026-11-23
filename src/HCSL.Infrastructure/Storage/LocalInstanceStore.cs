@@ -26,6 +26,17 @@ public sealed class LocalInstanceStore : IInstanceStore
         if (command.Action is InstanceAction.Create or InstanceAction.CreatePreset or InstanceAction.CopyPreset &&
             JsonSerializer.SerializeToUtf8Bytes(Catalog(root)).Length > 16000)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog capacity reached; paginated management is not implemented yet.");
+        if (command.Action == InstanceAction.RevealPassword)
+        {
+            // Owner-only local read: the caller already has the same access as the file itself.
+            var target = Path.Combine(root, command.InstanceId.ToString("D"));
+            if (!Directory.Exists(target)) throw new InstanceException("HCSL-INSTANCE-MISSING", "Unknown instance.");
+            return Catalog(root) with
+            {
+                ConnectionAddresses = LocalServerAddresses.Discover(),
+                RevealedPassword = InstancePasswordConfig.Read(target)
+            };
+        }
         if (command.Action != InstanceAction.List) Mutate(root, command);
         return Catalog(root) with { ConnectionAddresses = LocalServerAddresses.Discover() };
     }

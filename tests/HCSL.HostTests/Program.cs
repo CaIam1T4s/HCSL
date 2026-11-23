@@ -693,7 +693,8 @@ if (only is null or "presets" or "overview" or "admins" or "pools" or "plugins" 
 firstPreset = new PresetDefinition(1, Guid.NewGuid(), 1, "Selected preset");
 var secondPreset = firstPreset with { Id = Guid.NewGuid(), Name = "Browsed preset", Map = "de_nuke" };
 var presetInstanceId = Guid.NewGuid();
-daemon.Catalog = new([new(presetInstanceId, new(1, presetInstanceId, 1, "Preset GUI fixture", 27015, firstPreset.Id), [firstPreset, secondPreset])]);
+daemon.Catalog = new([new(presetInstanceId, new(1, presetInstanceId, 1, "Preset GUI fixture", 27015, firstPreset.Id), [firstPreset, secondPreset], HasPassword: true)]);
+daemon.StoredPassword = "hunter2";
 daemon.IdleForPresetTests = true;
 PumpUntil(server.RefreshAsync()); PumpUntil(model.RefreshInstancesAsync());
 ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("instance");
@@ -770,6 +771,16 @@ portField.Focus();
 portField.Text = "27099";
 owner.KeyPress(Key.Escape, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
 Check(portField.Text == model.Selected!.Entry.Definition!.GamePort.ToString(), "Escape must restore the stored port.");
+// The password is loaded once and then survives polling: a status tick must not wipe the field.
+var passwordField = overview.FindControl<TKCode.Arc.PasswordField>("PasswordInput")!;
+WaitUntil(() => passwordField.Text == "hunter2");
+PumpUntil(server.RefreshAsync()); Layout();
+Check(passwordField.Text == "hunter2", "Polling must not clear the loaded password.");
+passwordField.Focus();
+passwordField.Text = "";
+owner.KeyPress(Key.Enter, Avalonia.Input.RawInputModifiers.None, Avalonia.Input.PhysicalKey.None, ""); Layout();
+WaitUntil(() => daemon.StoredPassword.Length == 0);
+Check(passwordField.Text == "", "An empty password field must clear the stored password on Enter.");
 var copyId = overview.FindControl<TKCode.Arc.CopyButton>("CopyIdButton")!;
 Check(copyId.Value == model.Selected.Entry.Id.ToString("D"), "The instance ID row needs a copy button holding the full id.");
 Check(overview.GetVisualDescendants().OfType<TKCode.Arc.SettingsRow>().All(r => r.Header != "连接地址"),
@@ -1131,6 +1142,7 @@ sealed class FakeDaemon : IDaemonClient
     public int PoolWrites, PoolReads;
     public int AdminReads;
     public bool AdminUnavailable;
+    public string StoredPassword = "";
     public bool RejectPoolWrites;
     public int PluginWrites;
     public int FrameworkInstalls;
@@ -1156,8 +1168,17 @@ sealed class FakeDaemon : IDaemonClient
             LocalResponse CatalogResponse() => new(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(Catalog));
             if (command.Action == InstanceAction.List)
                 return InstanceListGate is { } gate ? gate.Task.ContinueWith(_ => CatalogResponse()) : Task.FromResult(CatalogResponse());
+            if (command.Action == InstanceAction.RevealPassword)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
+                    InstanceCatalogJson: JsonSerializer.Serialize(Catalog with { RevealedPassword = StoredPassword })));
             if (!AllowInstanceWrites) throw new Exception("Cancelled/browse-only GUI unexpectedly sent a metadata write.");
             InstanceWrites.Add(command);
+            if (command.Action == InstanceAction.SetPassword)
+            {
+                StoredPassword = command.Password ?? "";
+                Catalog = new(Catalog.Instances.Select(i => i.Id != command.InstanceId ? i : i with { HasPassword = StoredPassword.Length > 0 }).ToArray());
+                return Task.FromResult(CatalogResponse());
+            }
             if (command.Action == InstanceAction.Delete && RejectInstanceDeletes)
                 return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-INSTANCE-CONFLICT", "Synthetic conflict."));
             var entry = Catalog.Instances.FirstOrDefault(i => i.Id == command.InstanceId);

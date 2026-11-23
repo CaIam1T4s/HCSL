@@ -11,8 +11,10 @@ public sealed record ServerNetwork(NetworkAccessMode Mode = NetworkAccessMode.Lo
 public sealed record InstanceDefinition(int FormatVersion, Guid Id, long Revision, string Name, int GamePort, Guid SelectedPresetId, ServerNetwork? Network = null, int LayoutVersion = 1);
 public sealed record PresetDefinition(int FormatVersion, Guid Id, long Revision, string Name, string Map = "de_dust2", int GameType = 0, int GameMode = 1, bool VacPreferred = true, ServerMapKind MapKind = ServerMapKind.Standard);
 public sealed record InstanceEntry(Guid Id, InstanceDefinition? Definition, PresetDefinition[] Presets, string? Error = null, bool HasPassword = false);
-public sealed record InstanceCatalog(InstanceEntry[] Instances, string[]? ConnectionAddresses = null);
-public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword, MigrateLayout }
+// The password itself is only returned for InstanceAction.RevealPassword: a list request never carries it, so it cannot
+// leak through polling, logs or a shared catalog.
+public sealed record InstanceCatalog(InstanceEntry[] Instances, string[]? ConnectionAddresses = null, string? RevealedPassword = null);
+public enum InstanceAction { List, Create, Update, Delete, CreatePreset, UpdatePreset, CopyPreset, DeletePreset, SelectPreset, SetPassword, RevealPassword, MigrateLayout }
 public sealed record InstanceCommand(InstanceAction Action, Guid InstanceId = default, Guid PresetId = default, long Revision = 0,
     string? Name = null, int GamePort = 27015, PresetDefinition? Preset = null, ServerNetwork? Network = null, string? Password = null)
 {

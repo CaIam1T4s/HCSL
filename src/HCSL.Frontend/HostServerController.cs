@@ -196,6 +196,18 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
         Server.Attach(id.Value);
         return Server.RecoverAsync();
     }
+    /// <summary>
+    /// Reads the stored instance password on demand. It is never part of the instance list snapshot, so polling cannot
+    /// carry it; the caller asks once and keeps it only for the fields that show it.
+    /// </summary>
+    public async Task<string> RevealPasswordAsync()
+    {
+        if (Selected?.Entry.Definition is not { } d || !Server.Connected)
+            throw new IOException("HCSL-INSTANCE-PASSWORD: 需要先连接宿主并选择实例。");
+        var catalog = await instances.ExecuteAsync(new(InstanceAction.RevealPassword, d.Id));
+        return catalog.RevealedPassword ?? "";
+    }
+
     public async Task SetPasswordAsync(string password)
     {
         if (!CanMutate || Selected?.Entry.Definition is not { } d)
