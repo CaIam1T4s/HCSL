@@ -91,7 +91,7 @@ public partial class InstanceMapPoolsPage : UserControl
                 var used = assignments.Count(pair => pair.Value == pool.Id);
                 return new MapPoolRow(pool,
                     pool.Maps.Length == 0 ? "空" : $"{pool.Maps.Length} 张",
-                    used == 0 ? "未使用" : $"被 {used} 个预设使用",
+                    used == 0 ? "未被预设引用" : $"被 {used} 个预设使用",
                     pool.Maps.Length == 0 ? BadgeTone.Warning : BadgeTone.Neutral);
             }).ToArray();
             var wanted = browsed?.Pool.Id;

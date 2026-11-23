@@ -6,41 +6,6 @@
              xmlns:ui="using:HCSL.UI.Shared.Services"
              xmlns:controls="using:HCSL.UI.Shared.Controls"
              x:Class="HCSL.Host.Views.Pages.InstancesPage" x:DataType="vm:ShellViewModel" Classes="instance-list-page">
-  <UserControl.Resources>
-    <ControlTheme x:Key="InstanceRowTheme" TargetType="arc:RadioGroupItem"
-                  BasedOn="{StaticResource {x:Type arc:RadioGroupItem}}">
-      <Setter Property="Template">
-        <ControlTemplate>
-          <Panel>
-            <arc:PresenceHost x:Name="RowPresence" Mode="Scale" EnterScale="0.97" IsPresent="{ReflectionBinding IsPresent}" Exited="RowExited">
-              <Grid>
-                <Border Name="PART_Shadow" Classes="instance-state-layer" arc:ArcMotion.Tracks="True" Background="Transparent" IsHitTestVisible="False" Opacity="1"
-                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"/>
-                <Border Name="PART_SelectedShadow" Classes="instance-state-layer" arc:ArcMotion.Tracks="True" Background="Transparent" IsHitTestVisible="False"
-                        ui:CenteredShadow.Source="{arc:ArcDesignTokenResource ShadowFloating}" Opacity="0"
-                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}"/>
-                <Border Name="PART_Row"
-                        BorderBrush="Transparent" BorderThickness="0"
-                        CornerRadius="{arc:ArcDesignTokenResource RadiusControl}">
-                  <Panel>
-                    <Border Name="PART_SelectedFill" Classes="instance-state-layer" arc:ArcMotion.Tracks="True" Background="{arc:ArcDesignTokenResource AccentSubtle}"
-                            CornerRadius="{arc:ArcDesignTokenResource RadiusControl}" Opacity="0" IsHitTestVisible="False"/>
-                    <Border Name="PART_HoverFill" Classes="instance-state-layer" arc:ArcMotion.Tracks="True" Background="{arc:ArcDesignTokenResource SurfaceMuted}"
-                            CornerRadius="{arc:ArcDesignTokenResource RadiusControl}" Opacity="0" IsHitTestVisible="False"/>
-                    <StackPanel VerticalAlignment="Center" Margin="{arc:RadioGroupTokenResource RowInset}">
-                      <ContentPresenter Name="PART_Label" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
-                                        HorizontalContentAlignment="Stretch" FontWeight="{arc:ArcDesignTokenResource WeightMedium}"
-                                        LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}"/>
-                    </StackPanel>
-                  </Panel>
-                </Border>
-              </Grid>
-            </arc:PresenceHost>
-          </Panel>
-        </ControlTemplate>
-      </Setter>
-    </ControlTheme>
-  </UserControl.Resources>
   <UserControl.Styles>
     <!-- Surface-only transparency: glass menus/cards and foreground content keep their native material/opacity. -->
     <Style Selector=".instance-list-page arc|Button, .instance-list-page arc|FieldIconButton, .instance-list-page arc|ExpandingButtonGroupItem, .instance-list-page arc|HoldToConfirm">
@@ -60,48 +25,6 @@
     </Style>
     <Style Selector=".instance-list-page arc|SearchField /template/ arc|FieldFrame#PART_Frame:focus-active:not(:invalid)">
       <Setter Property="BorderBrush" Value="Transparent"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Border#PART_Row">
-      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.78}"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Border#PART_Shadow">
-      <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
-    </Style>
-    <!-- Stable token brushes; never sample the parent's animated Transparent/SurfaceMuted background. -->
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:selected /template/ Border#PART_SelectedFill">
-      <Setter Property="Opacity" Value="0.6"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:pointerover /template/ Border#PART_HoverFill">
-      <Setter Property="Opacity" Value="0.4"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:pressed /template/ Border#PART_HoverFill">
-      <Setter Property="Opacity" Value="0.65"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Border.instance-state-layer:motion-full">
-      <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Standard"/></Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem /template/ Border.instance-state-layer:motion-reduced">
-      <Setter Property="Transitions">
-        <Transitions><arc:ArcDoubleTransition Property="Opacity" Tween="Instant"/></Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:selected">
-      <Setter Property="ZIndex" Value="1"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|Badge /template/ Border#PART_Frame">
-      <Setter Property="Background" Value="{Binding Background, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
-      <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowResting}"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:selected /template/ Border#PART_Shadow">
-      <Setter Property="Opacity" Value="0"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:selected /template/ Border#PART_SelectedShadow">
-      <Setter Property="Opacity" Value="1"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices /template/ arc|GlidingIndicator#PART_Highlight">
-      <Setter Property="IsVisible" Value="False"/>
     </Style>
     <!-- The hit area stays fixed; only Arc's pill and its native spring-driven items size from the right edge. -->
     <Style Selector="arc|ExpandingButtonGroup.instance-actions /template/ Panel">
@@ -124,10 +47,6 @@
     </Style>
     <Style Selector=".instance-list-page arc|HoldToConfirm:focus-within /template/ Border#PART_Surface">
       <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
-    </Style>
-    <Style Selector="arc|RadioGroup.instance-choices arc|RadioGroupItem:disabled">
-      <!-- Exiting rows are non-interactive; PresenceHost owns their fade rather than the disabled-opacity state. -->
-      <Setter Property="Opacity" Value="1"/>
     </Style>
     <Style Selector="TextBlock.instance-property-value">
       <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource TextSecondary}"/>
@@ -158,11 +77,11 @@
     <arc:SkeletonMorph x:Name="LoadingRegion" Grid.Row="2" LoadingLabel="读取实例列表" Background="Transparent">
         <Grid>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <arc:RadioGroup x:Name="InstanceChoices" Classes="instance-choices" AutomationProperties.Name="启动实例"
-                            ItemContainerTheme="{StaticResource InstanceRowTheme}"
+            <arc:RadioGroup x:Name="InstanceChoices" AutomationProperties.Name="启动实例"
                             SelectionChanged="StartupSelectionChanged" ContextRequested="RowContextRequested">
               <arc:RadioGroup.ItemTemplate>
                 <DataTemplate x:DataType="vm:InstanceListRow">
+                  <arc:PresenceHost x:Name="RowPresence" Mode="Scale" EnterScale="0.97" IsPresent="{Binding IsPresent}" Exited="RowExited">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
                     <StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Center">
                       <arc:MorphBlock Lines="1" SkeletonWidthRatio="0.6" LineHeight="{arc:RadioGroupTokenResource LabelLineHeight}">
@@ -183,6 +102,7 @@
                       </arc:Badge>
                     </arc:MorphBlock>
                   </Grid>
+                  </arc:PresenceHost>
                 </DataTemplate>
               </arc:RadioGroup.ItemTemplate>
               <arc:RadioGroup.Styles>

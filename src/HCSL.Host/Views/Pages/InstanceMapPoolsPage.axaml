@@ -5,20 +5,21 @@
              x:Class="HCSL.Host.Views.Pages.InstanceMapPoolsPage"
              x:CompileBindings="False" Classes="instance-pools-page">
   <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}" Margin="{DynamicResource ConsolePageInset}">
-    <arc:Tabs x:Name="ManagementTabs" ContentMargin="0" SelectedIndex="0">
-      <arc:TabItem x:Name="PoolTab" Header="图池管理"/>
-      <arc:TabItem x:Name="MapsTab" Header="地图管理"/>
-    </arc:Tabs>
-    <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}" RowDefinitions="Auto,*"
-          RowSpacing="{arc:ArcDesignTokenResource Space3}">
-      <arc:ExpandingButtonGroup x:Name="PoolActions" Classes="launch-actions" Label="图池列表操作"
-                                HorizontalAlignment="Right">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
+      <arc:Tabs x:Name="ManagementTabs" ContentMargin="0" SelectedIndex="0" VerticalAlignment="Center">
+        <arc:TabItem x:Name="PoolTab" Header="图池管理"/>
+        <arc:TabItem x:Name="MapsTab" Header="地图管理"/>
+      </arc:Tabs>
+      <arc:ExpandingButtonGroup x:Name="PoolActions" Grid.Column="1" Classes="launch-actions" Label="图池列表操作"
+                                IsVisible="{Binding #PoolTab.IsSelected}" VerticalAlignment="Center">
         <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="新建图池" Click="CreatePool"/>
         <arc:ExpandingButtonGroupItem x:Name="AddMapsButton" Label="添加地图" Click="AddMaps"/>
         <arc:ExpandingButtonGroupItem x:Name="RenameButton" Label="重命名图池" Click="RenamePool"/>
         <arc:ExpandingButtonGroupItem x:Name="DeleteAction" Label="删除图池" Click="OpenDelete"/>
       </arc:ExpandingButtonGroup>
-      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    </Grid>
+    <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}">
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <arc:RadioGroup x:Name="PoolChoices" AutomationProperties.Name="要管理的图池" SelectionChanged="PoolSelected">
           <arc:RadioGroup.ItemTemplate>
             <DataTemplate x:DataType="vm:MapPoolRow">
@@ -33,7 +34,7 @@
           </arc:RadioGroup.ItemTemplate>
         </arc:RadioGroup>
       </ScrollViewer>
-      <arc:EmptyState x:Name="EmptyPools" Grid.Row="1" Title="暂无图池" IsVisible="False"/>
+      <arc:EmptyState x:Name="EmptyPools" Title="暂无图池" IsVisible="False"/>
       <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" TriggerMode="Manual">
         <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
                            HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>

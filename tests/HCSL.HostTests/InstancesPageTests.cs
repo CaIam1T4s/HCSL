@@ -99,23 +99,13 @@ internal static class InstancesPageTests
                   choices.GetVisualDescendants().OfType<MorphBlock>().Count() == 6,
                 "Loading must use three independent field blocks per row, never one full-list solid mask.");
             Check(!page.GetVisualDescendants().OfType<Table>().Any() && !page.GetVisualDescendants().OfType<RadioButton>().Any(), "No table/header/standalone radio should remain.");
-            Check(choices.GetVisualDescendants().OfType<Panel>().Where(p => p.Name == "PART_Mark").All(p => !p.IsVisible), "The native radio marks must be hidden.");
-            Check(choices.GetVisualDescendants().OfType<TKCode.Arc.Primitives.GlidingIndicator>().Single().IsVisible == false,
-                "Selection must use elevation, not Arc's moving selection outline.");
+            Check(choices.GetVisualDescendants().OfType<Panel>().Any(p => p.Name == "PART_Mark" && p.IsVisible), "The native radio marks must be visible.");
+            Check(choices.GetVisualDescendants().OfType<TKCode.Arc.Primitives.GlidingIndicator>().Single().IsVisible,
+                "Selection must use Arc's native moving outline.");
             Check(Rows().All(r => r.CreatedAt == "暂无记录" && r.LastRunAt == "暂无记录" && r.StatusText == "已停止"), "Unavailable dates must not be invented.");
             var row = Container(first);
             var badge = row.GetVisualDescendants().OfType<Badge>().Single();
-            Check(row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row").Background is ISolidColorBrush { Opacity: > 0 and < 1 } &&
-                  !choices.GetVisualDescendants().OfType<GlassCard>().Any() && row.Opacity == 1 && badge.Opacity == 1,
-                "Rows must have a solid-color translucent fill, not a glass material or a faded foreground.");
-            Check(badge.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Frame").Background is ISolidColorBrush { Opacity: < 1 } &&
-                  actions.Background is ISolidColorBrush { Opacity: < 1 }, "Non-glass badge and toolbar backgrounds must be translucent.");
-            Check(!row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Shadow").BoxShadow.Equals(default(BoxShadows)) &&
-                  !badge.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Frame").BoxShadow.Equals(default(BoxShadows)),
-                "Rows must have separate decorative shadow layers; badges retain their own lighter elevation.");
-            Check(choices.Margin.Left > 0 && loading.Margin.Left == -choices.Margin.Left &&
-                  row.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Row").BoxShadow.Count == 0,
-                "The clipping shell must reserve shadow gutters without applying shadow transforms to row content.");
+            Check(actions.Background is ISolidColorBrush { Opacity: < 1 }, "Toolbar background must remain translucent.");
             var badgeOrigin = badge.TranslatePoint(default, row)!.Value;
             Check(badge.HorizontalAlignment == HorizontalAlignment.Right && badge.VerticalAlignment == VerticalAlignment.Center &&
                   Math.Abs(badgeOrigin.Y + badge.Bounds.Height / 2 - row.Bounds.Height / 2) < 2 &&
@@ -135,44 +125,15 @@ internal static class InstancesPageTests
             row.Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
             Check(shell.StartupInstanceId == first && model.Selected?.Entry.Id == first && shell.IsInstances, "Selecting a row must choose startup without navigating to management.");
             var secondRow = Container(second); secondRow.Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
-            Border Layer(RadioGroupItem item, string name) => item.GetVisualDescendants().OfType<Border>().Single(b => b.Name == name);
-            Border Surface(RadioGroupItem item) => Layer(item, "PART_Row");
-            Check(Layer(secondRow, "PART_SelectedShadow").BoxShadow.Equals(CenteredShadow.Center(ArcTokens.Get<BoxShadows>(secondRow, ArcDesignTokenKind.ShadowFloating))) &&
-                  Layer(Container(first), "PART_Shadow").BoxShadow.Equals(CenteredShadow.Center(ArcTokens.Get<BoxShadows>(Container(first), ArcDesignTokenKind.ShadowRaised))) &&
-                  Layer(secondRow, "PART_SelectedShadow").Opacity == 1 && Layer(Container(first), "PART_SelectedShadow").Opacity == 0 &&
-                  Layer(secondRow, "PART_Shadow").Opacity == 0 && Layer(Container(first), "PART_Shadow").Opacity == 1 &&
-                  Layer(secondRow, "PART_SelectedFill").Opacity > 0 &&
-                  secondRow.ZIndex > Container(first).ZIndex &&
-                  secondRow.GetVisualDescendants().OfType<Border>().Any(b => b.Name == "PART_FocusRing"),
-                "Selection must have a deeper centered shadow above its siblings, without removing the keyboard focus ring.");
-            var normalFill = (ISolidColorBrush)Surface(Container(first)).Background!;
+            Check(secondRow.IsSelected && !Container(first).IsSelected, "Native radio selection must move to the second row.");
             var hoverPoint = Container(first).TranslatePoint(new Point(24, Container(first).Bounds.Height / 2), owner)!.Value;
             owner.MouseMove(hoverPoint); Layout();
-            var hoverFill = (ISolidColorBrush)Surface(Container(first)).Background!;
-            Check(Container(first).IsPointerOver && Layer(Container(first), "PART_HoverFill").Opacity > 0 &&
-                  normalFill.Color == hoverFill.Color && normalFill.Opacity == hoverFill.Opacity &&
-                  Container(first).Opacity == 1 && shell.StartupInstanceId == second,
-                "Hover must reveal its own stable fill layer without sampling animated parent transparency or changing selection.");
-            ArcMotion.SetLevel(choices, ArcMotionLevel.Full);
+            Check(Container(first).IsPointerOver && shell.StartupInstanceId == second, "Hover must not change selection.");
             owner.MouseDown(hoverPoint, MouseButton.Left); Layout();
             owner.MouseUp(hoverPoint, MouseButton.Left); Layout();
-            Wait(() => Layer(Container(first), "PART_SelectedShadow").Opacity is > 0 and < 1);
-            Check(Layer(Container(first), "PART_SelectedFill").Opacity is > 0 and < 0.6 && shell.StartupInstanceId == first,
-                "A physical click must cross-fade both selected elevation and the subtle selected background.");
-            for (var frame = 0; frame < 12; frame++)
-            {
-                Layout(); Thread.Sleep(8);
-                Check(Surface(Container(first)).Background is ISolidColorBrush steady && steady.Color == normalFill.Color &&
-                      steady.Opacity == normalFill.Opacity && Container(first).Opacity == 1,
-                    "Press/release and selection must never fade the base card to a transparent blank frame.");
-            }
-            Wait(() => Layer(Container(first), "PART_SelectedShadow").Opacity == 1);
-            ArcMotion.SetLevel(choices, ArcMotionLevel.Off);
+            Check(Container(first).IsSelected && shell.StartupInstanceId == first, "A physical click must select the first row.");
             Container(second).Focus(NavigationMethod.Tab); SendKey(owner, Key.Space);
-            choices.ClearValue(ArcMotion.LevelProperty);
             owner.MouseMove(new Point(1, 1)); Layout();
-            Check(Surface(Container(first)).Background is ISolidColorBrush restored && restored.Color == normalFill.Color && restored.Opacity == normalFill.Opacity,
-                "Leaving a row must restore its normal translucent surface.");
             ArcMotion.SetLevel(page, ArcMotionLevel.Off);
             var menu = OpenMenu(first);
             Check(shell.StartupInstanceId == second && choices.SelectedItem is InstanceListRow { Id: var selected } && selected == second,
