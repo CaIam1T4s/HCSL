@@ -24,7 +24,6 @@ public sealed record MapsPageContext(HostServerController Model, Guid InstanceId
 public sealed partial class MapsPage : UserControl
 {
     private readonly ObservableCollection<MapRow> allRows = [];
-    private List<MapRow> visible = [];
     private MapsPageContext? context;
     private MapPoolLibraryResult? library;
     private MapRow? selected;
@@ -41,7 +40,6 @@ public sealed partial class MapsPage : UserControl
     public MapsPage()
     {
         InitializeComponent();
-        Table.ItemsSource = visible;
         CollectionTree.ChildrenSelector = node => (node as CollectionBranch)?.Children;
         CollectionTree.KeySelector = node => node is CollectionBranch branch ? branch.Key : node;
         CollectionTree.Columns.Add(new TreeTableColumn
@@ -81,7 +79,6 @@ public sealed partial class MapsPage : UserControl
         {
             if (!ManagePools && e.Item is MapRow row) row.IsSelected = true;
         };
-        Table.SelectionChanged += (_, _) => UpdatePoolSelection();
         AutomationProperties.SetName(RulesButton, "地图轮换规则");
         // Arc's tooltip, so it keeps the shared floating-surface material and typography.
         Tooltip.SetTip(RulesButton, "仅内置地图和创意工坊合集支持轮换");
@@ -101,43 +98,7 @@ public sealed partial class MapsPage : UserControl
         {
             if (e.Property == SelectionToolbar.SelectedCountProperty) UpdateActions();
         };
-        // The whole row selects its map: text cells are drawn by the table itself and carry no control to click.
-        Table.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, OnRowClicked,
-            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
-    }
 
-    /// <summary>
-    /// Maps a click anywhere in a row to that row's selection. The row container has no data context and plain text
-    /// cells are self-drawn, so the row band is found first and the player is then read from any templated cell in it.
-    /// </summary>
-    private void OnRowClicked(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
-    {
-        if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left) return;
-        // Pool editing reads the checkbox, not the row: a stray click must not toggle membership.
-        if (context?.ManagePools == true) return;
-        var point = e.GetPosition(Table);
-        double? bandTop = null, bandBottom = null;
-        foreach (var container in Table.GetVisualDescendants().OfType<Control>())
-        {
-            if (container.GetType().Name != "TableRow") continue;
-            if (container.TranslatePoint(default, Table) is not { } origin) continue;
-            var bottom = origin.Y + container.Bounds.Height;
-            if (point.Y < origin.Y || point.Y >= bottom) continue;
-            bandTop = origin.Y;
-            bandBottom = bottom;
-            break;
-        }
-        if (bandTop is not { } top || bandBottom is not { } limit) return;
-        foreach (var cell in Table.GetVisualDescendants().OfType<Control>())
-        {
-            if (cell.DataContext is not MapRow row) continue;
-            if (cell.TranslatePoint(default, Table) is not { } origin) continue;
-            var center = origin.Y + cell.Bounds.Height / 2;
-            if (center < top || center >= limit) continue;
-            row.IsSelected = true;
-            e.Handled = true;
-            return;
-        }
     }
 
     public async Task AttachAsync(MapsPageContext value)
@@ -146,19 +107,13 @@ public sealed partial class MapsPage : UserControl
         {
             library = null;
             ClearSelection(this, new RoutedEventArgs());
-            Table.ItemsSource = visible = [];
+            CollectionTree.ItemsSource = null;
         }
         context = value;
         CollectionTree.IsSelectable = value.ManagePools;
         if (value.ManagePools && !ManagePools)
         {
             ManagePools = true;
-            Table.LayoutUpdated += HidePoolTableFooter;
-            Table.Columns.RemoveAt(Table.Columns.Count - 1);
-            Table.Columns.RemoveAt(0);
-            Table.Columns[^1].Width = new GridLength(1, GridUnitType.Star);
-            Table.SelectsOnRowClick = false;
-            Table.IsSelectable = true;
             Selection.Actions.Clear();
             Selection.Actions.Add(new SelectionToolbarAction { Key = "add", Label = "添加到图池" });
             Selection.Actions.Add(new SelectionToolbarAction { Key = "remove", Label = "从图池移除" });
@@ -311,11 +266,8 @@ public sealed partial class MapsPage : UserControl
         if (!ManagePools && selected is { } target && !roots.Contains(target) && !branches.Any(b => b.Children.Contains(target)))
             target.IsSelected = false;
         treeMapCount = roots.Concat(branches.SelectMany(b => b.Children)).Select(r => r.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        CollectionTree.IsVisible = true;
-        Table.IsVisible = false;
         CollectionTree.ItemsSource = roots.Cast<object>().Concat(branches).ToArray();
-        Table.ItemsSource = visible = next;
-        if (Table.IsSelectable) UpdatePoolSelection();
+        if (ManagePools) UpdatePoolSelection();
         else UpdateActions();
     }
 
@@ -355,24 +307,16 @@ public sealed partial class MapsPage : UserControl
     private bool savingPool;
     private GlassMenu? poolMenu;
 
-    private void HidePoolTableFooter(object? sender, EventArgs e)
-    {
-        // Arc binds this generated part at template priority, above an ordinary style setter.
-        if (Table.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Name == "PART_Footer") is { IsVisible: true } footer)
-            footer.IsVisible = false;
-    }
-
     private void UpdatePoolSelection()
     {
-        if (!Table.IsSelectable) return;
-        Selection.TotalCount = CollectionTree.IsVisible ? treeMapCount : visible.Count;
+        if (!ManagePools) return;
+        Selection.TotalCount = treeMapCount;
         Selection.SelectedCount = SelectedPoolMaps().Length;
         UpdateActions();
     }
 
     private MapRow[] SelectedPoolMaps()
     {
-        if (!CollectionTree.IsVisible) return Table.SelectedItems?.OfType<MapRow>().Where(visible.Contains).ToArray() ?? [];
         var keys = CollectionTree.SelectedKeys?.ToHashSet() ?? [];
         return (CollectionTree.ItemsSource?.Cast<object>() ?? []).SelectMany(node => node is CollectionBranch branch
             ? branch.Children : [(MapRow)node]).Where(row => keys.Contains(row))
@@ -441,17 +385,15 @@ public sealed partial class MapsPage : UserControl
 
     private void SelectAll(object? sender, RoutedEventArgs e)
     {
-        if (CollectionTree.IsVisible)
+        if (ManagePools)
             CollectionTree.SelectedKeys = (CollectionTree.ItemsSource?.Cast<object>() ?? []).SelectMany(node => node is CollectionBranch branch
-                ? branch.Children.Cast<object>() : [node]).Distinct().ToArray();
-        else if (Table.IsSelectable) Table.SelectAll();
+                ? branch.Children.Cast<object>().Prepend(branch.Key) : [node]).Distinct().ToArray();
     }
 
     private void ClearSelection(object? sender, RoutedEventArgs e)
     {
         poolMenu?.Close();
         CollectionTree.SelectedKeys = [];
-        if (Table.IsSelectable && Table.SelectedItems is { Count: > 0 }) Table.ClearSelection();
         if (selected is { } target) target.IsSelected = false;
         foreach (var row in allRows) row.IsSelected = false;
         selected = null;
@@ -525,11 +467,10 @@ public sealed partial class MapsPage : UserControl
                 await ReloadAsync();
                 if (ReferenceEquals(context, request.Context))
                 {
-                    if (CollectionTree.IsVisible)
-                        CollectionTree.SelectedKeys = (CollectionTree.ItemsSource?.Cast<object>() ?? []).SelectMany(node => node is CollectionBranch branch
-                            ? branch.Children.Where(row => selectedMapKeys.Contains(row.Key)).Cast<object>()
-                            : node is MapRow row && selectedMapKeys.Contains(row.Key) ? [node] : []).ToArray();
-                    else Table.SelectedItems = visible.Where(row => selectedMapKeys.Contains(row.Key)).Cast<object>().ToList();
+                    CollectionTree.SelectedKeys = (CollectionTree.ItemsSource?.Cast<object>() ?? []).SelectMany(node => node is CollectionBranch branch
+                        ? branch.Children.Where(row => selectedMapKeys.Contains(row.Key)).Cast<object>()
+                            .Concat(request.Pools.Any(id => branch.Key == "collection:" + id) ? [branch.Key] : [])
+                        : node is MapRow row && selectedMapKeys.Contains(row.Key) ? [node] : []).ToArray();
                     UpdatePoolSelection();
                 }
             }

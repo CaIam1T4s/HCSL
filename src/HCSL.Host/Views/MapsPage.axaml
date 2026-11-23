@@ -7,32 +7,6 @@
              x:Class="HCSL.Host.Views.MapsPage"
              x:Name="Root"
              x:DataType="vm:MapRow">
-  <UserControl.Resources>
-    <!-- Selection reads as a table row: an accent rail on the left and a check on the right. Arc's PresenceHost owns
-         the motion (fade for the rail, a pop for the check), so motion levels and reduced motion are handled for us. -->
-    <DataTemplate x:Key="MapRailCell" x:DataType="vm:MapRow">
-      <arc:PresenceHost Mode="Fade" IsPresent="{Binding IsSelected}" Margin="6,0,0,0">
-        <Border Width="3" CornerRadius="{arc:ArcDesignTokenResource RadiusPill}"
-                Background="{arc:ArcDesignTokenResource Accent}"/>
-      </arc:PresenceHost>
-    </DataTemplate>
-    <DataTemplate x:Key="MapSelectedCell" x:DataType="vm:MapRow">
-      <!-- Kept clear of the scrollbar's lane; the pop starts small so it reads as a state change. -->
-      <arc:PresenceHost Mode="Pop" EnterScale="0.6" IsPresent="{Binding IsSelected}"
-                        HorizontalAlignment="Right" Margin="0,0,16,0" IsHitTestVisible="False">
-        <lucide:LucideIcon Kind="Check" Width="16" Height="16"
-                           Foreground="{arc:ArcDesignTokenResource Accent}"/>
-      </arc:PresenceHost>
-    </DataTemplate>
-    <DataTemplate x:Key="MapSourceCell" x:DataType="vm:MapRow">
-      <arc:Badge Size="Small" Tone="{Binding SourceTone}" Content="{Binding SourceText}"
-                 HorizontalAlignment="Left" VerticalAlignment="Center"/>
-    </DataTemplate>
-    <DataTemplate x:Key="MapPoolsCell" x:DataType="vm:MapRow">
-      <arc:PresenceStack ItemsSource="{Binding Pools}" Label="所属图池" IsCountVisible="False"
-                         Size="Small" MaxVisibleCount="3" VerticalAlignment="Center"/>
-    </DataTemplate>
-  </UserControl.Resources>
 
   <Border Classes.catalog-frame="True" Classes.embedded="{ReflectionBinding #Root.ManagePools}">
     <Border.Styles>
@@ -93,22 +67,7 @@
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
       </arc:SelectionToolbar.Actions>
-      <Grid>
-      <arc:TreeTable x:Name="CollectionTree" Caption="地图目录" IsSelectable="True" IsVisible="False"/>
-      <arc:Table x:Name="Table" IsSelectable="False" Caption="地图目录"
-                 EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
-                 ItemNameOne="张地图" ItemNameOther="张地图">
-        <arc:Table.Columns>
-          <arc:DataTableColumn Header="" IsSortable="False" Width="28" CellTemplate="{StaticResource MapRailCell}"/>
-          <arc:DataTableColumn Header="地图名" Binding="{Binding Name}" Width="340"/>
-          <arc:DataTableColumn Header="来源" Binding="{Binding SourceText}" IsSortable="False" Width="120"
-                               CellTemplate="{StaticResource MapSourceCell}"/>
-          <arc:DataTableColumn Header="所属图池" Binding="{Binding PoolText}" IsSortable="False" Width="180"
-                               CellTemplate="{StaticResource MapPoolsCell}"/>
-          <arc:DataTableColumn Header="" IsSortable="False" Width="*" CellTemplate="{StaticResource MapSelectedCell}"/>
-        </arc:Table.Columns>
-      </arc:Table>
-      </Grid>
+      <arc:TreeTable x:Name="CollectionTree" Caption="地图目录"/>
     </arc:SelectionToolbar>
     <arc:Popover x:Name="RemoveWorkshopPopover" Grid.Row="1" Placement="Top" Offset="0" TriggerMode="Manual" HasShadow="False">
       <arc:Popover.Styles>
