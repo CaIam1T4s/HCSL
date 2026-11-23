@@ -1,5 +1,9 @@
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using HCSL.Core;
@@ -28,9 +32,9 @@ public partial class InstanceMapPoolsPage : UserControl
     public InstanceMapPoolsPage()
     {
         InitializeComponent();
-        CreateButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
+        PoolChoices.AddHandler(InputElement.ContextRequestedEvent, OnPoolContextRequested,
+            RoutingStrategies.Bubble, handledEventsToo: true);
         DeleteButton.Icon = Lucide.Geometry(LucideIconKind.Trash);
-        PoolActions.DefaultExpandedItem = CreateButton;
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -72,12 +76,13 @@ public partial class InstanceMapPoolsPage : UserControl
         loadedInstance = instance.Id;
         try
         {
+            PoolChoices.IsLoading = true;
             var result = await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.List, instance.Id));
             SetChoices(result);
             await RefreshMapsAsync();
         }
         catch (IOException error) { Error("读取图池失败", error.Message); loaded = false; }
-        finally { loading = false; Update(); }
+        finally { PoolChoices.IsLoading = false; loading = false; Update(); }
     }
 
     private void SetChoices(MapPoolLibraryResult result)
@@ -91,7 +96,6 @@ public partial class InstanceMapPoolsPage : UserControl
                     used == 0 ? "未被预设引用" : $"被 {used} 个预设使用",
                     pool.Maps.Length == 0 ? BadgeTone.Warning : BadgeTone.Neutral);
             }).ToArray();
-        EmptyPools.IsVisible = rows.Length == 0;
         PoolChoices.ItemsSource = rows;
         Update();
     }
@@ -102,7 +106,39 @@ public partial class InstanceMapPoolsPage : UserControl
 
     private void OpenPoolActions(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: MapPoolRow row } anchor || Instance?.Id != loadedInstance) return;
+        if (sender is Control { DataContext: MapPoolRow row } anchor) ShowPoolActions(row, anchor);
+    }
+
+    private void OnPoolContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (!e.TryGetPosition(PoolChoices, out var point))
+        {
+            if (e.Source is Control { DataContext: MapPoolRow row } source && source.Classes.Contains("pool-row-action"))
+            {
+                ShowPoolActions(row, source);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        var body = PoolChoices.GetVisualDescendants().OfType<ScrollViewer>()
+            .FirstOrDefault(v => v.Name == "PART_ScrollViewer");
+        if (body?.TranslatePoint(default, PoolChoices) is not { } bodyOrigin ||
+            !new Rect(bodyOrigin, body.Bounds.Size).Contains(point)) return;
+        var band = body.GetVisualDescendants().OfType<Control>().FirstOrDefault(c =>
+            c.GetType().Name == "TableRow" && c.TranslatePoint(default, PoolChoices) is { } origin &&
+            new Rect(origin, c.Bounds.Size).Contains(point));
+        var action = band?.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Classes.Contains("pool-row-action"));
+        if (action?.DataContext is not MapPoolRow target || PoolChoices.TranslatePoint(point, PoolMenuLayer) is not { } position) return;
+        Canvas.SetLeft(PoolMenuAnchor, position.X);
+        Canvas.SetTop(PoolMenuAnchor, position.Y);
+        ShowPoolActions(target, PoolMenuAnchor);
+        e.Handled = true;
+    }
+
+    private void ShowPoolActions(MapPoolRow row, Control anchor)
+    {
+        if (Instance?.Id != loadedInstance) return;
         DeletePopover.IsOpen = false;
         rowMenu?.Close();
         browsed = row;

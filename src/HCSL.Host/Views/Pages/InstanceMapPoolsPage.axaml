@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              xmlns:vm="using:HCSL.Host.ViewModels"
              x:Class="HCSL.Host.Views.Pages.InstanceMapPoolsPage"
              x:CompileBindings="False" Classes="instance-pools-page">
@@ -10,33 +11,56 @@
         <arc:TabItem x:Name="PoolTab" Header="图池管理"/>
         <arc:TabItem x:Name="MapsTab" Header="地图管理"/>
       </arc:Tabs>
-      <arc:ExpandingButtonGroup x:Name="PoolActions" Grid.Column="1" Classes="launch-actions" Label="图池列表操作"
-                                IsVisible="{Binding #PoolTab.IsSelected}" VerticalAlignment="Center">
-        <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="新建图池" Click="CreatePool"/>
-      </arc:ExpandingButtonGroup>
+      <arc:Button x:Name="CreateButton" Grid.Column="1" Variant="Secondary" Click="CreatePool"
+                  IsVisible="{Binding #PoolTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="新建图池">
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+          <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
+          <TextBlock Text="新建图池" VerticalAlignment="Center"/>
+        </StackPanel>
+      </arc:Button>
     </Grid>
     <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}">
-      <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <ItemsControl x:Name="PoolChoices" AutomationProperties.Name="图池列表">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:MapPoolRow">
-              <Border Margin="0,0,0,8" Padding="12,8" BorderThickness="1"
-                      BorderBrush="{arc:ArcDesignTokenResource Border}" CornerRadius="{arc:ArcDesignTokenResource RadiusControl}">
-              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
-                <StackPanel VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-                </StackPanel>
-                <arc:Badge Grid.Column="1" Content="{Binding Count}" Tone="{Binding Tone}" VerticalAlignment="Center"/>
-                <arc:Button Grid.Column="2" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPoolActions"
+      <arc:Table x:Name="PoolChoices" Caption="图池列表" IsSelectable="False"
+                 EmptyMessage="暂无图池" LoadingMessage="正在读取图池">
+        <arc:Table.Columns>
+          <arc:DataTableColumn Header="图池名" Binding="{Binding Name}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="地图数量" Width="112" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:MapPoolRow">
+                <arc:Badge Content="{Binding Count}" Tone="{Binding Tone}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+          <arc:DataTableColumn Header="预设引用" Binding="{Binding Presets}" Width="180" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:MapPoolRow">
+                <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+          <arc:DataTableColumn Header="轮换" Binding="{Binding RotationText}" Width="120" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:MapPoolRow">
+                <TextBlock Text="{Binding RotationText}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+          <arc:DataTableColumn Header="操作" Width="72" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:MapPoolRow">
+                <arc:Button Classes="pool-row-action" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPoolActions"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
                             AutomationProperties.Name="{Binding Name, StringFormat='操作图池：{0}'}"/>
-              </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-      <arc:EmptyState x:Name="EmptyPools" Title="暂无图池" IsVisible="False"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+        </arc:Table.Columns>
+      </arc:Table>
+      <Canvas x:Name="PoolMenuLayer" IsHitTestVisible="False">
+        <Border x:Name="PoolMenuAnchor" Width="1" Height="1"/>
+      </Canvas>
       <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" Offset="0" TriggerMode="Manual" HasShadow="False">
         <arc:Popover.Styles>
           <Style Selector="arc|PopoverSurface">
