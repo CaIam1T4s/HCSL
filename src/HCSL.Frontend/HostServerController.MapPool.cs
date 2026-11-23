@@ -20,6 +20,8 @@ public sealed partial class HostServerController
     }
 
     /// <summary>The map catalog only reads files; it is available while the server runs and while SteamCMD is busy.</summary>
+    public Task<MapCatalogResult> WorkshopCatalogAsync(MapCatalogCommand command) => instances.MapCatalogAsync(command);
+
     public async Task<MapCatalogResult> MapCatalogAsync(Guid instanceId)
     {
         if (!Server.Connected) throw new IOException("HCSL-MAPCATALOG-OFFLINE: The daemon is not connected.");

@@ -29,12 +29,18 @@ public sealed class InstanceClient(IDaemonClient client)
     /// Read-only catalog of the maps one instance runtime can offer. The catalog itself is shared by the app; what is
     /// downloaded is a fact of that runtime, which is why the instance id travels with the request.
     /// </summary>
-    public async Task<MapCatalogResult> MapCatalogAsync(Guid instanceId, CancellationToken ct = default)
+    public Task<MapCatalogResult> MapCatalogAsync(Guid instanceId, CancellationToken ct = default) => MapCatalogAsync(new MapCatalogCommand(instanceId), ct);
+
+    public async Task<MapCatalogResult> MapCatalogAsync(MapCatalogCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
-        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapCatalog,
-            Options: new(hello.Defaults), MapCatalogJson: JsonSerializer.Serialize(new MapCatalogCommand(instanceId))), ct);
+        var request = new LocalRequest(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapCatalog,
+            Options: new(hello.Defaults), MapCatalogJson: JsonSerializer.Serialize(command));
+        // A Steam lookup runs outside the local catalog's normal five-second budget.
+        var response = command.WorkshopId is not null
+            ? await client.SendAsync(request, TimeSpan.FromSeconds(25), ct)
+            : await client.SendAsync(request, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
         return JsonSerializer.Deserialize<MapCatalogResult>(response.MapCatalogResultJson ?? "null")
             ?? throw new IOException("Missing map catalog result.");

@@ -124,6 +124,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Players ? await PlayersAsync(request, deadline.Token)
                     : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.MapCatalog && request.Version == LocalProtocol.Version
+                    ? await MapCatalogAsync(request, deadline)
                     : Dispatch(request); }
                 catch (ServerException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (DeploymentException ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
@@ -352,7 +354,6 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             RequestKind.Instances => Instances(request),
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),
-            RequestKind.MapCatalog => MapCatalog(request),
             RequestKind.MapPoolLibrary => MapPoolLibrary(request),
             RequestKind.Plugin => Plugin(request),
             RequestKind.PluginImport => PluginImport(request),
@@ -431,14 +432,35 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     /// Read-only map catalog for one instance: built-in maps and downloaded Workshop items from that runtime. It never
     /// executes anything, so it is safe while the server runs and while SteamCMD is busy.
     /// </summary>
-    private LocalResponse MapCatalog(LocalRequest request)
+    private async Task<LocalResponse> MapCatalogAsync(LocalRequest request, CancellationTokenSource deadline)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
         var command = JsonSerializer.Deserialize<MapCatalogCommand>(request.MapCatalogJson ?? "null")
             ?? throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "Map catalog request is required.");
         if (command.InstanceId == Guid.Empty) throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "An instance id is required.");
         var game = Path.Combine(p.LibraryRoot, "runtime", command.InstanceId.ToString("D"), "game");
-        var result = MapCatalogScanner.Scan(game);
+        MapCatalogResult result;
+        if (command.WorkshopId is { } id)
+        {
+            if (!ServerMapRules.TryValidateWorkshopId(id) || command.Register is not null)
+                throw new InstanceException("HCSL-WORKSHOP-INPUT", "工坊 ID 无效。");
+            // Leave time to return the Steam lookup's own 15-second timeout error over IPC.
+            deadline.CancelAfter(TimeSpan.FromSeconds(20));
+            result = new([], Workshop: await HCSL.Infrastructure.Steam.WorkshopLookup.ReadAsync(id, deadline.Token));
+        }
+        else
+        {
+            var scanned = MapCatalogScanner.Scan(game);
+            var registered = LocalWorkshopCatalog.Read(Path.Combine(p.DataRoot, "instances", command.InstanceId.ToString("D")), command.Register);
+            var titles = registered.ToDictionary(x => x.Id, x => x.Title, StringComparer.Ordinal);
+            result = command.Register is not null ? new([], "workshop-registered") : scanned with
+            {
+                Entries = scanned.Entries.Select(x => x.WorkshopId is { } mapId && titles.TryGetValue(mapId, out var title)
+                    ? x with { Name = title, InternalName = x.Incomplete ? null : x.Name } : x).Concat(registered.Select(x =>
+                    new MapCatalogEntry(x.Title, MapCatalogSource.Workshop, x.Id, Incomplete: true)))
+                    .DistinctBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray()
+            };
+        }
         MapCatalogRules.Validate(result);
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result));
         if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
