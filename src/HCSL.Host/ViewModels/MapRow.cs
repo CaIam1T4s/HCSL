@@ -74,14 +74,7 @@ public sealed class MapRow : INotifyPropertyChanged
     {
         pools.Clear();
         PoolNames = names;
-        foreach (var name in names)
-        {
-            // Arc takes the first character of each word, with no separate initials override.
-            var letters = name.Where(char.IsAsciiLetter).Take(2).ToArray();
-            var han = name.FirstOrDefault(c => c is >= '\u3400' and <= '\u9fff');
-            var label = han != default ? han.ToString() : letters.Length > 0 ? string.Join(" ", letters) : name;
-            pools.Add(new PresenceStackViewer(label, detail: string.Equals(label, name, StringComparison.OrdinalIgnoreCase) ? null : name));
-        }
+        foreach (var name in names) pools.Add(new PresenceStackViewer(name));
         poolName = names.Count == 0 ? null : string.Join("、", names);
         inPool = names.Count > 0;
         Raise(nameof(InPool));
