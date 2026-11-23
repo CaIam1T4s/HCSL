@@ -735,6 +735,13 @@ if (only is null or "overview")
 {
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
 var overview = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceOverviewPage>().Single();
+// The scope names itself in the title bar: back arrow + "实例管理 · <instance>" beside the status badge.
+var scopeBack = owner.FindControl<TKCode.Arc.Button>("ScopeBackButton")!;
+var scopeTitle = owner.FindControl<TextBlock>("ScopeTitleText")!;
+var scopeModel = (ShellViewModel)owner.DataContext!;
+Check(scopeBack.IsEffectivelyVisible && scopeTitle.IsEffectivelyVisible
+    && scopeTitle.Text == "实例管理 · " + scopeModel.Servers.Selected!.Entry.Definition!.Name,
+    "The instance scope must put the back arrow and the instance name in the title bar.");
 var portField = overview.FindControl<TKCode.Arc.Input>("PortInput")!;
 var writes = daemon.InstanceWrites.Count;
 daemon.AllowInstanceWrites = true;
@@ -772,6 +779,9 @@ Check(owner.OwnedWindows.Any(w => w is HCSL.Host.Views.ServerLogWindow),
     "The console action row must open the console window.");
 foreach (var owned in owner.OwnedWindows.ToArray()) owned.Close();
 Layout();
+scopeBack.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
+Check(!scopeModel.IsInstance && !scopeBack.IsEffectivelyVisible,
+    "The title-bar back arrow must leave the scope and hide itself.");
 Console.WriteLine("PASS gui.overview.inline-instance-settings-save-on-enter");
 if (only is "overview") return 0;
 }

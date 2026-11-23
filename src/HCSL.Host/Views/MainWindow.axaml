@@ -2,7 +2,18 @@
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto" Background="Transparent">
       <arc:TitleBar.LeftContent>
-        <arc:Badge x:Name="ServerStatusBadge" Size="Medium"/>
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}" VerticalAlignment="Center">
+          <!-- The scope names itself in the title bar, the way the launcher's reference UI does: back arrow, then the
+               page and instance, then the live status. -->
+          <arc:Button x:Name="ScopeBackButton" Variant="Ghost" Size="Small" IsVisible="False"
+                      Padding="0" Width="{arc:ArcDesignTokenResource Space6}"
+                      Height="{arc:ArcDesignTokenResource Space6}" Click="LeaveInstanceScope">
+            <lucide:LucideIcon Kind="ArrowLeft" Width="16" Height="16"/>
+          </arc:Button>
+          <TextBlock x:Name="ScopeTitleText" IsVisible="False" VerticalAlignment="Center"
+                     FontSize="{arc:ArcDesignTokenResource TypeBase}"/>
+          <arc:Badge x:Name="ServerStatusBadge" Size="Medium"/>
+        </StackPanel>
       </arc:TitleBar.LeftContent>
       <arc:TitleBar.Icon>
         <arc:ArcGlyph Data="{x:Static arc:ArcIcons.Server}" Size="16"/>
@@ -50,27 +61,11 @@
               </arc:Sidebar.Footer>
             </arc:Sidebar>
             <!-- 实例管理 is a scope of its own: it replaces the whole navigation instead of nesting under it. The back
-                 button returns to the single page the operator came from. -->
+                 button and the instance name live in the title bar, so the sidebar starts with the section list. -->
             <arc:Sidebar x:Name="InstanceSidebar" Classes="main-sidebar" BorderThickness="0" ExpandedWidth="216" IsCollapsed="False"
                          IsCollapseButtonVisible="False" IsFilterVisible="False" IsVisible="{Binding IsInstance}"
                          Background="Transparent" Label="实例管理导航"
                          SelectedKey="{Binding SelectedInstanceSection.Id, Mode=OneWay}" ItemInvoked="InstanceSidebarItemInvoked">
-              <arc:Sidebar.Header>
-                <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}" Margin="0,0,0,8">
-                  <arc:Button x:Name="InstanceBackButton" Variant="Ghost" Size="Medium" HorizontalAlignment="Stretch"
-                              Click="LeaveInstanceScope">
-                    <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-                      <lucide:LucideIcon Kind="ArrowLeft" Width="16" Height="16"/>
-                      <TextBlock Text="返回"/>
-                    </StackPanel>
-                  </arc:Button>
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space2}">
-                    <TextBlock x:Name="InstanceScopeName" Classes="section" TextTrimming="CharacterEllipsis"
-                               VerticalAlignment="Center"/>
-                    <arc:Badge x:Name="InstanceScopeBadge" Grid.Column="1" Size="Small" VerticalAlignment="Center"/>
-                  </Grid>
-                </StackPanel>
-              </arc:Sidebar.Header>
               <arc:SidebarSection Header="实例">
                 <arc:SidebarItem Key="overview" Label="概览"/>
                 <arc:SidebarItem Key="presets" Label="预设与配置"/>

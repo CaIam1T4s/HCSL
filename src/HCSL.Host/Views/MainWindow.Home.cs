@@ -111,11 +111,16 @@ public partial class MainWindow
         var server = shellServers?.Server;
         var next = ServerBadgePresentation.For(server?.State ?? ServerState.Idle, server?.Connected == true, server?.Reconnecting == true);
         UpdateScopeFooter();
+        // In the instance scope the title bar carries the back arrow and the instance name, like the reference launcher;
+        // the scope name replaces the icon and title text so both stay in one place.
         var scopedName = (DataContext as ShellViewModel)?.IsInstance == true ? shellServers?.Selected?.Entry.Definition?.Name : null;
-        InstanceScopeName.Text = scopedName ?? "未选择实例";
-        // The scope names the instance in the window title, the way the console window names its server.
-        var title = scopedName is { Length: > 0 } ? $"实例管理 · {scopedName}" : BaseTitle;
-        if (ShellTitleBar.Title != title) ShellTitleBar.Title = title;
+        var inScope = scopedName is { Length: > 0 };
+        ScopeBackButton.IsVisible = inScope;
+        ScopeTitleText.IsVisible = inScope;
+        ScopeTitleText.Text = inScope ? $"实例管理 · {scopedName}" : "";
+        if (ShellTitleBar.Title != (inScope ? "" : BaseTitle)) ShellTitleBar.Title = inScope ? "" : BaseTitle;
+        if (inScope != (ShellTitleBar.Icon is null))
+            ShellTitleBar.Icon = inScope ? null : new ArcGlyph { Data = ArcIcons.Server, Size = 16 };
         if (badgeState == next) return;
         badgeState = next;
         ServerStatusBadge.Content = next.Item1;
@@ -123,8 +128,6 @@ public partial class MainWindow
         ServerStatusBadge.Icon = server?.Reconnecting == true
             ? new MorphLoader { Size = 12, Variant = MorphLoaderVariant.Bars, Status = MorphLoaderStatus.Loading, IsDecorative = true }
             : new LucideIcon { Kind = next.Item3 };
-        InstanceScopeBadge.Content = next.Item1;
-        InstanceScopeBadge.Tone = next.Item2;
     }
 
     private void UpdateThemeText() => SidebarThemeSwitcher.Text = ActualThemeVariant == ThemeVariant.Dark
