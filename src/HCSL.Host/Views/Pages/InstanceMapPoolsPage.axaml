@@ -18,6 +18,13 @@
           <TextBlock Text="新建图池" VerticalAlignment="Center"/>
         </StackPanel>
       </arc:Button>
+      <arc:Button Grid.Column="1" Variant="Secondary" Click="AddWorkshop"
+                  IsVisible="{Binding #MapsTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="添加地图">
+        <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+          <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
+          <TextBlock Text="添加地图" VerticalAlignment="Center"/>
+        </StackPanel>
+      </arc:Button>
     </Grid>
     <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}">
       <arc:Table x:Name="PoolChoices" Caption="图池列表" IsSelectable="False"

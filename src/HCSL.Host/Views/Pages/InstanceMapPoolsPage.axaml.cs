@@ -10,6 +10,7 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
+using TKCode.Arc.DesignTokens;
 using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views.Pages;
@@ -156,6 +157,78 @@ public partial class InstanceMapPoolsPage : UserControl
             item.Click += click;
             menu.Items.Add(item);
         }
+    }
+
+    private bool workshopBusy;
+
+    private async void AddWorkshop(object? sender, RoutedEventArgs e)
+    {
+        if (workshopBusy || Model is not { } model || Instance is not { } instance || Owner is not { } owner) return;
+        workshopBusy = true;
+        try
+        {
+            if (await owner.TextAsync("添加工坊地图 / 合集", "Steam 工坊链接或 ID", maxLength: 512, hideConsole: false, confirmLabel: "识别") is not { } input) return;
+            if (WorkshopCatalog.ParseId(input) is not { } id) { Error("工坊链接或 ID 无效"); return; }
+            var query = await model.WorkshopCatalogAsync(new(instance.Id, WorkshopId: id));
+            if (Instance?.Id != instance.Id) return;
+            var item = query.Workshop ?? throw new IOException("请更新并重启守护进程。");
+            var form = new StackPanel { Spacing = 12 };
+            form.Children.Add(new TextBlock { Text = item.Title, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            WorkshopItem[] register;
+            if (item.Children is { } children)
+            {
+                if (children.Length == 0)
+                {
+                    owner.ShowInstanceNotification("合集没有可识别的 CS2 地图", "指南等非地图条目无法导入。", ToastKind.Warning);
+                    return;
+                }
+                form.Classes.Add("instance-editor");
+                form.Classes.Add("workshop-collection-preview");
+                form.Children.RemoveAt(0); // The expanded tree root already shows the collection name.
+                var hint = new TextBlock { Text = "勾选要在地图管理中显示的成员；服务端仍使用完整合集。", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+                ArcTokens.Bind(hint, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
+                form.Children.Add(hint);
+                var tree = new TreeTable { Caption = "合集地图", IsSelectable = true,
+                    ItemsSource = new[] { item }, ChildrenSelector = x => ((WorkshopItem)x).Children,
+                    KeySelector = x => ((WorkshopItem)x).Id, ExpandedKeys = [item.Id] };
+                tree.Columns.Add(TreeTableColumn.Create<WorkshopItem>("地图名称", x => x.Title));
+                tree.SelectedKeys = [item.Id, .. children.Select(map => (object)map.Id)];
+                tree.Styles.Add(new Avalonia.Styling.Style(s => s.Is<Grid>().Class(":selected"))
+                {
+                    Setters = { new Avalonia.Styling.Setter(Panel.BackgroundProperty, Avalonia.Media.Brushes.Transparent) }
+                });
+                form.Children.Add(new ScrollViewer { Height = 300, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = tree });
+                if (await owner.ShowWorkshopPreviewAsync(form, ["取消", "导入"]) != 1 || Instance?.Id != instance.Id) return;
+                var selectedKeys = tree.SelectedKeys?.ToHashSet() ?? [];
+                var selectedMembers = children.Where(map => selectedKeys.Contains(map.Id)).ToArray();
+                if (selectedMembers.Length == 0) { Error("请至少勾选一张地图"); return; }
+                var name = item.Title[..Math.Min(item.Title.Length, MapPoolLibraryRules.MaxNameLength)].Trim();
+                await WriteAsync(i => new(MapPoolLibraryAction.Create, i.Id, i.Revision, Name: name,
+                    Maps: [new(ServerMapKind.WorkshopCollection, item.Id)], CollectionMembers: selectedMembers));
+                return;
+            }
+            else
+            {
+                form.Classes.Add("instance-editor");
+                var heading = new TextBlock { Text = "添加工坊地图" };
+                ArcTokens.Bind(heading, TextBlock.FontSizeProperty, ArcDesignTokenKind.TypeLG);
+                form.Children.Insert(0, heading);
+                var catalog = await model.MapCatalogAsync(instance.Id);
+                if (Instance?.Id != instance.Id) return;
+                var entry = catalog.Entries.FirstOrDefault(x => x.WorkshopId == item.Id);
+                var metadata = new TextBlock { Text = $"工坊 ID：{item.Id}" + (entry?.Incomplete == true ? " · 未下载" : "") };
+                ArcTokens.Bind(metadata, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
+                form.Children.Add(metadata);
+                if (await owner.ShowWorkshopPreviewAsync(form, ["取消", "添加地图"]) != 1 || Instance?.Id != instance.Id) return;
+                register = [item];
+            }
+            var saved = await model.WorkshopCatalogAsync(new(instance.Id, Register: register));
+            if (saved.Detail != "workshop-registered") throw new IOException("请更新并重启守护进程。");
+            if (Instance?.Id == instance.Id) await RefreshMapsAsync();
+        }
+        catch (IOException error) { Error("工坊地图未添加", error.Message); }
+        finally { workshopBusy = false; }
     }
 
     private async void AddMaps(object? sender, RoutedEventArgs e)
