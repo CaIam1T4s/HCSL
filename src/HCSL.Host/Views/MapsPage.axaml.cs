@@ -48,7 +48,11 @@ public sealed partial class MapsPage : UserControl
             { Content = node is MapRow row ? row.SourceText : "工坊合集", Tone = node is MapRow map ? map.SourceTone : BadgeTone.Info }) });
         CollectionTree.Columns.Add(new TreeTableColumn { Header = "所属图池", Width = new GridLength(160), IsSortable = false,
             CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => new PresenceStack
-            { ItemsSource = node is MapRow row ? row.Pools : [new PresenceStackViewer(((CollectionBranch)node).Name)] }) });
+            {
+                Label = "所属图池", IsCountVisible = false,
+                IsVisible = node is not MapRow map || map.InPool,
+                ItemsSource = node is MapRow row ? row.Pools : [new PresenceStackViewer(((CollectionBranch)node).Name)]
+            }) });
         CollectionTree.SelectionChanged += (_, _) => UpdatePoolSelection();
         Table.SelectionChanged += (_, _) => UpdatePoolSelection();
         AutomationProperties.SetName(RulesButton, "地图轮换规则");
