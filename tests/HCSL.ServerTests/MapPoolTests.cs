@@ -82,8 +82,10 @@ public static class MapPoolTests
                 "A single collection must rotate natively.");
             Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Workshop, "123")])) == MapPoolRotation.Manual,
                 "A pool holding a single Workshop map must be manual.");
-            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2")])) == MapPoolRotation.Manual,
-                "A one-map pool has nothing to rotate.");
+            Check(MapPoolRules.Rotation(new(1, 0, [new(ServerMapKind.Standard, "de_dust2")])) == MapPoolRotation.MapGroup,
+                "A single built-in map can use a map group.");
+            Check(MapPoolRules.Rotation(new(1, 0, [])) == MapPoolRotation.Manual,
+                "An empty pool cannot rotate.");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         // Catalog: built-in files, downloaded Workshop items, and folders that exist without a map.

@@ -117,7 +117,12 @@ public partial class MainWindow
             baselineApplied = m.Server.Applied;
             watchingStart = true;
             pendingStartFailure = null;
-            if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory)) ShowLogs();
+            var presetId = m.Selected?.Entry.Definition?.SelectedPresetId ?? d.SelectedPresetId;
+            if (await m.StartAsync(allowLowMemory: confirmation.AllowLowMemory))
+            {
+                ShowLogs();
+                _ = WarnManualPoolAsync(m, d.Id, presetId);
+            }
             else
             {
                 // A rejected start already carries the daemon's code and next step; show it in full, not as a toast.
@@ -172,6 +177,23 @@ public partial class MainWindow
             else await ChooseAsync("服务器启动失败", failure.Value.Detail, "返回");
         }
         finally { handlingOutcome = false; }
+    }
+
+    private async Task WarnManualPoolAsync(HostServerController model, Guid instanceId, Guid presetId)
+    {
+        try
+        {
+            var result = await model.MapPoolsAsync(new(MapPoolLibraryAction.List, instanceId));
+            if (result.Library.PoolOf(presetId) is not { } pool ||
+                MapPoolRules.Rotation(new(1, 0, pool.Maps)) != MapPoolRotation.Manual) return;
+            var title = $"图池「{pool.Name}」不支持自动轮换";
+            if (logs is { } window) window.NotifyManualPool(title);
+            else ShowInstanceNotification(title, kind: TKCode.Arc.ToastKind.Warning);
+        }
+        catch (Exception error) when (error is IOException or InstanceException)
+        {
+            // Advisory only: reading pool metadata does not affect a submitted start.
+        }
     }
 
     private void ShowLogs()

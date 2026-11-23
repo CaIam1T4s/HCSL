@@ -17,6 +17,9 @@ namespace HCSL.Host.Views;
 
 public sealed partial class ServerLogWindow
 {
+    internal void NotifyManualPool(string title) =>
+        notifications.Show(new ToastOptions { Title = title, Kind = ToastKind.Warning });
+
     private GlassMenu? consoleMenu;
     private bool showTimestamps = true;
     private int displayLimit = 2000;

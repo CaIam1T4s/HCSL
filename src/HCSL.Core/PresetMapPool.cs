@@ -42,7 +42,7 @@ public static class MapPoolRules
     {
         Validate(pool);
         if (pool.Maps.Length == 1 && pool.Maps[0].Kind == ServerMapKind.WorkshopCollection) return MapPoolRotation.Collection;
-        return pool.Maps.All(m => m.Kind == ServerMapKind.Standard) && pool.Maps.Length > 1
+        return pool.Maps.All(m => m.Kind == ServerMapKind.Standard) && pool.Maps.Length > 0
             ? MapPoolRotation.MapGroup
             : MapPoolRotation.Manual;
     }
