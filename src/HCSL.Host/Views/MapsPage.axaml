@@ -66,6 +66,8 @@
           <Setter Property="BorderThickness" Value="0"/>
         </Style>
         <Style Selector="arc|Button:disabled /template/ Border#PART_Frame">
+          <Setter Property="BorderThickness" Value="0"/>
+          <Setter Property="BorderBrush" Value="Transparent"/>
           <Setter Property="Background" Value="Transparent"/>
         </Style>
       </arc:SelectionToolbar.Styles>

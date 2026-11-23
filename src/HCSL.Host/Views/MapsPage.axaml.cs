@@ -293,13 +293,17 @@ public sealed partial class MapsPage : UserControl
 
     private void UpdateActions()
     {
+        var canEditMembership = !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
         foreach (var action in Selection.Actions)
-            action.IsEnabled = action.Key == "switch" ? selected is { IsSelected: true }
-                : !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
-        if (Selection.Actions.FirstOrDefault(a => a.Key == "delete-workshop") is { } delete)
-            delete.IsEnabled = !savingPool && context?.Model.CanEditMapPool == true && (WorkshopSelection().Length > 0 || SelectedCollections().Length > 0);
-        if (Selection.Actions.FirstOrDefault(a => a.Key == "add") is { } add)
-            add.IsEnabled &= context?.PoolId is null;
+            action.IsEnabled = action.Key switch
+            {
+                "switch" => selected is { IsSelected: true },
+                "add" => canEditMembership && context?.PoolId is null,
+                "remove" => canEditMembership,
+                "delete-workshop" => !savingPool && context?.Model.CanEditMapPool == true &&
+                    (WorkshopSelection().Length > 0 || SelectedCollections().Length > 0),
+                _ => false
+            };
     }
 
     private sealed record CollectionBranch(string Key, string Name, IReadOnlyList<MapRow> Children);
