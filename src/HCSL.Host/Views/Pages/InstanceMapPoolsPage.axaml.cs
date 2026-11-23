@@ -10,14 +10,18 @@ using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views.Pages;
 
-/// <summary>地图池: the instance-wide pool library. Pools are shared by every preset of this instance.</summary>
+/// <summary>
+/// 地图池 of an instance: the library (create, rename, delete) plus the console map page in pool-editing mode, where the
+/// checkboxes add and remove maps. A preset only chooses a pool; it never edits one.
+/// </summary>
 public partial class InstanceMapPoolsPage : UserControl
 {
     private HostServerController? subscribed;
     private MapPoolLibrary? library;
     private MapPoolRow[] rows = [];
     private MapPoolRow? browsed;
-    private bool operating, loaded, loading;
+    private MapsPage? maps;
+    private bool operating, loaded;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private InstanceDefinition? Instance => Model?.Selected?.Entry.Definition;
@@ -51,8 +55,6 @@ public partial class InstanceMapPoolsPage : UserControl
     {
         if (!IsVisible) return;
         Update();
-        // The library only depends on the selected instance. Reloading on every notification (Busy in particular) would
-        // read it forever.
         if (loading || operating || Model is not { } m || m.Busy || Instance is not { } instance) return;
         if (instance.Id == loadedInstance) return;
         Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
@@ -89,11 +91,26 @@ public partial class InstanceMapPoolsPage : UserControl
         finally { loading = false; Update(); }
     }
 
-    private void PoolSelected(object? sender, SelectionChangedEventArgs e)
+    private bool loading;
+
+    private async void PoolSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (PoolChoices.SelectedItem is not MapPoolRow row) return;
         browsed = row;
         Update();
+        await ShowMapsAsync(row.Pool);
+    }
+
+    /// <summary>The map table is the console page in pool-editing mode: one instance of it, re-attached per pool.</summary>
+    private async Task ShowMapsAsync(MapPoolRecord pool)
+    {
+        if (Model is not { } m || Instance is not { } instance) return;
+        maps ??= new MapsPage();
+        if (!ReferenceEquals(MapsHost.Content, maps)) MapsHost.Content = maps;
+        var preset = instance.SelectedPresetId;
+        await maps.AttachAsync(new MapsPageContext(m, instance.Id, preset,
+            options => Owner?.ShowInstanceNotification(options.Title, options.Description, options.Kind), pool.Id));
+        MapsText.Text = pool.Maps.Length == 0 ? "空图池：勾选地图即可加入" : "";
     }
 
     private void Update()
@@ -105,14 +122,11 @@ public partial class InstanceMapPoolsPage : UserControl
         RenameButton.IsEnabled = writable && browsed is not null;
         DeleteButton.IsEnabled = writable && browsed is not null;
         RefreshButton.IsEnabled = connected;
-        MapsText.Text = browsed is not { Pool.Maps.Length: > 0 } row
-            ? "该图池还没有地图"
-            : string.Join(" · ", row.Pool.Maps.Select(ServerMapRules.Label));
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
 
-    /// <summary>All writes share one shape: send the command, report the failure, then reload the library.</summary>
+    /// <summary>All pool writes share one shape: send the command, report the failure, then reload library and table.</summary>
     private async Task WriteAsync(Func<InstanceDefinition, MapPoolLibraryCommand> command)
     {
         if (operating || Model is not { } m || Instance is not { } instance) return;
@@ -120,7 +134,13 @@ public partial class InstanceMapPoolsPage : UserControl
         Update();
         try { await m.MapPoolsAsync(command(instance)); }
         catch (IOException error) { Error("图池未保存", error.Message); }
-        finally { operating = false; loaded = false; Update(); await LoadAsync(); }
+        finally { operating = false; loaded = false; Update(); await LoadAsync(); await RefreshMapsAsync(); }
+    }
+
+    private async Task RefreshMapsAsync()
+    {
+        if (browsed is { } row) await ShowMapsAsync(row.Pool);
+        else MapsHost.Content = null;
     }
 
     private async void CreatePool(object? sender, RoutedEventArgs e)
@@ -129,7 +149,6 @@ public partial class InstanceMapPoolsPage : UserControl
         if (await owner.TextAsync("新建图池", "图池名称（1–40 字符）", null, MapPoolLibraryRules.MaxNameLength) is not { } name) return;
         await WriteAsync(instance => new MapPoolLibraryCommand(MapPoolLibraryAction.Create,
             instance.Id, instance.Revision, Name: name));
-        Owner.ShowInstanceNotification("图池已创建", name, ToastKind.Success);
     }
 
     private async void RenamePool(object? sender, RoutedEventArgs e)
@@ -155,5 +174,6 @@ public partial class InstanceMapPoolsPage : UserControl
         if (operating) return;
         loaded = false;
         await LoadAsync();
+        await RefreshMapsAsync();
     }
 }

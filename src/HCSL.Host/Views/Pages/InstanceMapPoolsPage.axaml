@@ -1,38 +1,38 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             xmlns:pages="using:HCSL.Host.Views.Pages"
              xmlns:vm="using:HCSL.Host.ViewModels"
-             x:Class="HCSL.Host.Views.Pages.InstanceMapPoolsPage" x:CompileBindings="False">
-  <Border Padding="{DynamicResource ConsolePageInset}">
-    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-      <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-        <arc:Button x:Name="CreateButton" Content="新建图池" Variant="Primary" Size="Medium" Click="CreatePool"/>
-        <arc:Button x:Name="RenameButton" Content="重命名" Variant="Secondary" Size="Medium" Click="RenamePool"/>
-        <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
-                           HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
-        <arc:Button x:Name="RefreshButton" Content="刷新" Variant="Secondary" Size="Medium" Click="Refresh"/>
-      </WrapPanel>
-      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <arc:RadioGroup x:Name="PoolChoices" AutomationProperties.Name="图池"
-                        SelectionChanged="PoolSelected">
-          <arc:RadioGroup.ItemTemplate>
-            <DataTemplate x:DataType="vm:MapPoolRow">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
-                <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
-                  <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                             FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
-                </StackPanel>
-                <arc:Badge Grid.Column="1" Size="Small" Tone="{Binding Tone}" Content="{Binding Count}"
-                           VerticalAlignment="Center"/>
-              </Grid>
-            </DataTemplate>
-          </arc:RadioGroup.ItemTemplate>
-        </arc:RadioGroup>
-      </ScrollViewer>
-      <TextBlock x:Name="MapsText" Grid.Row="2" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                 TextWrapping="Wrap"/>
-    </Grid>
-  </Border>
+             x:Class="HCSL.Host.Views.Pages.InstanceMapPoolsPage"
+             x:CompileBindings="False" Classes="instance-pools-page">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="{arc:ArcDesignTokenResource Space3}"
+        Margin="{DynamicResource ConsolePageInset}">
+    <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
+      <arc:Button x:Name="CreateButton" Content="新建图池" Variant="Primary" Size="Medium" Click="CreatePool"/>
+      <arc:Button x:Name="RenameButton" Content="重命名" Variant="Secondary" Size="Medium" Click="RenamePool"/>
+      <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
+                         HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
+      <arc:Button x:Name="RefreshButton" Content="刷新" Variant="Secondary" Size="Medium" Click="Refresh"/>
+    </WrapPanel>
+    <!-- Pools belong to the instance; the map table below is the console map page in pool-editing mode. -->
+    <arc:RadioGroup x:Name="PoolChoices" Grid.Row="1" AutomationProperties.Name="图池"
+                    SelectionChanged="PoolSelected">
+      <arc:RadioGroup.ItemTemplate>
+        <DataTemplate x:DataType="vm:MapPoolRow">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+            <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
+              <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                         FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
+            </StackPanel>
+            <arc:Badge Grid.Column="1" Size="Small" Tone="{Binding Tone}" Content="{Binding Count}"
+                       VerticalAlignment="Center"/>
+          </Grid>
+        </DataTemplate>
+      </arc:RadioGroup.ItemTemplate>
+    </arc:RadioGroup>
+    <ContentControl x:Name="MapsHost" Grid.Row="2" HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"/>
+    <TextBlock x:Name="MapsText" Grid.Row="3" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+               TextWrapping="Wrap"/>
+  </Grid>
 </UserControl>

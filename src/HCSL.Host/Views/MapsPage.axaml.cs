@@ -12,7 +12,8 @@ using TKCode.Arc;
 namespace HCSL.Host.Views;
 
 /// <summary>What the maps page needs from the console window: the controllers, the current preset and a toast sink.</summary>
-public sealed record MapsPageContext(HostServerController Model, Guid InstanceId, Guid PresetId, Action<ToastOptions> Notify);
+public sealed record MapsPageContext(HostServerController Model, Guid InstanceId, Guid PresetId, Action<ToastOptions> Notify,
+    Guid? PoolId = null);
 
 /// <summary>
 /// The console's map page: the app-level map catalog filtered through Arc's toolbar blocks. Exactly one map can be
@@ -60,6 +61,8 @@ public sealed partial class MapsPage : UserControl
     private void OnRowClicked(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
         if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left) return;
+        // Pool editing reads the checkbox, not the row: a stray click must not toggle membership.
+        if (context?.PoolId is not null) return;
         var point = e.GetPosition(Table);
         double? bandTop = null, bandBottom = null;
         foreach (var container in Table.GetVisualDescendants().OfType<Control>())
@@ -117,12 +120,20 @@ public sealed partial class MapsPage : UserControl
             ctx.Notify(new ToastOptions { Title = "无法读取图池", Description = e.Message + "；地图列表仍可使用", Kind = ToastKind.Warning });
         }
         allRows.Clear();
+        // Pool editing marks the rows of that pool and lets the checkboxes add or remove them.
+        var edited = ctx.PoolId is { } poolId ? pools.FirstOrDefault(p => p.Id == poolId) : null;
         foreach (var entry in catalog.Entries)
         {
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
                 .Select(p => p.Name).ToArray();
-            var row = new MapRow(entry, names);
-            row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
+            var row = new MapRow(entry, names) { ShowPoolCheck = ctx.PoolId is not null };
+            if (edited is not null)
+                row.IsInEditedPool = edited.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key);
+            row.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row);
+                else if (e.PropertyName == nameof(MapRow.IsInEditedPool)) _ = ToggleMembershipAsync(row);
+            };
             allRows.Add(row);
         }
         FillPoolFilter(pools, library?.Library.PoolOf(ctx.PresetId)?.Id);
@@ -137,7 +148,14 @@ public sealed partial class MapsPage : UserControl
                 ? new MapCatalogEntry(target.Value, MapCatalogSource.Standard, null)
                 : new MapCatalogEntry("Workshop #" + target.Value, MapCatalogSource.Workshop, target.Value, Incomplete: true);
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key)).Select(p => p.Name).ToArray();
-            allRows.Add(new MapRow(entry, names));
+            var orphan = new MapRow(entry, names) { ShowPoolCheck = ctx.PoolId is not null };
+            if (edited is not null)
+                orphan.IsInEditedPool = edited.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key);
+            orphan.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(MapRow.IsInEditedPool)) _ = ToggleMembershipAsync(orphan);
+            };
+            allRows.Add(orphan);
         }
         Apply();
     }
@@ -205,8 +223,38 @@ public sealed partial class MapsPage : UserControl
         UpdateActions();
     }
 
-    private void UpdateActions() =>
-        Selection.Actions.Single(a => a.Key == "switch").IsEnabled = selected is { IsSelected: true };
+    private void UpdateActions()
+    {
+        if (Selection.Actions.FirstOrDefault(a => a.Key == "switch") is { } action)
+            action.IsEnabled = selected is { IsSelected: true };
+    }
+
+    /// <summary>
+    /// A checkbox toggles one map's membership. Rows that cannot join a pool (previews, unfinished downloads) are
+    /// silently ignored and put back, so a disabled checkbox can never leave a pending state.
+    /// </summary>
+    private async Task ToggleMembershipAsync(MapRow row)
+    {
+        if (context is not { PoolId: { } poolId } ctx || library is null) return;
+        if (!row.CanEditPool) { row.IsInEditedPool = !row.IsInEditedPool; return; }
+        var pool = library.Library.Pools.FirstOrDefault(p => p.Id == poolId);
+        if (pool is null) { row.IsInEditedPool = !row.IsInEditedPool; return; }
+        var key = MapCatalogRules.KeyOf(row.Target);
+        var maps = row.IsInEditedPool
+            ? pool.Maps.Concat([row.Target]).GroupBy(MapCatalogRules.KeyOf).Select(g => g.First()).ToArray()
+            : pool.Maps.Where(m => MapCatalogRules.KeyOf(m) != key).ToArray();
+        try
+        {
+            var result = await ctx.Model.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.SaveMaps,
+                ctx.InstanceId, Maps: maps, PoolId: poolId));
+            library = result;
+        }
+        catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
+        {
+            row.IsInEditedPool = !row.IsInEditedPool;
+            ctx.Notify(new ToastOptions { Title = "图池未保存", Description = e.Message, Kind = ToastKind.Error });
+        }
+    }
 
     private void FiltersChanged(object? sender, FilterToolbarFiltersChangedEventArgs e) => Apply();
 
