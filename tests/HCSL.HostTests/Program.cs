@@ -140,8 +140,12 @@ if (only is null or "background")
     ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("settings"); Layout();
     Check(scene.IsEffectivelyVisible && scene.ImageSource is not null && titlebar.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 },
         "Other pages and the transparent title bar must keep the same wallpaper.");
-    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home");
+    Check(chrome.CoversWorkspace && !shadowLayer.IsVisible, "Wallpaper must use continuous workspace chrome without seam shadows.");
     owner.ResetBackground(); Layout();
+    Check(scene.ImageSource is null && chrome.CoversWorkspace && !shadowLayer.IsVisible,
+        "Without wallpaper the workspace must still use continuous chrome.");
+    ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home"); Layout();
+    Check(!chrome.CoversWorkspace && shadowLayer.IsVisible, "Home must restore the original L-shaped chrome.");
     Check(scene.ImageSource is null && homeSurface.Background is Avalonia.Media.ISolidColorBrush { Color.A: 0 },
         "Resetting wallpaper must restore the shared default background without a private home overlay.");
     Console.WriteLine("PASS gui.background.full-window-wallpaper-titlebar-sidebar-strength-and-reset");

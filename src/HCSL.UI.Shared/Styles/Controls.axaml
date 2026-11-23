@@ -3,11 +3,11 @@
         xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
         xmlns:ui="using:HCSL.UI.Shared.Services"
         xmlns:controls="clr-namespace:HCSL.UI.Shared.Controls;assembly=HCSL.UI.Shared">
-  <Style Selector="arc|ArcWindow.wallpaper-shell.workspace-mode.has-wallpaper /template/ controls|LShapedFrostedChrome#PART_ShellChrome">
+  <Style Selector="arc|ArcWindow.wallpaper-shell.workspace-mode /template/ controls|LShapedFrostedChrome#PART_ShellChrome">
     <Setter Property="CoversWorkspace" Value="True"/>
   </Style>
   <Style Selector="Border.workspace-panel">
-    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
+    <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowResting}"/>
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
         <GradientStop Offset="0" Color="{DynamicResource BackdropStartColor}"/>
