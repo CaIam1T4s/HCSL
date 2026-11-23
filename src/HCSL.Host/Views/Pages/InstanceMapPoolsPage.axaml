@@ -4,35 +4,42 @@
              xmlns:vm="using:HCSL.Host.ViewModels"
              x:Class="HCSL.Host.Views.Pages.InstanceMapPoolsPage"
              x:CompileBindings="False" Classes="instance-pools-page">
-  <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="{arc:ArcDesignTokenResource Space3}"
-        Margin="{DynamicResource ConsolePageInset}">
-    <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-      <arc:Button x:Name="CreateButton" Content="新建图池" Variant="Primary" Size="Medium" Click="CreatePool"/>
-      <arc:Button x:Name="RenameButton" Content="重命名" Variant="Secondary" Size="Medium" Click="RenamePool"/>
-      <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
-                         HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
-      <arc:Button x:Name="RefreshButton" Content="刷新" Variant="Secondary" Size="Medium" Click="Refresh"/>
-    </WrapPanel>
-    <!-- Pools belong to the instance; the map table below is the console map page in pool-editing mode. -->
-    <arc:RadioGroup x:Name="PoolChoices" Grid.Row="1" AutomationProperties.Name="图池"
-                    SelectionChanged="PoolSelected">
-      <arc:RadioGroup.ItemTemplate>
-        <DataTemplate x:DataType="vm:MapPoolRow">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
-            <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
-              <TextBlock Text="{Binding Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
-              <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                         FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
-            </StackPanel>
-            <arc:Badge Grid.Column="1" Size="Small" Tone="{Binding Tone}" Content="{Binding Count}"
-                       VerticalAlignment="Center"/>
-          </Grid>
-        </DataTemplate>
-      </arc:RadioGroup.ItemTemplate>
-    </arc:RadioGroup>
-    <ContentControl x:Name="MapsHost" Grid.Row="2" HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch"/>
-    <TextBlock x:Name="MapsText" Grid.Row="3" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-               TextWrapping="Wrap"/>
+  <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}" Margin="{DynamicResource ConsolePageInset}">
+    <arc:Tabs x:Name="ManagementTabs" ContentMargin="0" SelectedIndex="0">
+      <arc:TabItem x:Name="PoolTab" Header="图池管理"/>
+      <arc:TabItem x:Name="MapsTab" Header="地图管理"/>
+    </arc:Tabs>
+    <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}" RowDefinitions="Auto,*"
+          RowSpacing="{arc:ArcDesignTokenResource Space3}">
+      <arc:ExpandingButtonGroup x:Name="PoolActions" Classes="launch-actions" Label="图池列表操作"
+                                HorizontalAlignment="Right">
+        <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="新建图池" Click="CreatePool"/>
+        <arc:ExpandingButtonGroupItem x:Name="AddMapsButton" Label="添加地图" Click="AddMaps"/>
+        <arc:ExpandingButtonGroupItem x:Name="RenameButton" Label="重命名图池" Click="RenamePool"/>
+        <arc:ExpandingButtonGroupItem x:Name="DeleteAction" Label="删除图池" Click="OpenDelete"/>
+      </arc:ExpandingButtonGroup>
+      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <arc:RadioGroup x:Name="PoolChoices" AutomationProperties.Name="要管理的图池" SelectionChanged="PoolSelected">
+          <arc:RadioGroup.ItemTemplate>
+            <DataTemplate x:DataType="vm:MapPoolRow">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+                </StackPanel>
+                <arc:Badge Grid.Column="1" Content="{Binding Count}" Tone="{Binding Tone}" VerticalAlignment="Center"/>
+              </Grid>
+            </DataTemplate>
+          </arc:RadioGroup.ItemTemplate>
+        </arc:RadioGroup>
+      </ScrollViewer>
+      <arc:EmptyState x:Name="EmptyPools" Grid.Row="1" Title="暂无图池" IsVisible="False"/>
+      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" TriggerMode="Manual">
+        <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
+                           HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
+      </arc:Popover>
+    </Grid>
+    <ContentControl x:Name="MapsHost" Grid.Row="1" IsVisible="{Binding #MapsTab.IsSelected}"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
   </Grid>
 </UserControl>

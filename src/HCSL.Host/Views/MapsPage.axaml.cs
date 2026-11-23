@@ -13,7 +13,8 @@ namespace HCSL.Host.Views;
 
 /// <summary>What the maps page needs from the console window: the controllers, the current preset and a toast sink.</summary>
 public sealed record MapsPageContext(HostServerController Model, Guid InstanceId, Guid PresetId, Action<ToastOptions> Notify,
-    Guid? PoolId = null);
+    Guid? PoolId = null, bool ManagePools = false, Guid? AddToPoolId = null,
+    Action<MapPoolLibraryResult>? PoolsChanged = null);
 
 /// <summary>
 /// The console's map page: the app-level map catalog filtered through Arc's toolbar blocks. Exactly one map can be
@@ -21,11 +22,19 @@ public sealed record MapsPageContext(HostServerController Model, Guid InstanceId
 /// </summary>
 public sealed partial class MapsPage : UserControl
 {
-    private readonly ObservableCollection<MapRow> allRows = [], visible = [];
+    private readonly ObservableCollection<MapRow> allRows = [];
+    private List<MapRow> visible = [];
     private MapsPageContext? context;
     private MapPoolLibraryResult? library;
     private MapRow? selected;
     private int reloadVersion;
+    public static readonly StyledProperty<bool> ManagePoolsProperty =
+        AvaloniaProperty.Register<MapsPage, bool>(nameof(ManagePools));
+    public bool ManagePools
+    {
+        get => GetValue(ManagePoolsProperty);
+        private set => SetValue(ManagePoolsProperty, value);
+    }
 
     public MapsPage()
     {
@@ -64,7 +73,7 @@ public sealed partial class MapsPage : UserControl
     {
         if (e.InitialPressMouseButton != Avalonia.Input.MouseButton.Left) return;
         // Pool editing reads the checkbox, not the row: a stray click must not toggle membership.
-        if (context?.PoolId is not null) return;
+        if (context?.ManagePools == true) return;
         var point = e.GetPosition(Table);
         double? bandTop = null, bandBottom = null;
         foreach (var container in Table.GetVisualDescendants().OfType<Control>())
@@ -92,10 +101,17 @@ public sealed partial class MapsPage : UserControl
 
     public async Task AttachAsync(MapsPageContext value)
     {
-        context = value;
-        if (value.PoolId is not null && !Table.IsSelectable)
+        if (context is { } old && (old.InstanceId != value.InstanceId || old.PoolId != value.PoolId))
         {
-            Filters.Actions = null;
+            library = null;
+            ClearSelection(this, new RoutedEventArgs());
+            Table.ItemsSource = visible = [];
+        }
+        context = value;
+        if (value.ManagePools && !Table.IsSelectable)
+        {
+            ManagePools = true;
+            Table.LayoutUpdated += HidePoolTableFooter;
             Table.Columns.RemoveAt(Table.Columns.Count - 1);
             Table.Columns.RemoveAt(0);
             Table.Columns[^1].Width = new GridLength(1, GridUnitType.Star);
@@ -104,8 +120,7 @@ public sealed partial class MapsPage : UserControl
             Selection.Actions.Clear();
             Selection.Actions.Add(new SelectionToolbarAction { Key = "add", Label = "添加到图池" });
             Selection.Actions.Add(new SelectionToolbarAction { Key = "remove", Label = "从图池移除" });
-            var source = Filters.Fields.First(f => f.Id == "source");
-            source.Options.Remove(source.Options.First(o => o.Value == "preview"));
+
         }
         await ReloadAsync();
     }
@@ -139,7 +154,7 @@ public sealed partial class MapsPage : UserControl
         var pools = snapshot?.Library.Pools ?? [];
         ClearSelection(this, new RoutedEventArgs());
         allRows.Clear();
-        foreach (var entry in catalog.Entries.Where(e => ctx.PoolId is null || e.Source != MapCatalogSource.Preview))
+        foreach (var entry in catalog.Entries)
         {
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
                 .Select(p => p.Name).ToArray();
@@ -196,15 +211,20 @@ public sealed partial class MapsPage : UserControl
             .Where(v => v is { Length: > 0 })
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var pools = chips.Where(c => c.Id == "pool").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        visible.Clear();
+        var scope = context?.PoolId;
+        var members = library?.Library.Pools.FirstOrDefault(p => p.Id == scope)?.Maps
+            .Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var next = new List<MapRow>();
         foreach (var row in allRows)
         {
+            if (scope is not null && members?.Contains(row.Key) != true) continue;
             if (sources.Count > 0 && !row.SourceFilterValues.Any(sources.Contains)) continue;
             if (pools.Count > 0 && !row.PoolNames.Any(pools.Contains)) continue;
             if (query.Length > 0 && !row.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
-            visible.Add(row);
+            next.Add(row);
         }
+        Table.ItemsSource = visible = next;
         if (Table.IsSelectable) UpdatePoolSelection();
         else UpdateActions();
     }
@@ -232,10 +252,19 @@ public sealed partial class MapsPage : UserControl
         foreach (var action in Selection.Actions)
             action.IsEnabled = action.Key == "switch" ? selected is { IsSelected: true }
                 : !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
+        if (Selection.Actions.FirstOrDefault(a => a.Key == "add") is { } add)
+            add.IsEnabled &= context?.PoolId is null;
     }
 
     private bool savingPool;
     private GlassMenu? poolMenu;
+
+    private void HidePoolTableFooter(object? sender, EventArgs e)
+    {
+        // Arc binds this generated part at template priority, above an ordinary style setter.
+        if (Table.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Name == "PART_Footer") is { IsVisible: true } footer)
+            footer.IsVisible = false;
+    }
 
     private void UpdatePoolSelection()
     {
@@ -250,14 +279,23 @@ public sealed partial class MapsPage : UserControl
         if (savingPool || library is not { } snapshot || Table.SelectedItems is not { Count: > 0 } items) return;
         var rows = items.OfType<MapRow>().Where(visible.Contains).ToArray();
         poolMenu?.Close();
-        var menu = poolMenu = new GlassMenu();
-        foreach (var pool in snapshot.Library.Pools.OrderBy(p => p.Name, StringComparer.CurrentCulture))
+        var menu = poolMenu = new GlassMenu { Placement = PlacementMode.TopEdgeAlignedLeft };
+        if (!add && ctx.PoolId is { } current && snapshot.Library.Pools.FirstOrDefault(p => p.Id == current) is { } active)
         {
-            var item = new GlassMenuItem { Content = pool.Name };
+            _ = ChangePoolAsync(ctx, snapshot, active, rows, false);
+            return;
+        }
+        foreach (var pool in snapshot.Library.Pools.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
+                     .ThenBy(p => p.Name, StringComparer.CurrentCulture))
+        {
+            var item = new GlassMenuItem { Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name };
             item.Click += async (_, _) => await ChangePoolAsync(ctx, snapshot, pool, rows, add);
             menu.Items.Add(item);
         }
-        if (menu.Items.Count > 0) menu.Open(Selection);
+        var key = add ? "add" : "remove";
+        var anchor = Selection.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .FirstOrDefault(b => b.Tag is SelectionToolbarAction action && action.Key == key);
+        if (menu.Items.Count > 0 && anchor is not null) menu.Open(anchor);
     }
 
     private async Task ChangePoolAsync(MapsPageContext ctx, MapPoolLibraryResult snapshot, MapPoolRecord pool,
@@ -267,7 +305,7 @@ public sealed partial class MapsPage : UserControl
         var keys = pool.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var selectedKeys = rows.Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var maps = add
-            ? pool.Maps.Concat(rows.Where(r => !r.Entry.Incomplete && r.Source != MapCatalogSource.Preview && keys.Add(r.Key))
+            ? pool.Maps.Concat(rows.Where(r => keys.Add(MapCatalogRules.KeyOf(r.Target)))
                 .Select(r => r.Target)).ToArray()
             : pool.Maps.Where(m => !selectedKeys.Contains(MapCatalogRules.KeyOf(m))).ToArray();
         if (maps.Length == pool.Maps.Length) return;
@@ -277,9 +315,13 @@ public sealed partial class MapsPage : UserControl
         UpdateActions();
         try
         {
-            await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.SaveMaps, ctx.InstanceId, instance.Revision,
+            var result = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.SaveMaps, ctx.InstanceId, instance.Revision,
                 pool.Id, Maps: maps, ExpectedRevision: snapshot.Library.Revision, ExpectedHash: snapshot.Hash));
-            if (ReferenceEquals(ctx, context)) await ReloadAsync();
+            if (ReferenceEquals(ctx, context))
+            {
+                ctx.PoolsChanged?.Invoke(result);
+                await ReloadAsync();
+            }
         }
         catch (Exception error) when (error is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
         {
@@ -299,7 +341,7 @@ public sealed partial class MapsPage : UserControl
     private void ClearSelection(object? sender, RoutedEventArgs e)
     {
         poolMenu?.Close();
-        if (Table.IsSelectable) Table.ClearSelection();
+        if (Table.IsSelectable && Table.SelectedItems is { Count: > 0 }) Table.ClearSelection();
         foreach (var row in allRows) row.IsSelected = false;
         selected = null;
         Selection.SelectedCount = 0;

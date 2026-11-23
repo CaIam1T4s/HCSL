@@ -576,6 +576,27 @@ Check(!mapRows[1].IsSelected && mapRows[3].IsSelected && mapsSelection.SelectedC
 mapRows[3].IsSelected = false; Layout();
 Check(mapsSelection.Actions.All(a => !a.IsEnabled), "Clearing the selection must disable the switch.");
 mapsWindow.Close(); Layout();
+var editor = new HCSL.Host.Views.MapsPage();
+var editorWindow = new Window { Width = 900, Height = 640, Content = editor };
+editorWindow.Show(owner); Layout();
+var editorContext = new HCSL.Host.Views.MapsPageContext(model, mapEntry.Entry.Id, mapPreset.Id, mapToasts.Add, ManagePools: true);
+PumpUntil(editor.AttachAsync(editorContext)); Layout();
+var editorTable = editor.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
+Check(editorTable.IsSelectable && editorTable.Columns.Count == 3 && editorTable.ItemsSource!.Cast<object>().Count() == 4,
+    "All maps must include the full catalog with Arc checkboxes and no console selection columns.");
+Check(!editor.FindControl<StackPanel>("CatalogActions")!.IsVisible, "Console filter actions must be hidden in the pool editor.");
+editorTable.SelectAll(); Layout();
+Check(!editorTable.GetVisualDescendants().OfType<Border>().Any(b => b.Name == "PART_Footer" && b.IsVisible),
+    "The table's built-in selection footer must stay hidden after Select All.");
+Check(editor.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single().Fields.Any(f => f.Id == "pool"),
+    "The map editor must offer the pool filter.");
+var poolSnapshot = model.MapPoolsAsync(new(MapPoolLibraryAction.List, mapInstance));
+PumpUntil(poolSnapshot);
+var editorPool = poolSnapshot.Result.Library.Pools.Single();
+PumpUntil(editor.AttachAsync(editorContext with { PoolId = editorPool.Id })); Layout();
+Check(editorTable.ItemsSource!.Cast<object>().Count() == editorPool.Maps.Length && (editorTable.SelectedItems?.Count ?? 0) == 0,
+    "Switching to a pool must show only its members and clear selection.");
+editorWindow.Close(); Layout();
 Console.WriteLine("PASS gui.maps.catalog-filters-selection-and-rotation-hint");
 if (only is "maps") return 0;
 }

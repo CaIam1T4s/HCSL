@@ -80,7 +80,7 @@ public sealed class MapRow : INotifyPropertyChanged
             var letters = name.Where(char.IsAsciiLetter).Take(2).ToArray();
             var han = name.FirstOrDefault(c => c is >= '\u3400' and <= '\u9fff');
             var label = han != default ? han.ToString() : letters.Length > 0 ? string.Join(" ", letters) : name;
-            pools.Add(new PresenceStackViewer(label, detail: name));
+            pools.Add(new PresenceStackViewer(label, detail: string.Equals(label, name, StringComparison.OrdinalIgnoreCase) ? null : name));
         }
         poolName = names.Count == 0 ? null : string.Join("、", names);
         inPool = names.Count > 0;
