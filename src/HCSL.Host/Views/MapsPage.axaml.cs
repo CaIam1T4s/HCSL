@@ -293,13 +293,14 @@ public sealed partial class MapsPage : UserControl
 
     private void UpdateActions()
     {
-        var canEditMembership = !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
+        var canEditMembership = !savingPool && context?.Model.CanEditMapPool == true && library is not null;
+        var rows = canEditMembership ? SelectedPoolMaps() : [];
         foreach (var action in Selection.Actions)
             action.IsEnabled = action.Key switch
             {
                 "switch" => selected is { IsSelected: true },
-                "add" => canEditMembership && context?.PoolId is null,
-                "remove" => canEditMembership,
+                "add" => canEditMembership && context?.PoolId is null && EditablePools(library!, rows, true).Any(),
+                "remove" => canEditMembership && EditablePools(library!, rows, false).Any(),
                 "delete-workshop" => !savingPool && context?.Model.CanEditMapPool == true &&
                     (WorkshopSelection().Length > 0 || SelectedCollections().Length > 0),
                 _ => false
@@ -327,30 +328,35 @@ public sealed partial class MapsPage : UserControl
             .DistinctBy(row => row.Key, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
+    private IEnumerable<MapPoolRecord> EditablePools(MapPoolLibraryResult snapshot, MapRow[] rows, bool add)
+    {
+        if (rows.Length == 0) yield break;
+        var selectedKeys = rows.Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var pool in snapshot.Library.Pools)
+        {
+            if (pool.Maps.Any(m => m.Kind == ServerMapKind.WorkshopCollection) ||
+                (!add && context?.PoolId is { } scope && scope != pool.Id)) continue;
+            var keys = pool.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (add ? !selectedKeys.IsSubsetOf(keys) : selectedKeys.Overlaps(keys)) yield return pool;
+        }
+    }
+
     private void OpenPoolMenu(MapsPageContext ctx, bool add)
     {
-        if (savingPool || library is not { } snapshot) return;
+        if (savingPool || !ctx.Model.CanEditMapPool || library is not { } snapshot) return;
         var rows = SelectedPoolMaps();
-        if (rows.Length == 0) return;
+        var targets = EditablePools(snapshot, rows, add).ToArray();
+        if (targets.Length == 0) return;
         poolMenu?.Close();
         var menu = poolMenu = new GlassMenu { Placement = PlacementMode.TopEdgeAlignedLeft };
-        if (!add && ctx.PoolId is { } current && snapshot.Library.Pools.FirstOrDefault(p => p.Id == current) is { } active)
+        if (!add && ctx.PoolId is { } current && targets.FirstOrDefault(p => p.Id == current) is { } active)
         {
             _ = ChangePoolAsync(ctx, snapshot, active, rows, false);
             return;
         }
-        var selectedKeys = rows.Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var pool in snapshot.Library.Pools.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
+        foreach (var pool in targets.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
                      .ThenBy(p => p.Name, StringComparer.CurrentCulture))
         {
-            if (pool.Maps is [{ Kind: ServerMapKind.WorkshopCollection }])
-            {
-                if (pool.CollectionMembers?.Any(member => selectedKeys.Contains("workshop:" + member.Id)) == true)
-                    menu.Items.Add(new GlassMenuItem { Content = $"{pool.Name}（合集，只读）", IsEnabled = false });
-                continue;
-            }
-            var keys = pool.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (add ? selectedKeys.IsSubsetOf(keys) : !selectedKeys.Overlaps(keys)) continue;
             var item = new GlassMenuItem { Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name };
             item.Click += async (_, _) => await ChangePoolAsync(ctx, snapshot, pool, rows, add);
             menu.Items.Add(item);
@@ -358,8 +364,6 @@ public sealed partial class MapsPage : UserControl
         var key = add ? "add" : "remove";
         var anchor = Selection.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
             .FirstOrDefault(b => b.Tag is SelectionToolbarAction action && action.Key == key);
-        if (menu.Items.Count == 0)
-            menu.Items.Add(new GlassMenuItem { Content = add ? "没有可添加的图池" : "所选地图不在可编辑的图池中", IsEnabled = false });
         if (anchor is not null) menu.Open(anchor);
     }
 
@@ -420,7 +424,10 @@ public sealed partial class MapsPage : UserControl
     {
         if (CollectionTree.IsVisible && CollectionTree.SelectedKeys?.Any(key => key is string) == true) return [];
         var rows = SelectedPoolMaps();
-        return rows.All(r => r.Source == MapCatalogSource.Workshop && r.WorkshopId is not null)
+        var pools = library?.Library.Pools;
+        return pools is not null && rows.All(r => r.Source == MapCatalogSource.Workshop && r.WorkshopId is { } id &&
+            !pools.Any(p => p.Maps.Any(m => m.Kind == ServerMapKind.Workshop && m.Value == id) ||
+                p.CollectionMembers?.Any(member => member.Id == id) == true))
             ? rows.Select(r => r.WorkshopId!).Distinct().ToArray() : [];
     }
 
