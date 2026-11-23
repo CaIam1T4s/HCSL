@@ -84,6 +84,12 @@
 
     <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" HorizontalAlignment="Stretch"
                           SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
+      <arc:SelectionToolbar.Styles>
+        <Style Selector="arc|Button:disabled /template/ Border#PART_Frame">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+      </arc:SelectionToolbar.Styles>
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
       </arc:SelectionToolbar.Actions>
