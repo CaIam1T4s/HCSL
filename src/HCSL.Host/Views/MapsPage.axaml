@@ -59,6 +59,9 @@
     <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" HorizontalAlignment="Stretch"
                           SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
       <arc:SelectionToolbar.Styles>
+        <Style Selector="arc|Button:not(:disabled)">
+          <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
+        </Style>
         <Style Selector="arc|Button:disabled /template/ Border#PART_Frame">
           <Setter Property="Background" Value="Transparent"/>
           <Setter Property="BorderBrush" Value="Transparent"/>
