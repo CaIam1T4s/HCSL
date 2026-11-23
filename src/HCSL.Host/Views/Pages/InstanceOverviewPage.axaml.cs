@@ -162,8 +162,24 @@ public partial class InstanceOverviewPage : UserControl
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
         if (await owner.ChooseAsync("清理无用部署", "删除上次部署中断留下的 journal 与临时目录；运行目录不受影响，不会启动 CS2。", "取消", "确认清理") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
-        if (!await m.RecoverDeploymentAsync()) { Error("清理未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
-        for (var waited = 0; m.Server.Active && waited < 1200; waited++) await Task.Delay(500);
+        var previousRun = m.Server.RunId;
+        if (!m.CanRecoverDeployment) { Error("当前无法清理", "请确认服务器已停止且宿主空闲。"); return; }
+        if (!await m.RecoverDeploymentAsync())
+        {
+            Error("清理未提交", m.Server.ErrorText is { Length: > 0 } error ? error : "请检查宿主连接后重试。");
+            return;
+        }
+        for (var waited = 0; waited < 1200; waited++)
+        {
+            if (m.Selected?.Entry.Id != d.Id) return;
+            if (m.Server.RunId != previousRun && m.Server.InstanceId == d.Id && !m.Server.Active) break;
+            await Task.Delay(500);
+        }
+        if (m.Server.RunId == previousRun || m.Server.InstanceId != d.Id || m.Server.Active)
+        {
+            Error("尚未确认清理结果", "请查看宿主状态。");
+            return;
+        }
         var done = m.Server.Code == "HCSL-SERVER-DEPLOY-RECOVERED";
         Owner?.ShowInstanceNotification(done ? "已清理无用部署" : "清理未完成", m.Server.DetailText,
             done ? ToastKind.Success : ToastKind.Error);
