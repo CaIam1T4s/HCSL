@@ -211,18 +211,18 @@ internal static class InstancesPageTests
                 "Property panel must also replace the pointer-positioned context menu at its actual origin.");
             properties.IsOpen = false; Layout();
             var poolReads = daemon.PoolReads;
-            // 实例管理 always manages the startup instance: the row menu makes the clicked row the startup one first.
+            // The row menu manages the row it was opened on without making it the startup instance.
             Invoke(OpenMenu(first), "实例管理"); Layout();
-            Check(shell.IsInstance && shell.IsInstanceOverview && shell.StartupInstanceId == first
-                && model.Selected?.Entry.Id == first && daemon.PoolReads == poolReads,
-                "The row menu management entry must manage the row it was opened on.");
+            Check(shell.IsInstance && shell.IsInstanceOverview && model.Selected?.Entry.Id == first
+                && shell.StartupInstanceId == second && daemon.PoolReads == poolReads,
+                "The row menu must manage the invoked row and leave the startup choice alone.");
             shell.ExitInstanceScope(); Layout();
             Check(shell.IsInstances && model.Selected?.Entry.Id == first, "Back must restore the page management was opened from.");
             shell.NavigateCommand.Execute("instance"); Layout();
-            Check(shell.IsInstance && model.Selected?.Entry.Id == first, "The sidebar entry manages the startup instance.");
+            Check(shell.IsInstance && model.Selected?.Entry.Id == second, "The sidebar entry manages the startup instance.");
             shell.ExitInstanceScope(); Layout();
             shell.NavigateCommand.Execute("home"); Layout();
-            Check(model.Selected?.Entry.Id == first, "Home must restore the startup choice the menu set.");
+            Check(model.Selected?.Entry.Id == second, "Home must restore the startup choice.");
             shell.NavigateCommand.Execute("instances"); Layout();
             ArcMotion.SetLevel(choices, ArcMotionLevel.Full);
             search.Text = "27016"; Layout();
@@ -238,7 +238,7 @@ internal static class InstancesPageTests
             Check(Rows().Length == 2 && leaving.IsPresent, "Clearing the filter before exit ends must cancel removal and restore the same row.");
             search.Text = "missing"; Layout();
             Wait(() => page.FindControl<EmptyState>("Empty")!.IsVisible);
-            Check(Rows().Length == 0 && page.FindControl<EmptyState>("Empty")!.IsVisible && shell.StartupInstanceId == first, "Filtering must not clear startup identity.");
+            Check(Rows().Length == 0 && page.FindControl<EmptyState>("Empty")!.IsVisible && shell.StartupInstanceId == second, "Filtering must not clear startup identity.");
             search.Text = ""; Layout();
             ArcMotion.SetLevel(choices, ArcMotionLevel.Reduced);
             search.Text = "27016"; Layout();
@@ -255,7 +255,7 @@ internal static class InstancesPageTests
                   choices.GetVisualDescendants().OfType<RadioGroupItem>().All(c => c.RenderTransform is TranslateTransform t && Math.Abs(t.Y) > 0.01),
                 "Every reordered item must spring from its old position, even when Avalonia recreates its container.");
             Wait(() => !reorder.IsAnimating);
-            Check(Rows()[0].Id == first && page.FindControl<ExpandingButtonGroupItem>("SortButton")!.Label == "名称升序" && shell.StartupInstanceId == first,
+            Check(Rows()[0].Id == first && page.FindControl<ExpandingButtonGroupItem>("SortButton")!.Label == "名称升序" && shell.StartupInstanceId == second,
                 "Sort menu must change order and label, not startup selection.");
 
             ArcMotion.SetLevel(choices, ArcMotionLevel.Reduced);
@@ -270,7 +270,7 @@ internal static class InstancesPageTests
             Toolbar("SortButton"); Invoke(Menu("sortMenu"), "运行状态升序");
             Check(Rows()[0].Id == first && Rows()[1].StatusText == "运行中", "Status ascending must sort by state rather than name or global run status.");
             Toolbar("SortButton"); Invoke(Menu("sortMenu"), "运行状态降序");
-            Check(Rows()[0].Id == second && shell.StartupInstanceId == first, "Status descending must reorder without changing the startup instance.");
+            Check(Rows()[0].Id == second && shell.StartupInstanceId == second, "Status descending must reorder without changing selection.");
             daemon.IdleForPresetTests = true; daemon.CfgRunIdentity = originalIdentity; daemon.ListRunInstanceId = originalRunInstance;
             Pump(server.RefreshAsync()); Layout();
             Check(daemon.InstanceWrites.Count == originalWriteCount, "Selection, browsing, properties, filtering and sorting must not write metadata.");
@@ -347,7 +347,7 @@ internal static class InstancesPageTests
             Invoke(OpenMenu(first), "启动实例");
             Check(owner.FindControl<Border>("DialogOverlay")!.IsVisible, "Start must preserve existing confirmation.");
             DialogButton(owner, "取消"); Wait(() => Rows().All(r => r.CanEdit));
-            Check(shell.StartupInstanceId == first, "A cancelled contextual start must not replace startup selection.");
+            Check(shell.StartupInstanceId == second, "A cancelled contextual start must not replace startup selection.");
             Invoke(OpenMenu(first), "重命名实例");
             var inputs = owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<Input>().ToArray();
             Check(inputs.Length == 1, "Rename must only show name."); inputs[0].Text = "Alpha renamed";
@@ -356,7 +356,7 @@ internal static class InstancesPageTests
             inputs = owner.FindControl<ContentControl>("DialogContent")!.GetVisualDescendants().OfType<Input>().ToArray();
             inputs[0].Text = "Gamma"; inputs[1].Text = "27017"; DialogButton(owner, "保存");
             Wait(() => Rows().Length == 3 && Rows().All(r => r.CanEdit));
-            Check(shell.StartupInstanceId == first, "Creating another instance must preserve explicit startup selection.");
+            Check(shell.StartupInstanceId == second, "Creating another instance must preserve explicit startup selection.");
             var created = Rows().Single(r => r.Name == "Gamma").Item.Entry.Definition!;
             ArcMotion.SetLevel(choices, ArcMotionLevel.Full);
             var createdRow = choices.ItemsSource!.Cast<InstanceListRow>().Single(r => r.Id == created.Id);

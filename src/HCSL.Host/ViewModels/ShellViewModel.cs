@@ -81,15 +81,23 @@ public sealed class ShellViewModel : ObservableObject
     /// 实例管理 is a scope, not a peer page: entering it records where the operator came from and manages the startup
     /// instance chosen in 实例列表, so the back button restores exactly that one page.
     /// </summary>
-    private void EnterInstanceScope()
+    /// <summary>Opens the scope; without an instance it manages the startup instance chosen in the list.</summary>
+    private void EnterInstanceScope(HostInstanceItem? instance = null)
     {
         if (!IsInstance) returnPageId = SelectedPage.Id;
         if (Pages.FirstOrDefault(page => page.Id == "instance") is not { } page) return;
-        if (StartupInstanceId is { } startup && Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
+        if (instance is not null) Servers.Selected = instance;
+        else if (StartupInstanceId is { } startup && Servers.Instances.FirstOrDefault(i => i.Entry.Id == startup) is { } item)
             Servers.Selected = item;
         SelectedPage = page;
         SelectedInstanceSection = InstanceSections[0];
     }
+
+    /// <summary>
+    /// Manages one instance without making it the startup one: the row menu opens the row it was invoked on, while the
+    /// list keeps its own startup choice.
+    /// </summary>
+    public void OpenInstanceScope(HostInstanceItem? instance = null) => EnterInstanceScope(instance);
 
     public void ExitInstanceScope() => NavigateCommand.Execute(returnPageId ?? "instances");
 

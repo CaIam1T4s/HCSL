@@ -309,10 +309,9 @@ public partial class InstancesPage : UserControl
         });
         Entry("实例管理", LucideIconKind.Settings, nameof(row.CanSelect), () =>
         {
-            // Management always works on the startup instance, so this row becomes the startup instance first.
+            // Opens the row that was invoked; the list's startup choice stays where it was.
             if (!Browse(row) || Model?.Selected is not { } item) return;
-            shell!.SelectStartupInstance(item);
-            shell.NavigateCommand.Execute("instance");
+            shell!.OpenInstanceScope(item);
         });
         Entry("重命名实例", LucideIconKind.PencilLine, nameof(row.CanEdit), async () => await EditAsync(row));
         if (row.Item.Entry.Definition?.LayoutVersion < InstanceRules.CurrentLayoutVersion)
