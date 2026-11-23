@@ -441,8 +441,10 @@ public sealed partial class MapsPage : UserControl
         if (removal is not { } request || !ReferenceEquals(context, request.Context) || savingPool ||
             !request.Ids.ToHashSet().SetEquals(WorkshopSelection()) ||
             !request.Pools.ToHashSet().SetEquals(SelectedCollections().Select(p => p.Id)) || !request.Context.Model.CanEditMapPool) return;
+        var selectedMapKeys = SelectedPoolMaps().Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         savingPool = true;
-        UpdateActions();
+        ClearSelection(this, new RoutedEventArgs());
+        request.Context.Notify(new ToastOptions { Title = "正在移除…", Kind = ToastKind.Info });
         try
         {
             if (request.Pools.Length > 0)
@@ -463,12 +465,25 @@ public sealed partial class MapsPage : UserControl
                 var result = await request.Context.Model.WorkshopCatalogAsync(new(request.Context.InstanceId, Remove: request.Ids));
                 if (result.Detail != "workshop-removed") throw new IOException("请更新并重启守护进程。");
             }
-            if (ReferenceEquals(context, request.Context)) await ReloadAsync();
             request.Context.Notify(new ToastOptions { Title = request.Pools.Length > 0 ? "已移除工坊合集" : "已移除工坊地图", Kind = ToastKind.Success });
+            if (ReferenceEquals(context, request.Context)) await ReloadAsync();
         }
         catch (IOException error)
         {
             request.Context.Notify(new ToastOptions { Title = "未能完成移除", Description = error.Message, Kind = ToastKind.Error });
+            if (ReferenceEquals(context, request.Context))
+            {
+                await ReloadAsync();
+                if (ReferenceEquals(context, request.Context))
+                {
+                    if (CollectionTree.IsVisible)
+                        CollectionTree.SelectedKeys = (CollectionTree.ItemsSource?.Cast<object>() ?? []).SelectMany(node => node is CollectionBranch branch
+                            ? branch.Children.Where(row => selectedMapKeys.Contains(row.Key)).Cast<object>()
+                            : node is MapRow row && selectedMapKeys.Contains(row.Key) ? [node] : []).ToArray();
+                    else Table.SelectedItems = visible.Where(row => selectedMapKeys.Contains(row.Key)).Cast<object>().ToList();
+                    UpdatePoolSelection();
+                }
+            }
         }
         finally { savingPool = false; UpdateActions(); }
     }
