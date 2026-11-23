@@ -134,6 +134,7 @@ public sealed partial class MapsPage : UserControl
             Selection.Actions.Clear();
             Selection.Actions.Add(new SelectionToolbarAction { Key = "add", Label = "添加到图池" });
             Selection.Actions.Add(new SelectionToolbarAction { Key = "remove", Label = "从图池移除" });
+            Selection.Actions.Add(new SelectionToolbarAction { Key = "delete-workshop", Label = "移除地图" });
 
         }
         await ReloadAsync();
@@ -290,6 +291,8 @@ public sealed partial class MapsPage : UserControl
         foreach (var action in Selection.Actions)
             action.IsEnabled = action.Key == "switch" ? selected is { IsSelected: true }
                 : !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
+        if (Selection.Actions.FirstOrDefault(a => a.Key == "delete-workshop") is { } delete)
+            delete.IsEnabled = !savingPool && context?.Model.CanEditMapPool == true && WorkshopSelection().Length > 0;
         if (Selection.Actions.FirstOrDefault(a => a.Key == "add") is { } add)
             add.IsEnabled &= context?.PoolId is null;
     }
@@ -402,10 +405,51 @@ public sealed partial class MapsPage : UserControl
         UpdateActions();
     }
 
+    private string[] WorkshopSelection()
+    {
+        if (CollectionTree.IsVisible && CollectionTree.SelectedKeys?.Any(key => key is string) == true) return [];
+        var rows = SelectedPoolMaps();
+        return rows.All(r => r.Source == MapCatalogSource.Workshop && r.WorkshopId is not null)
+            ? rows.Select(r => r.WorkshopId!).Distinct().ToArray() : [];
+    }
+
+    private (MapsPageContext Context, string[] Ids)? workshopRemoval;
+
+    private async void ConfirmRemoveWorkshop(object? sender, RoutedEventArgs e)
+    {
+        var removal = workshopRemoval;
+        workshopRemoval = null;
+        RemoveWorkshopPopover.IsOpen = false;
+        RemoveWorkshopConfirm.IsConfirmed = false;
+        if (removal is not { } request || !ReferenceEquals(context, request.Context) || savingPool ||
+            !request.Ids.ToHashSet().SetEquals(WorkshopSelection()) || !request.Context.Model.CanEditMapPool) return;
+        savingPool = true;
+        UpdateActions();
+        try
+        {
+            var result = await request.Context.Model.WorkshopCatalogAsync(new(request.Context.InstanceId, Remove: request.Ids));
+            if (result.Detail != "workshop-removed") throw new IOException("请更新并重启守护进程。");
+            if (ReferenceEquals(context, request.Context)) await ReloadAsync();
+            request.Context.Notify(new ToastOptions { Title = "已移除工坊地图", Kind = ToastKind.Success });
+        }
+        catch (IOException error)
+        {
+            request.Context.Notify(new ToastOptions { Title = "未能移除工坊地图", Description = error.Message, Kind = ToastKind.Error });
+        }
+        finally { savingPool = false; UpdateActions(); }
+    }
+
     private async void Invoked(object? sender, SelectionToolbarActionEventArgs e)
     {
         if (context is not { } ctx) return;
         if (e.Action.Key is "add" or "remove") OpenPoolMenu(ctx, e.Action.Key == "add");
+        else if (e.Action.Key == "delete-workshop" && e.Action.IsEnabled && WorkshopSelection() is { Length: > 0 } ids &&
+            Selection.GetVisualDescendants().OfType<Avalonia.Controls.Button>().FirstOrDefault(b => ReferenceEquals(b.Tag, e.Action)) is { } anchor)
+        {
+            workshopRemoval = (ctx, ids);
+            RemoveWorkshopConfirm.IsConfirmed = false;
+            RemoveWorkshopPopover.ShowAt(anchor);
+        }
         else if (e.Action.Key == "switch" && selected is { } row) await SwitchAsync(ctx, row);
     }
 

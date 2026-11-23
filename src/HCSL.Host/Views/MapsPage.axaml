@@ -104,6 +104,17 @@
       </arc:Table>
       </Grid>
     </arc:SelectionToolbar>
+    <arc:Popover x:Name="RemoveWorkshopPopover" Grid.Row="1" Placement="Top" Offset="0" TriggerMode="Manual" HasShadow="False">
+      <arc:Popover.Styles>
+        <Style Selector="arc|PopoverSurface">
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="Padding" Value="0"/>
+          <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+      </arc:Popover.Styles>
+      <arc:HoldToConfirm x:Name="RemoveWorkshopConfirm" Label="长按移除地图" ConfirmedLabel="正在移除…"
+                         HoldDuration="0:0:1" Tone="Danger" Confirmed="ConfirmRemoveWorkshop"/>
+    </arc:Popover>
   </Grid>
   </Border>
 </UserControl>

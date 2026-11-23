@@ -440,7 +440,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (command.InstanceId == Guid.Empty) throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "An instance id is required.");
         var game = Path.Combine(p.LibraryRoot, "runtime", command.InstanceId.ToString("D"), "game");
         MapCatalogResult result;
-        if (command.WorkshopId is { } id)
+        if (command.Remove is { } remove)
+        {
+            if (command.WorkshopId is not null || command.Register is not null)
+                throw new InstanceException("HCSL-WORKSHOP-INPUT", "移除不能与识别或登记同时执行。");
+            LocalWorkshopCatalog.Remove(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command.InstanceId, remove);
+            result = new([], "workshop-removed");
+        }
+        else if (command.WorkshopId is { } id)
         {
             if (!ServerMapRules.TryValidateWorkshopId(id) || command.Register is not null)
                 throw new InstanceException("HCSL-WORKSHOP-INPUT", "工坊 ID 无效。");
