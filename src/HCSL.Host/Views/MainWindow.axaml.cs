@@ -254,12 +254,14 @@ public partial class MainWindow : ArcWindow
     {
         var image = new Bitmap(stream);
         WindowBackdrop.SetImageSource(this, image);
+        Classes.Set("has-wallpaper", image is not null);
         _background?.Dispose();
         _background = image;
     }
     public void ResetBackground()
     {
         WindowBackdrop.SetImageSource(this, null);
+        Classes.Set("has-wallpaper", false);
         _background?.Dispose();
         _background = null;
     }

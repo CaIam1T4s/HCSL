@@ -5,7 +5,7 @@
                xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
                x:Class="HCSL.Host.Views.ServerLogWindow"
                x:Name="ConsoleRoot"
-               Classes="wallpaper-shell"
+               Classes="wallpaper-shell workspace-mode"
                Title="服务器控制台" Width="1100" Height="700" MinWidth="600" MinHeight="400">
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar x:Name="ConsoleTitleBar" Height="44" CaptionButtons="Auto">
@@ -67,11 +67,16 @@
       </Grid>
     </Border>
 
-    <Grid x:Name="pages" Grid.Column="1">
-      <ContentControl x:Name="consoleHost"/>
-      <ContentControl x:Name="playersHost" IsVisible="False"/>
-      <ContentControl x:Name="mapsHost" IsVisible="False"/>
-    </Grid>
+    <Border x:Name="ConsoleWorkspace" Classes="workspace-panel" Grid.Column="1" Margin="{DynamicResource WorkspaceInset}"
+            CornerRadius="{DynamicResource WorkspaceCornerRadius}">
+      <Border CornerRadius="{DynamicResource WorkspaceCornerRadius}" ClipToBounds="True">
+      <Grid x:Name="pages">
+        <ContentControl x:Name="consoleHost"/>
+        <ContentControl x:Name="playersHost" IsVisible="False"/>
+        <ContentControl x:Name="mapsHost" IsVisible="False"/>
+      </Grid>
+      </Border>
+    </Border>
 
     <!-- Above the content: toasts must not be hidden under the log viewport or the command input. -->
     <arc:ToastStack x:Name="notifications" Grid.ColumnSpan="2" ZIndex="10" Duration="0:0:3"/>

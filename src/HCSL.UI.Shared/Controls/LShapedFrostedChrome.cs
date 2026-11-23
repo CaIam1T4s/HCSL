@@ -29,13 +29,17 @@ public sealed class LShapedFrostedChrome : Panel
     public double BlurRadius { get => GetValue(BlurRadiusProperty); set => SetValue(BlurRadiusProperty, value); }
     public double TintOpacity { get => GetValue(TintOpacityProperty); set => SetValue(TintOpacityProperty, value); }
 
+    public static readonly StyledProperty<bool> CoversWorkspaceProperty =
+        AvaloniaProperty.Register<LShapedFrostedChrome, bool>(nameof(CoversWorkspace));
+    public bool CoversWorkspace { get => GetValue(CoversWorkspaceProperty); set => SetValue(CoversWorkspaceProperty, value); }
+
     private readonly ArcFrostedBackdrop material = new() { Name = "ChromeMaterial" };
     private readonly Canvas shadows = new() { Name = "ChromeShadowLayer", IsHitTestVisible = false };
     private readonly Border topShadow = new() { Background = Brushes.Transparent };
     private readonly Border sideShadow = new() { Background = Brushes.Transparent };
 
     static LShapedFrostedChrome() => AffectsArrange<LShapedFrostedChrome>(
-        TitleBarHeightProperty, SidebarWidthProperty, IsTitleBarVisibleProperty);
+        TitleBarHeightProperty, SidebarWidthProperty, IsTitleBarVisibleProperty, CoversWorkspaceProperty);
 
     public LShapedFrostedChrome()
     {
@@ -64,7 +68,8 @@ public sealed class LShapedFrostedChrome : Panel
             new Point(side, top), new Point(side, height), new Point(0, height)
         ], isFilled: true);
         // Clip after the single full-window material has sampled/blurred its backdrop.
-        material.Clip = outline;
+        material.Clip = CoversWorkspace ? null : outline;
+        shadows.IsVisible = !CoversWorkspace;
         material.Arrange(new Rect(finalSize));
         // Rectangular shadow casters never draw over the glass, including its internal title/sidebar join.
         shadows.Clip = new RectangleGeometry(new Rect(side, top, width - side, height - top));

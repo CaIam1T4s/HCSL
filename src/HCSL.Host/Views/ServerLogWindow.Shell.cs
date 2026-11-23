@@ -30,7 +30,13 @@ public sealed partial class ServerLogWindow
     private void InitializeShell(Control console)
     {
         shellBindings.Add(this.Bind(BackgroundProperty, owner.GetObservable(BackgroundProperty)));
-        // The console keeps its own gradient: a wallpaper image chosen for the main window must not follow here.
+        // Borrow the owner's wallpaper; its lifetime is managed by the main window.
+        PropertyChanged += (_, change) =>
+        {
+            if (change.Property == WindowBackdrop.ImageSourceProperty)
+                Classes.Set("has-wallpaper", WindowBackdrop.GetImageSource(this) is not null);
+        };
+        shellBindings.Add(this.Bind(WindowBackdrop.ImageSourceProperty, owner.GetObservable(WindowBackdrop.ImageSourceProperty)));
         shellBindings.Add(this.Bind(WindowBackdrop.StrengthProperty, owner.GetObservable(WindowBackdrop.StrengthProperty)));
         Closed += (_, _) => { foreach (var binding in shellBindings) binding.Dispose(); shellBindings.Clear(); };
         navigation.Background = null;

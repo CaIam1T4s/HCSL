@@ -1,4 +1,4 @@
-<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:lucide="using:TKCode.Arc.Icons.Lucide" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" controls:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
+<arc:ArcWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:HCSL.Host.ViewModels" xmlns:controls="using:HCSL.UI.Shared.Controls" xmlns:pages="using:HCSL.Host.Views.Pages" xmlns:lucide="using:TKCode.Arc.Icons.Lucide" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" x:Class="HCSL.Host.Views.MainWindow" x:Name="ShellWindowRoot" x:DataType="vm:ShellViewModel" Classes="wallpaper-shell" Classes.workspace-mode="{Binding !IsHome}" controls:WindowModalLayer.IsOpen="{Binding #DialogOverlay.IsVisible}" controls:WindowBackdrop.Strength="{Binding BackgroundOpacity}" Title="HCSL · 服主管理端" Width="1280" Height="800" MinWidth="1024" MinHeight="680" Background="{DynamicResource ShellBackground}">
   <arc:ArcWindow.TitleBar>
     <arc:TitleBar x:Name="ShellTitleBar" Height="44" CaptionButtons="Auto" Background="Transparent">
       <arc:TitleBar.LeftContent>
@@ -94,6 +94,10 @@
         </Grid>
         <Grid Grid.Column="1">
           <pages:HomePage IsVisible="{Binding IsHome}"/>
+          <Border x:Name="MainWorkspace" Classes="workspace-panel" IsVisible="{Binding !IsHome}" Margin="{DynamicResource WorkspaceInset}"
+                  CornerRadius="{DynamicResource WorkspaceCornerRadius}">
+          <Border CornerRadius="{DynamicResource WorkspaceCornerRadius}" ClipToBounds="True">
+          <Grid>
           <Grid x:Name="InstanceScopeHost" IsVisible="{Binding IsInstanceScopeVisible}">
             <pages:InstanceOverviewPage x:Name="InstanceOverview" IsVisible="{Binding IsInstanceOverview}"/>
             <pages:InstancePresetsPage x:Name="InstancePresets" IsVisible="{Binding IsInstancePresets}"/>
@@ -108,6 +112,9 @@
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
           <pages:DownloadsPage IsVisible="{Binding IsDownloads}"/>
           <pages:SettingsPage x:Name="SettingsPageView" IsVisible="{Binding IsSettings}"/>
+          </Grid>
+          </Border>
+          </Border>
         </Grid>
       </Grid>
     <arc:ToastStack x:Name="InstanceNotifications" Position="BottomRight" Duration="0:0:3"/>

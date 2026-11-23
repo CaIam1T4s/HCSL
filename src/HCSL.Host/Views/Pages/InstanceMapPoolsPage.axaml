@@ -13,29 +13,38 @@
       <arc:ExpandingButtonGroup x:Name="PoolActions" Grid.Column="1" Classes="launch-actions" Label="图池列表操作"
                                 IsVisible="{Binding #PoolTab.IsSelected}" VerticalAlignment="Center">
         <arc:ExpandingButtonGroupItem x:Name="CreateButton" Label="新建图池" Click="CreatePool"/>
-        <arc:ExpandingButtonGroupItem x:Name="AddMapsButton" Label="添加地图" Click="AddMaps"/>
-        <arc:ExpandingButtonGroupItem x:Name="RenameButton" Label="重命名图池" Click="RenamePool"/>
-        <arc:ExpandingButtonGroupItem x:Name="DeleteAction" Label="删除图池" Click="OpenDelete"/>
       </arc:ExpandingButtonGroup>
     </Grid>
     <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}">
       <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <arc:RadioGroup x:Name="PoolChoices" AutomationProperties.Name="要管理的图池" SelectionChanged="PoolSelected">
-          <arc:RadioGroup.ItemTemplate>
+        <ItemsControl x:Name="PoolChoices" AutomationProperties.Name="图池列表">
+          <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:MapPoolRow">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+              <Border Margin="0,0,0,8" Padding="12,8" BorderThickness="1"
+                      BorderBrush="{arc:ArcDesignTokenResource Border}" CornerRadius="{arc:ArcDesignTokenResource RadiusControl}">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
                 <StackPanel VerticalAlignment="Center">
                   <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
                   <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
                 </StackPanel>
                 <arc:Badge Grid.Column="1" Content="{Binding Count}" Tone="{Binding Tone}" VerticalAlignment="Center"/>
+                <arc:Button Grid.Column="2" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPoolActions"
+                            AutomationProperties.Name="{Binding Name, StringFormat='操作图池：{0}'}"/>
               </Grid>
+              </Border>
             </DataTemplate>
-          </arc:RadioGroup.ItemTemplate>
-        </arc:RadioGroup>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </ScrollViewer>
       <arc:EmptyState x:Name="EmptyPools" Title="暂无图池" IsVisible="False"/>
-      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" TriggerMode="Manual">
+      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" Offset="0" TriggerMode="Manual" HasShadow="False">
+        <arc:Popover.Styles>
+          <Style Selector="arc|PopoverSurface">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+          </Style>
+        </arc:Popover.Styles>
         <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除图池" ConfirmedLabel="正在删除…"
                            HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
       </arc:Popover>

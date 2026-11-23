@@ -12,7 +12,10 @@ public partial class MainWindow
     public async Task<string?> TextAsync(string title, string label, string? initial = null, int maxLength = 40)
     {
         var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(new TextBlock { Text = title, FontSize = 20 });
+        content.Classes.Add("instance-editor");
+        var heading = new TextBlock { Text = title };
+        ArcTokens.Bind(heading, TextBlock.FontSizeProperty, ArcDesignTokenKind.TypeLG);
+        content.Children.Add(heading);
         var input = new Input
         {
             Text = initial ?? "",

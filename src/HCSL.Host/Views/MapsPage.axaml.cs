@@ -166,7 +166,7 @@ public sealed partial class MapsPage : UserControl
         // A pool can hold a map the catalog does not offer yet (a removed vanity pack, a Workshop id that never
         // downloaded). Show it anyway, so filtering a pool never yields "no maps" for maps that are in it.
         var known = allRows.Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var orphaned = pools.SelectMany(p => p.Maps).Where(m => !known.Contains(MapCatalogRules.KeyOf(m))).ToArray();
+        var orphaned = pools.SelectMany(p => p.Maps).Where(m => m.Kind != ServerMapKind.WorkshopCollection && !known.Contains(MapCatalogRules.KeyOf(m))).ToArray();
         foreach (var target in orphaned)
         {
             if (!known.Add(MapCatalogRules.KeyOf(target))) continue;
@@ -285,7 +285,7 @@ public sealed partial class MapsPage : UserControl
             _ = ChangePoolAsync(ctx, snapshot, active, rows, false);
             return;
         }
-        foreach (var pool in snapshot.Library.Pools.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
+        foreach (var pool in snapshot.Library.Pools.Where(p => p.Maps.All(m => m.Kind != ServerMapKind.WorkshopCollection)).OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
                      .ThenBy(p => p.Name, StringComparer.CurrentCulture))
         {
             var item = new GlassMenuItem { Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name };

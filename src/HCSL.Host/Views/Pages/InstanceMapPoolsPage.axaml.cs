@@ -18,7 +18,6 @@ public partial class InstanceMapPoolsPage : UserControl
 {
     private HostServerController? subscribed;
     private Guid? addTarget;
-    private bool updatingChoices;
     private MapPoolRow? browsed;
     private MapsPage? maps;
     private bool operating, loaded;
@@ -30,9 +29,7 @@ public partial class InstanceMapPoolsPage : UserControl
     {
         InitializeComponent();
         CreateButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
-        AddMapsButton.Icon = Lucide.Geometry(LucideIconKind.Map);
-        RenameButton.Icon = Lucide.Geometry(LucideIconKind.Pencil);
-        DeleteAction.Icon = DeleteButton.Icon = Lucide.Geometry(LucideIconKind.Trash);
+        DeleteButton.Icon = Lucide.Geometry(LucideIconKind.Trash);
         PoolActions.DefaultExpandedItem = CreateButton;
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
@@ -94,28 +91,35 @@ public partial class InstanceMapPoolsPage : UserControl
                     used == 0 ? "未被预设引用" : $"被 {used} 个预设使用",
                     pool.Maps.Length == 0 ? BadgeTone.Warning : BadgeTone.Neutral);
             }).ToArray();
-            var wanted = browsed?.Pool.Id;
-            var choices = rows;
-            EmptyPools.IsVisible = choices.Length == 0;
-            updatingChoices = true;
-            try
-            {
-                PoolChoices.ItemsSource = choices;
-                var choice = choices.FirstOrDefault(c => c.Pool.Id == wanted) ?? choices.FirstOrDefault();
-                browsed = choice;
-                PoolChoices.SelectedItem = choice;
-            }
-            finally { updatingChoices = false; Update(); }
+        EmptyPools.IsVisible = rows.Length == 0;
+        PoolChoices.ItemsSource = rows;
+        Update();
     }
 
     private bool loading;
 
-    private void PoolSelected(object? sender, SelectionChangedEventArgs e)
+    private GlassMenu? rowMenu;
+
+    private void OpenPoolActions(object? sender, RoutedEventArgs e)
     {
-        if (updatingChoices || PoolChoices.SelectedItem is not MapPoolRow choice) return;
+        if (sender is not Control { DataContext: MapPoolRow row } anchor || Instance?.Id != loadedInstance) return;
         DeletePopover.IsOpen = false;
-        browsed = choice;
-        Update();
+        rowMenu?.Close();
+        browsed = row;
+        var menu = rowMenu = new GlassMenu();
+        var writable = !operating && Model?.CanEditMapPool == true;
+        var collection = row.Pool.Maps.Any(m => m.Kind == ServerMapKind.WorkshopCollection);
+        Add("添加地图", AddMaps, !collection && !operating);
+        Add("重命名图池", RenamePool, writable);
+        Add("删除图池", (_, _) => OpenDelete(anchor), writable);
+        menu.Open(anchor);
+
+        void Add(string label, EventHandler<RoutedEventArgs> click, bool enabled)
+        {
+            var item = new GlassMenuItem { Content = label, IsEnabled = enabled };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
     }
 
     private async void AddMaps(object? sender, RoutedEventArgs e)
@@ -144,9 +148,7 @@ public partial class InstanceMapPoolsPage : UserControl
         var connected = !operating && m.Server.Connected;
         var writable = connected && m.CanEditMapPool;
         CreateButton.IsEnabled = writable;
-        AddMapsButton.IsEnabled = connected && browsed is not null;
-        RenameButton.IsEnabled = writable && browsed is not null;
-        DeleteAction.IsEnabled = DeleteButton.IsEnabled = writable && browsed is not null;
+        DeleteButton.IsEnabled = writable && browsed is not null;
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
@@ -187,11 +189,12 @@ public partial class InstanceMapPoolsPage : UserControl
             instance.Id, instance.Revision, pool.Id, Name: name));
     }
 
-    private void OpenDelete(object? sender, RoutedEventArgs e)
+    private void OpenDelete(Control anchor)
     {
-        if (!DeleteAction.IsEnabled || browsed is null) return;
+        Update();
+        if (!DeleteButton.IsEnabled || browsed is null) return;
         DeleteButton.IsConfirmed = false;
-        DeletePopover.ShowAt(DeleteAction);
+        DeletePopover.ShowAt(anchor);
     }
 
     private async void DeletePool(object? sender, RoutedEventArgs e)
