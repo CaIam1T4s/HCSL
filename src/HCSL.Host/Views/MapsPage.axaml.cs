@@ -44,10 +44,10 @@ public sealed partial class MapsPage : UserControl
         CollectionTree.KeySelector = node => node is CollectionBranch branch ? branch.Key : node;
         CollectionTree.Columns.Add(new TreeTableColumn { Header = "地图名", ValueSelector = node => node is CollectionBranch branch ? branch.Name : ((MapRow)node).Name });
         CollectionTree.Columns.Add(new TreeTableColumn { Header = "来源", Width = new GridLength(120), IsSortable = false,
-            CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => new Badge
+            CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => node is null ? null : new Badge
             { Content = node is MapRow row ? row.SourceText : "工坊合集", Tone = node is MapRow map ? map.SourceTone : BadgeTone.Info }) });
         CollectionTree.Columns.Add(new TreeTableColumn { Header = "所属图池", Width = new GridLength(160), IsSortable = false,
-            CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => new PresenceStack
+            CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => node is null ? null : new PresenceStack
             {
                 Label = "所属图池", IsCountVisible = false,
                 IsVisible = node is not MapRow map || map.InPool,

@@ -600,6 +600,13 @@ var editorPool = poolSnapshot.Result.Library.Pools.Single();
 PumpUntil(editor.AttachAsync(editorContext with { PoolId = editorPool.Id })); Layout();
 Check(editorTable.ItemsSource!.Cast<object>().Count() == editorPool.Maps.Length && (editorTable.SelectedItems?.Count ?? 0) == 0,
     "Switching to a pool must show only its members and clear selection.");
+daemon.IncludeWorkshopCollection = true;
+PumpUntil(editor.AttachAsync(editorContext)); Layout();
+var collectionTree = editor.FindControl<TKCode.Arc.TreeTable>("CollectionTree")!;
+Check(collectionTree.IsVisible && collectionTree.ItemsSource!.Cast<object>().Count() == 5,
+    "Importing a collection must switch the loaded map editor to a unified tree without crashing.");
+PumpUntil(editor.ReloadAsync()); Layout();
+daemon.IncludeWorkshopCollection = false;
 editorWindow.Close(); Layout();
 Console.WriteLine("PASS gui.maps.catalog-filters-selection-and-rotation-hint");
 if (only is "maps") return 0;
@@ -1158,6 +1165,7 @@ sealed class FakeDaemon : IDaemonClient
     public Guid? FailedRun;
     public int Deploys;
     public int RecoverDeployments;
+    public bool IncludeWorkshopCollection;
     public int PlanDeployments;
     public string DeployCode = "HCSL-SERVER-DEPLOYED";
     public bool CfgRunIdentity;
@@ -1228,7 +1236,11 @@ sealed class FakeDaemon : IDaemonClient
         {
             var pool = new MapPoolRecord(Guid.Parse("11111111-1111-1111-1111-111111111111"), "比赛池",
                 [new ServerMapTarget(ServerMapKind.Standard, "de_dust2")]);
-            var library = new MapPoolLibraryResult(new(1, 2, [pool], new Dictionary<Guid, Guid>()), "library-hash");
+            MapPoolRecord[] pools = IncludeWorkshopCollection
+                ? [pool, new(Guid.Parse("22222222-2222-2222-2222-222222222222"), "Maps by Ose",
+                    [new(ServerMapKind.WorkshopCollection, "3503819307")], [new("12345", "aim_treeni")])]
+                : [pool];
+            var library = new MapPoolLibraryResult(new(1, 2, pools, new Dictionary<Guid, Guid>()), "library-hash");
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
                 MapPoolLibraryResultJson: JsonSerializer.Serialize(library)));
         }
