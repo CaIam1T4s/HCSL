@@ -122,6 +122,14 @@ public partial class InstanceContentPage : UserControl
         operating = true;
         Update();
         try { await owner.EditPluginsAsync(m, instance, preset); }
-        finally { operating = false; loaded = false; Update(); await LoadAsync(); }
+        finally
+        {
+            operating = false;
+            loaded = false;
+            Update();
+            await LoadAsync();
+            // A newly enabled framework can make the admin list readable, so the sidebar re-checks it.
+            owner.RefreshAdminAvailability();
+        }
     }
 }

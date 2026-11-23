@@ -35,6 +35,7 @@ public partial class MainWindow
     /// <summary>The action rows follow the host state; nothing else in the scope offers them.</summary>
     private void UpdateScopeFooter()
     {
+        _ = ProbeAdminAvailabilityAsync();
         if (ScopeItem("start") is not { } start || ScopeItem("console") is not { } console) return;
         if (shellServers is not { } m)
         {
@@ -48,6 +49,39 @@ public partial class MainWindow
         start.IsVisible = !m.Server.Active;
         console.IsVisible = m.Server.Connected;
     }
+
+    /// <summary>
+    /// The 管理员 section only makes sense when the preset has a framework whose admin list HCSL can read. The probe runs
+    /// once per instance/preset and hides the row (switching away if it was open) when the list is unavailable.
+    /// </summary>
+    private async Task ProbeAdminAvailabilityAsync()
+    {
+        if (Servers is not { } m || m.Selected?.Entry.Definition is not { } definition || !m.Server.Connected) return;
+        var key = (definition.Id, definition.SelectedPresetId);
+        if (adminProbe == key) return;
+        adminProbe = key;
+        var available = true;
+        try { await m.AdminsAsync(); }
+        catch (IOException) { available = false; }
+        catch (Exception) { return; }
+        ApplyAdminAvailability(available);
+    }
+
+    /// <summary>Called after the plugin list changes, so a newly enabled admin framework shows the section again.</summary>
+    public void RefreshAdminAvailability()
+    {
+        adminProbe = null;
+        _ = ProbeAdminAvailabilityAsync();
+    }
+
+    private void ApplyAdminAvailability(bool available)
+    {
+        if (ScopeItem("admins") is { } admins) admins.IsVisible = available;
+        if (!available && DataContext is ShellViewModel { IsInstanceAdmins: true } shell)
+            shell.SelectInstanceSection("overview");
+    }
+
+    private (Guid Instance, Guid Preset)? adminProbe;
 
     /// <summary>
     /// One dispatcher for the instance sidebar: the 运行 rows are actions, the others are sections. Public so the GUI test

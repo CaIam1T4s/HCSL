@@ -715,14 +715,25 @@ if (only is "presets") { Console.WriteLine("PASS only presets"); return 0; }
 
 if (only is null or "admins")
 {
+// The section hides itself when no enabled framework exposes an admin list, and returns once one does.
+daemon.AdminUnavailable = true;
+((MainWindow)owner).RefreshAdminAvailability();
+for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
+var sidebar = owner.FindControl<TKCode.Arc.Sidebar>("InstanceSidebar")!;
+var adminItem = sidebar.Sections.SelectMany(s => s.Items).Single(i => i.Key == "admins");
+Check(!adminItem.IsVisible, "The 管理员 section must be hidden when the preset has no admin-capable framework.");
+daemon.AdminUnavailable = false;
+((MainWindow)owner).RefreshAdminAvailability();
+for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
+Check(adminItem.IsVisible, "The 管理员 section must return once an admin-capable framework is enabled.");
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("admins"); Layout();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
 var adminReads = daemon.AdminReads;
 for (var frame = 0; frame < 12; frame++) { Layout(); Thread.Sleep(10); }
 var adminsPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceAdminsPage>().Single();
 var adminTable = adminsPage.FindControl<TKCode.Arc.Table>("Admins")!;
-Check(daemon.AdminReads == adminReads && adminReads <= 2,
-    "The admin page must settle after at most the initial read, not reload on its own Busy notifications.");
+Check(daemon.AdminReads == adminReads && adminReads <= 4,
+    $"The admin page must settle after at most the initial read, not reload on its own Busy notifications ({adminReads} -> {daemon.AdminReads}).");
 Check(adminTable.ItemsSource is System.Collections.IEnumerable adminRows && adminRows.Cast<object>().Count() == 1,
     "Admin table missing entries (source: " + (adminTable.ItemsSource?.GetType().Name ?? "null") + ").");
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("overview"); Layout();
@@ -1119,6 +1130,7 @@ sealed class FakeDaemon : IDaemonClient
     public int CfgWrites;
     public int PoolWrites, PoolReads;
     public int AdminReads;
+    public bool AdminUnavailable;
     public bool RejectPoolWrites;
     public int PluginWrites;
     public int FrameworkInstalls;
@@ -1187,6 +1199,9 @@ sealed class FakeDaemon : IDaemonClient
         {
             var command = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson!)!;
             if (command.Action == AdminAction.List) AdminReads++;
+            if (AdminUnavailable)
+                return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false,
+                    "HCSL-ADMIN-SOURCE", "No enabled framework exposes an admin list."));
             var adminSnapshot = new AdminListSnapshot("css", "CounterStrikeSharp", true, [], [],
                 [new AdminEntry("76561198000000000", "Admin", ["#hcsl/admin"], [], null, [])], "admin-1", [], null, 1);
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,

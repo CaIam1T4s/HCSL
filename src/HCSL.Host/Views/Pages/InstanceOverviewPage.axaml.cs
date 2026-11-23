@@ -67,9 +67,11 @@ public partial class InstanceOverviewPage : UserControl
         if (!PortInput.IsFocused) PortInput.Text = definition?.GamePort.ToString() ?? "";
         // The password itself is never returned by the daemon; a set password shows as a mask, and the clear action is
         // the only way to remove it. The mask is not saved back as a literal password.
+        // The daemon never returns the password, so the field stays empty: the placeholder states whether one is set, and
+        // an empty Enter clears it. A mask would look like a value that can be revealed and never changes.
         var hasPassword = entry?.HasPassword == true;
-        PasswordInput.PlaceholderText = hasPassword ? "" : "无密码";
-        if (!PasswordInput.IsFocused) PasswordInput.Text = hasPassword ? PasswordMask : "";
+        PasswordInput.PlaceholderText = hasPassword ? "已设置，输入新值替换；空回车清除" : "无密码";
+        if (!PasswordInput.IsFocused) PasswordInput.Text = "";
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
@@ -164,14 +166,10 @@ public partial class InstanceOverviewPage : UserControl
         finally { operating = false; Update(); }
     }
 
-    /// <summary>The mask in the field is not a value: only what the operator typed may replace the stored password.</summary>
-    private const string PasswordMask = "••••••••";
-
     private async Task SavePasswordAsync()
     {
         if (operating || Model is not { } m) return;
         var value = PasswordInput.Text ?? "";
-        if (value == PasswordMask) { Update(); return; }
         PasswordInput.Text = "";
         try
         {
