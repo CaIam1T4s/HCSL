@@ -18,6 +18,16 @@ Architecture and placement rules follow the existing solution and project files;
 do not add platform logic to ViewModels or UI projects, and keep the dependency
 direction `Application → Core`, `Infrastructure → Application + Core`.
 
+## Commits and reversions
+
+For all future changes, automatically make a separate commit after completing
+and verifying each small, coherent unit of work. Use `type(scope):` commit
+messages and do not include unrelated working-tree changes.
+
+If the user explicitly rejects a change, automatically revert only that change.
+Use `git revert` for an isolated committed change; otherwise make and commit a
+targeted inverse change. Preserve unrelated work and do not rewrite history.
+
 ## Verification
 
 Build only the affected project (`dotnet build <project> --no-restore -v:q`) and run only the
