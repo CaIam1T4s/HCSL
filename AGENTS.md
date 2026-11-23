@@ -4,6 +4,12 @@ This repository publishes product code; user-facing documentation will be added
 in a later version. Internal planning notes, manual-verification records, and
 development skills are kept local (see `.gitignore`) and are not published.
 
+## Editing code
+
+Make code and XAML changes with targeted `edit` calls, one precise block at a time. Use a script
+(for example python) only for a bulk replacement that applies the same change verbatim across many
+files, and check the resulting `git diff` by hand afterwards.
+
 Keep scaffold directories separate from implemented projects: only add a project
 to the solution when its project file and implementation exist. Report build and
 runtime verification limits accurately.
