@@ -32,6 +32,7 @@ public partial class InstanceOverviewPage : UserControl
         PortInput.LostFocus += (_, _) => _ = SavePortAsync();
         PasswordInput.KeyDown += (_, e) => FieldKey(e, ResetPassword, () => _ = SavePasswordAsync());
         Tooltip.SetTip(DeployHelpButton, "插件或游戏更新时实例不会自动更新，需要部署以更新运行目录");
+        Tooltip.SetTip(RecoverHelpButton, "清理先前部署留下的无用文件，运行目录不受影响");
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -69,13 +70,11 @@ public partial class InstanceOverviewPage : UserControl
         var hasPassword = entry?.HasPassword == true;
         PasswordInput.PlaceholderText = hasPassword ? "" : "无密码";
         if (!PasswordInput.IsFocused) PasswordInput.Text = hasPassword ? PasswordMask : "";
-        ClearPasswordButton.IsVisible = hasPassword;
         CopyIdButton.Value = entry?.Id.ToString("D") ?? "";
         CopyIdButton.IsVisible = entry is not null;
         LayoutText.Text = definition is null ? "—" : $"v{definition.LayoutVersion}";
         var idle = !operating;
         PortInput.IsEnabled = PasswordInput.IsEnabled = idle && m.CanMutate && definition is not null;
-        ClearPasswordButton.IsEnabled = idle && m.CanMutate;
         DeployButton.IsEnabled = idle && m.CanDeploy;
         RecoverDeployButton.IsEnabled = idle && m.CanRecoverDeployment;
         MigrateButton.IsVisible = definition is { LayoutVersion: var version } && version < InstanceRules.CurrentLayoutVersion;
@@ -182,18 +181,6 @@ public partial class InstanceOverviewPage : UserControl
         catch (IOException error) { Error("密码未保存", error.Message); }
         finally { Update(); }
     }
-
-    private async void ClearPassword(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m) return;
-        try
-        {
-            await m.SetPasswordAsync("");
-            Owner?.ShowInstanceNotification("已清除入服密码", null, ToastKind.Success);
-        }
-        catch (IOException error) { Error("密码未清除", error.Message); }
-        finally { Update(); }
-    });
 
     private async void MigrateLayout(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
     {
