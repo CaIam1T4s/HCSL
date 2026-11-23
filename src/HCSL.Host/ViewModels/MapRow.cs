@@ -8,7 +8,7 @@ namespace HCSL.Host.ViewModels;
 public sealed class MapRow : INotifyPropertyChanged
 {
     private readonly List<PresenceStackViewer> pools = [];
-    private bool inPool, isSelected, showPoolCheck, isInEditedPool;
+    private bool inPool, isSelected, canJoinPool;
     private string? poolName;
 
     public MapRow(MapCatalogEntry entry, IReadOnlyList<string> poolNames)
@@ -33,49 +33,26 @@ public sealed class MapRow : INotifyPropertyChanged
             if (isSelected == value) return;
             isSelected = value;
             Raise(nameof(IsSelected));
-            Raise(nameof(ShowSelectionRail));
-            Raise(nameof(ShowSelectionCheck));
         }
     }
 
-    public bool ShowSelectionRail => IsSelected && !ShowPoolCheck;
-    public bool ShowSelectionCheck => ShowSelectionRail;
+    /// <summary>Whether the map may be checked in the pool editor: previews and unfinished downloads are ignored.</summary>
+    public bool CanJoinPool
+    {
+        get => canJoinPool;
+        set
+        {
+            if (canJoinPool == value) return;
+            canJoinPool = value;
+            Raise(nameof(CanJoinPool));
+        }
+    }
     public string Key => Entry.Key;
     public ServerMapTarget Target => Entry.Source == MapCatalogSource.Workshop
         ? new(ServerMapKind.Workshop, Entry.WorkshopId!)
         : new(ServerMapKind.Standard, Entry.Name);
     public IReadOnlyList<PresenceStackViewer> Pools => pools;
     public string PoolText => poolName ?? "";
-
-    /// <summary>Pool editing mode shows the checkbox at the row start instead of the single selection rail.</summary>
-    public bool ShowPoolCheck
-    {
-        get => showPoolCheck;
-        set
-        {
-            if (showPoolCheck == value) return;
-            showPoolCheck = value;
-            Raise(nameof(ShowPoolCheck));
-            Raise(nameof(CanEditPool));
-            Raise(nameof(ShowSelectionRail));
-            Raise(nameof(ShowSelectionCheck));
-        }
-    }
-
-    /// <summary>Whether the map may join a pool at all: previews and unfinished downloads are silently ignored.</summary>
-    public bool CanEditPool => ShowPoolCheck && Entry.Source != MapCatalogSource.Preview
-        && (Entry.Source == MapCatalogSource.Standard || Entry.Incomplete == false);
-
-    public bool IsInEditedPool
-    {
-        get => isInEditedPool;
-        set
-        {
-            if (isInEditedPool == value) return;
-            isInEditedPool = value;
-            Raise(nameof(IsInEditedPool));
-        }
-    }
 
     /// <summary>The filter chip this row answers: built-in, official preview, Workshop or not downloaded.</summary>
     public string FilterSource => Entry.Source switch

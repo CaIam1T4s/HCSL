@@ -120,20 +120,15 @@ public sealed partial class MapsPage : UserControl
             ctx.Notify(new ToastOptions { Title = "无法读取图池", Description = e.Message + "；地图列表仍可使用", Kind = ToastKind.Warning });
         }
         allRows.Clear();
-        // Pool editing marks the rows of that pool and lets the checkboxes add or remove them.
         var edited = ctx.PoolId is { } poolId ? pools.FirstOrDefault(p => p.Id == poolId) : null;
+        var editedKeys = edited?.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in catalog.Entries)
         {
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
                 .Select(p => p.Name).ToArray();
-            var row = new MapRow(entry, names) { ShowPoolCheck = ctx.PoolId is not null };
-            if (edited is not null)
-                row.IsInEditedPool = edited.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key);
-            row.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row);
-                else if (e.PropertyName == nameof(MapRow.IsInEditedPool)) _ = ToggleMembershipAsync(row);
-            };
+            var row = new MapRow(entry, names) { CanJoinPool = CanJoin(entry, editedKeys.Contains(entry.Key)) };
+            row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
             allRows.Add(row);
         }
         FillPoolFilter(pools, library?.Library.PoolOf(ctx.PresetId)?.Id);
@@ -148,15 +143,9 @@ public sealed partial class MapsPage : UserControl
                 ? new MapCatalogEntry(target.Value, MapCatalogSource.Standard, null)
                 : new MapCatalogEntry("Workshop #" + target.Value, MapCatalogSource.Workshop, target.Value, Incomplete: true);
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key)).Select(p => p.Name).ToArray();
-            var orphan = new MapRow(entry, names) { ShowPoolCheck = ctx.PoolId is not null };
-            if (edited is not null)
-                orphan.IsInEditedPool = edited.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key);
-            orphan.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName == nameof(MapRow.IsInEditedPool)) _ = ToggleMembershipAsync(orphan);
-            };
-            allRows.Add(orphan);
+            allRows.Add(new MapRow(entry, names) { CanJoinPool = CanJoin(entry, editedKeys.Contains(entry.Key)) });
         }
+        ApplyPoolMode(ctx, edited, editedKeys);
         Apply();
     }
 
@@ -229,31 +218,76 @@ public sealed partial class MapsPage : UserControl
             action.IsEnabled = selected is { IsSelected: true };
     }
 
+    /// <summary>A preview or an unfinished Workshop download cannot be added; one already in the pool can be removed.</summary>
+    private static bool CanJoin(MapCatalogEntry entry, bool alreadyInPool) =>
+        entry.Source != MapCatalogSource.Preview && (!entry.Incomplete || alreadyInPool);
+
     /// <summary>
-    /// A checkbox toggles one map's membership. Rows that cannot join a pool (previews, unfinished downloads) are
-    /// silently ignored and put back, so a disabled checkbox can never leave a pending state.
+    /// Pool editing uses Arc's own checkbox column: rows of the pool start checked, and a change saves the whole pool.
+    /// Rows that cannot join are silently dropped from the selection instead of showing an error.
     /// </summary>
-    private async Task ToggleMembershipAsync(MapRow row)
+    private void ApplyPoolMode(MapsPageContext ctx, MapPoolRecord? edited, HashSet<string> keys)
     {
-        if (context is not { PoolId: { } poolId } ctx || library is null) return;
-        if (!row.CanEditPool) { row.IsInEditedPool = !row.IsInEditedPool; return; }
-        var pool = library.Library.Pools.FirstOrDefault(p => p.Id == poolId);
-        if (pool is null) { row.IsInEditedPool = !row.IsInEditedPool; return; }
-        var key = MapCatalogRules.KeyOf(row.Target);
-        var maps = row.IsInEditedPool
-            ? pool.Maps.Concat([row.Target]).GroupBy(MapCatalogRules.KeyOf).Select(g => g.First()).ToArray()
-            : pool.Maps.Where(m => MapCatalogRules.KeyOf(m) != key).ToArray();
+        if (ctx.PoolId is null)
+        {
+            Table.IsSelectable = false;
+            return;
+        }
+        editedPool = edited;
+        editedKeys = keys;
+        Table.IsSelectable = true;
+        Table.SelectsOnRowClick = false;
+        if (!poolSelectionBound)
+        {
+            Table.SelectionChanged += OnPoolSelectionChanged;
+            poolSelectionBound = true;
+        }
+        applyingPoolSelection = true;
+        try
+        {
+            Table.SelectedItems = allRows.Where(row => keys.Contains(row.Key)).Cast<object>().ToList();
+        }
+        finally { applyingPoolSelection = false; }
+    }
+
+    private MapPoolRecord? editedPool;
+    private HashSet<string> editedKeys = new(StringComparer.OrdinalIgnoreCase);
+    private bool poolSelectionBound, applyingPoolSelection;
+
+    private async void OnPoolSelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
+    {
+        if (applyingPoolSelection || context is not { PoolId: { } poolId } ctx || editedPool is null) return;
+        var selected = Table.SelectedItems.OfType<MapRow>().ToArray();
+        var rejected = selected.Where(row => !row.CanJoinPool).ToArray();
+        if (rejected.Length > 0)
+        {
+            // Silent by design: the checkbox simply does not take.
+            applyingPoolSelection = true;
+            try
+            {
+                foreach (var row in rejected) Table.SelectedItems.Remove(row);
+            }
+            finally { applyingPoolSelection = false; }
+            selected = Table.SelectedItems.OfType<MapRow>().ToArray();
+        }
+        var maps = selected.Select(row => row.Target).ToArray();
+        var nextKeys = maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (nextKeys.SetEquals(editedKeys)) return;
+        applyingPoolSelection = true;
         try
         {
             var result = await ctx.Model.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.SaveMaps,
                 ctx.InstanceId, Maps: maps, PoolId: poolId));
             library = result;
+            editedPool = result.Library.Pools.FirstOrDefault(pool => pool.Id == poolId);
+            editedKeys = nextKeys;
         }
-        catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or InstanceException or InvalidOperationException)
         {
-            row.IsInEditedPool = !row.IsInEditedPool;
-            ctx.Notify(new ToastOptions { Title = "图池未保存", Description = e.Message, Kind = ToastKind.Error });
+            ctx.Notify(new ToastOptions { Title = "图池未保存", Description = error.Message, Kind = ToastKind.Error });
+            Table.SelectedItems = allRows.Where(row => editedKeys.Contains(row.Key)).Cast<object>().ToList();
         }
+        finally { applyingPoolSelection = false; }
     }
 
     private void FiltersChanged(object? sender, FilterToolbarFiltersChangedEventArgs e) => Apply();
