@@ -62,13 +62,17 @@
         <Style Selector="arc|Button:not(:disabled)">
           <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
         </Style>
-        <Style Selector="arc|Button /template/ Border#PART_Frame">
-          <Setter Property="BorderThickness" Value="0"/>
-        </Style>
-        <Style Selector="arc|Button:disabled /template/ Border#PART_Frame">
+        <!-- Override the shared disabled chrome before Arc's brush transitions run. -->
+        <Style Selector="arc|Button:not(:disabled), arc|Button:disabled">
           <Setter Property="BorderThickness" Value="0"/>
           <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="arc|Button:disabled">
           <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="arc|Button /template/ Border#PART_Frame">
+          <Setter Property="BorderThickness" Value="0"/>
+          <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
       </arc:SelectionToolbar.Styles>
       <arc:SelectionToolbar.Actions>
