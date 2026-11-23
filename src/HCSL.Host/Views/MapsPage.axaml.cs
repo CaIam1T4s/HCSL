@@ -25,11 +25,13 @@ public sealed partial class MapsPage : UserControl
     private MapsPageContext? context;
     private MapPoolLibraryResult? library;
     private MapRow? selected;
+    private int reloadVersion;
 
     public MapsPage()
     {
         InitializeComponent();
         Table.ItemsSource = visible;
+        Table.SelectionChanged += (_, _) => UpdatePoolSelection();
         AutomationProperties.SetName(RulesButton, "地图轮换规则");
         // Arc's tooltip, so it keeps the shared floating-surface material and typography.
         Tooltip.SetTip(RulesButton, "仅内置地图和创意工坊合集支持轮换");
@@ -41,7 +43,7 @@ public sealed partial class MapsPage : UserControl
         {
             Culture = System.Globalization.CultureInfo.GetCultureInfo("zh-CN"),
             Count = count => "已选 " + count,
-            SelectAll = total => "全选 " + total,
+            SelectAll = total => "选择所有 " + total,
             Clear = "清除选择",
             Toolbar = "批量操作"
         };
@@ -91,12 +93,27 @@ public sealed partial class MapsPage : UserControl
     public async Task AttachAsync(MapsPageContext value)
     {
         context = value;
+        if (value.PoolId is not null && !Table.IsSelectable)
+        {
+            Filters.Actions = null;
+            Table.Columns.RemoveAt(Table.Columns.Count - 1);
+            Table.Columns.RemoveAt(0);
+            Table.Columns[^1].Width = new GridLength(1, GridUnitType.Star);
+            Table.SelectsOnRowClick = false;
+            Table.IsSelectable = true;
+            Selection.Actions.Clear();
+            Selection.Actions.Add(new SelectionToolbarAction { Key = "add", Label = "添加到图池" });
+            Selection.Actions.Add(new SelectionToolbarAction { Key = "remove", Label = "从图池移除" });
+            var source = Filters.Fields.First(f => f.Id == "source");
+            source.Options.Remove(source.Options.First(o => o.Value == "preview"));
+        }
         await ReloadAsync();
     }
 
     public async Task ReloadAsync()
     {
         if (context is not { } ctx) return;
+        var version = ++reloadVersion;
         MapCatalogResult catalog;
         try
         {
@@ -108,26 +125,25 @@ public sealed partial class MapsPage : UserControl
             return;
         }
         // The catalog is the page's reason to exist, so rows appear even when the pool library cannot be read.
-        var pools = Array.Empty<MapPoolRecord>();
+        MapPoolLibraryResult? snapshot = null;
         try
         {
-            library = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.List, ctx.InstanceId));
-            pools = library.Library.Pools;
+            snapshot = await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.List, ctx.InstanceId));
         }
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
         {
-            library = null;
             ctx.Notify(new ToastOptions { Title = "无法读取图池", Description = e.Message + "；地图列表仍可使用", Kind = ToastKind.Warning });
         }
+        if (version != reloadVersion) return;
+        library = snapshot;
+        var pools = snapshot?.Library.Pools ?? [];
+        ClearSelection(this, new RoutedEventArgs());
         allRows.Clear();
-        var edited = ctx.PoolId is { } poolId ? pools.FirstOrDefault(p => p.Id == poolId) : null;
-        var editedKeys = edited?.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in catalog.Entries)
+        foreach (var entry in catalog.Entries.Where(e => ctx.PoolId is null || e.Source != MapCatalogSource.Preview))
         {
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key))
                 .Select(p => p.Name).ToArray();
-            var row = new MapRow(entry, names) { CanJoinPool = CanJoin(entry, editedKeys.Contains(entry.Key)) };
+            var row = new MapRow(entry, names);
             row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
             allRows.Add(row);
         }
@@ -138,14 +154,13 @@ public sealed partial class MapsPage : UserControl
         var orphaned = pools.SelectMany(p => p.Maps).Where(m => !known.Contains(MapCatalogRules.KeyOf(m))).ToArray();
         foreach (var target in orphaned)
         {
-            known.Add(MapCatalogRules.KeyOf(target));
+            if (!known.Add(MapCatalogRules.KeyOf(target))) continue;
             var entry = target.Kind == ServerMapKind.Standard
                 ? new MapCatalogEntry(target.Value, MapCatalogSource.Standard, null)
                 : new MapCatalogEntry("Workshop #" + target.Value, MapCatalogSource.Workshop, target.Value, Incomplete: true);
             var names = pools.Where(p => p.Maps.Any(m => MapCatalogRules.KeyOf(m) == entry.Key)).Select(p => p.Name).ToArray();
-            allRows.Add(new MapRow(entry, names) { CanJoinPool = CanJoin(entry, editedKeys.Contains(entry.Key)) });
+            allRows.Add(new MapRow(entry, names));
         }
-        ApplyPoolMode(ctx, edited, editedKeys);
         Apply();
     }
 
@@ -185,13 +200,13 @@ public sealed partial class MapsPage : UserControl
         foreach (var row in allRows)
         {
             if (sources.Count > 0 && !row.SourceFilterValues.Any(sources.Contains)) continue;
-            if (pools.Count > 0 && !row.Pools.Any(v => pools.Contains(v.Name))) continue;
+            if (pools.Count > 0 && !row.PoolNames.Any(pools.Contains)) continue;
             if (query.Length > 0 && !row.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
             visible.Add(row);
         }
-        Selection.SelectedCount = selected is { IsSelected: true } ? 1 : 0;
-        UpdateActions();
+        if (Table.IsSelectable) UpdatePoolSelection();
+        else UpdateActions();
     }
 
     /// <summary>Only one row may be chosen: choosing another clears the previous one, hiding it clears the bar.</summary>
@@ -214,88 +229,77 @@ public sealed partial class MapsPage : UserControl
 
     private void UpdateActions()
     {
-        if (Selection.Actions.FirstOrDefault(a => a.Key == "switch") is { } action)
-            action.IsEnabled = selected is { IsSelected: true };
+        foreach (var action in Selection.Actions)
+            action.IsEnabled = action.Key == "switch" ? selected is { IsSelected: true }
+                : !savingPool && Selection.SelectedCount > 0 && library?.Library.Pools.Length > 0;
     }
 
-    /// <summary>A preview or an unfinished Workshop download cannot be added; one already in the pool can be removed.</summary>
-    private static bool CanJoin(MapCatalogEntry entry, bool alreadyInPool) =>
-        entry.Source != MapCatalogSource.Preview && (!entry.Incomplete || alreadyInPool);
+    private bool savingPool;
+    private GlassMenu? poolMenu;
 
-    /// <summary>
-    /// Pool editing uses Arc's own checkbox column: rows of the pool start checked, and a change saves the whole pool.
-    /// Rows that cannot join are silently dropped from the selection instead of showing an error.
-    /// </summary>
-    private void ApplyPoolMode(MapsPageContext ctx, MapPoolRecord? edited, HashSet<string> keys)
+    private void UpdatePoolSelection()
     {
-        if (ctx.PoolId is null)
-        {
-            Table.IsSelectable = false;
-            return;
-        }
-        editedPool = edited;
-        editedKeys = keys;
-        Table.IsSelectable = true;
-        Table.SelectsOnRowClick = false;
-        if (!poolSelectionBound)
-        {
-            Table.SelectionChanged += OnPoolSelectionChanged;
-            poolSelectionBound = true;
-        }
-        applyingPoolSelection = true;
-        try
-        {
-            Table.SelectedItems = allRows.Where(row => keys.Contains(row.Key)).Cast<object>().ToList();
-        }
-        finally { applyingPoolSelection = false; }
+        if (!Table.IsSelectable) return;
+        Selection.TotalCount = visible.Count;
+        Selection.SelectedCount = Table.SelectedItems?.Count ?? 0;
+        UpdateActions();
     }
 
-    private MapPoolRecord? editedPool;
-    private HashSet<string> editedKeys = new(StringComparer.OrdinalIgnoreCase);
-    private bool poolSelectionBound, applyingPoolSelection;
-
-    private async void OnPoolSelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
+    private void OpenPoolMenu(MapsPageContext ctx, bool add)
     {
-        if (applyingPoolSelection || context is not { PoolId: { } poolId } ctx || editedPool is null) return;
-        var selected = Table.SelectedItems.OfType<MapRow>().ToArray();
-        var rejected = selected.Where(row => !row.CanJoinPool).ToArray();
-        if (rejected.Length > 0)
+        if (savingPool || library is not { } snapshot || Table.SelectedItems is not { Count: > 0 } items) return;
+        var rows = items.OfType<MapRow>().Where(visible.Contains).ToArray();
+        poolMenu?.Close();
+        var menu = poolMenu = new GlassMenu();
+        foreach (var pool in snapshot.Library.Pools.OrderBy(p => p.Name, StringComparer.CurrentCulture))
         {
-            // Silent by design: the checkbox simply does not take.
-            applyingPoolSelection = true;
-            try
-            {
-                foreach (var row in rejected) Table.SelectedItems.Remove(row);
-            }
-            finally { applyingPoolSelection = false; }
-            selected = Table.SelectedItems.OfType<MapRow>().ToArray();
+            var item = new GlassMenuItem { Content = pool.Name };
+            item.Click += async (_, _) => await ChangePoolAsync(ctx, snapshot, pool, rows, add);
+            menu.Items.Add(item);
         }
-        var maps = selected.Select(row => row.Target).ToArray();
-        var nextKeys = maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (nextKeys.SetEquals(editedKeys)) return;
-        applyingPoolSelection = true;
+        if (menu.Items.Count > 0) menu.Open(Selection);
+    }
+
+    private async Task ChangePoolAsync(MapsPageContext ctx, MapPoolLibraryResult snapshot, MapPoolRecord pool,
+        MapRow[] rows, bool add)
+    {
+        if (savingPool || !ReferenceEquals(ctx, context) || !ReferenceEquals(snapshot, library)) return;
+        var keys = pool.Maps.Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selectedKeys = rows.Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maps = add
+            ? pool.Maps.Concat(rows.Where(r => !r.Entry.Incomplete && r.Source != MapCatalogSource.Preview && keys.Add(r.Key))
+                .Select(r => r.Target)).ToArray()
+            : pool.Maps.Where(m => !selectedKeys.Contains(MapCatalogRules.KeyOf(m))).ToArray();
+        if (maps.Length == pool.Maps.Length) return;
+        var instance = ctx.Model.Instances.FirstOrDefault(i => i.Entry.Id == ctx.InstanceId)?.Entry.Definition;
+        if (instance is null) return;
+        savingPool = true;
+        UpdateActions();
         try
         {
-            var result = await ctx.Model.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.SaveMaps,
-                ctx.InstanceId, Maps: maps, PoolId: poolId));
-            library = result;
-            editedPool = result.Library.Pools.FirstOrDefault(pool => pool.Id == poolId);
-            editedKeys = nextKeys;
+            await ctx.Model.MapPoolsAsync(new(MapPoolLibraryAction.SaveMaps, ctx.InstanceId, instance.Revision,
+                pool.Id, Maps: maps, ExpectedRevision: snapshot.Library.Revision, ExpectedHash: snapshot.Hash));
+            if (ReferenceEquals(ctx, context)) await ReloadAsync();
         }
-        catch (Exception error) when (error is IOException or InstanceException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or InstanceException or InvalidOperationException or UnauthorizedAccessException)
         {
-            ctx.Notify(new ToastOptions { Title = "图池未保存", Description = error.Message, Kind = ToastKind.Error });
-            Table.SelectedItems = allRows.Where(row => editedKeys.Contains(row.Key)).Cast<object>().ToList();
+            if (ReferenceEquals(ctx, context))
+                ctx.Notify(new ToastOptions { Title = "图池未保存", Description = error.Message, Kind = ToastKind.Error });
         }
-        finally { applyingPoolSelection = false; }
+        finally { savingPool = false; UpdateActions(); }
     }
 
     private void FiltersChanged(object? sender, FilterToolbarFiltersChangedEventArgs e) => Apply();
 
-    private void SelectAll(object? sender, RoutedEventArgs e) { }
+    private void SelectAll(object? sender, RoutedEventArgs e)
+    {
+        if (Table.IsSelectable) Table.SelectAll();
+    }
 
     private void ClearSelection(object? sender, RoutedEventArgs e)
     {
+        poolMenu?.Close();
+        if (Table.IsSelectable) Table.ClearSelection();
         foreach (var row in allRows) row.IsSelected = false;
         selected = null;
         Selection.SelectedCount = 0;
@@ -304,8 +308,9 @@ public sealed partial class MapsPage : UserControl
 
     private async void Invoked(object? sender, SelectionToolbarActionEventArgs e)
     {
-        if (context is not { } ctx || e.Action.Key != "switch" || selected is not { } row) return;
-        await SwitchAsync(ctx, row);
+        if (context is not { } ctx) return;
+        if (e.Action.Key is "add" or "remove") OpenPoolMenu(ctx, e.Action.Key == "add");
+        else if (e.Action.Key == "switch" && selected is { } row) await SwitchAsync(ctx, row);
     }
 
     /// <summary>The switch only writes the command; loading and downloading are reported by the server log.</summary>

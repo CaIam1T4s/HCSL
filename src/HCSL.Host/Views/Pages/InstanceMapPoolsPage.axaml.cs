@@ -12,12 +12,11 @@ namespace HCSL.Host.Views.Pages;
 
 /// <summary>
 /// 地图池 of an instance: the library (create, rename, delete) plus the console map page in pool-editing mode, where the
-/// checkboxes add and remove maps. A preset only chooses a pool; it never edits one.
+/// checkboxes select maps for bulk pool operations. A preset only chooses a pool; it never edits one.
 /// </summary>
 public partial class InstanceMapPoolsPage : UserControl
 {
     private HostServerController? subscribed;
-    private MapPoolLibrary? library;
     private MapPoolRow[] rows = [];
     private MapPoolRow? browsed;
     private MapsPage? maps;
@@ -72,7 +71,6 @@ public partial class InstanceMapPoolsPage : UserControl
         try
         {
             var result = await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.List, instance.Id));
-            library = result.Library;
             var assignments = result.Library.Assignments;
             rows = result.Library.Pools.Select(pool =>
             {
@@ -110,7 +108,7 @@ public partial class InstanceMapPoolsPage : UserControl
         var preset = instance.SelectedPresetId;
         await maps.AttachAsync(new MapsPageContext(m, instance.Id, preset,
             options => Owner?.ShowInstanceNotification(options.Title, options.Description, options.Kind), pool.Id));
-        MapsText.Text = pool.Maps.Length == 0 ? "空图池：勾选地图即可加入" : "";
+
     }
 
     private void Update()
@@ -132,8 +130,16 @@ public partial class InstanceMapPoolsPage : UserControl
         if (operating || Model is not { } m || Instance is not { } instance) return;
         operating = true;
         Update();
-        try { await m.MapPoolsAsync(command(instance)); }
-        catch (IOException error) { Error("图池未保存", error.Message); }
+        try
+        {
+            var snapshot = await m.MapPoolsAsync(new(MapPoolLibraryAction.List, instance.Id));
+            await m.MapPoolsAsync(command(instance) with
+            {
+                ExpectedRevision = snapshot.Library.Revision,
+                ExpectedHash = snapshot.Hash
+            });
+        }
+        catch (Exception error) when (error is IOException or InstanceException) { Error("图池未保存", error.Message); }
         finally { operating = false; loaded = false; Update(); await LoadAsync(); await RefreshMapsAsync(); }
     }
 

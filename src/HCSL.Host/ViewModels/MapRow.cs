@@ -8,7 +8,8 @@ namespace HCSL.Host.ViewModels;
 public sealed class MapRow : INotifyPropertyChanged
 {
     private readonly List<PresenceStackViewer> pools = [];
-    private bool inPool, isSelected, canJoinPool;
+    private bool inPool, isSelected;
+    public IReadOnlyList<string> PoolNames { get; private set; } = [];
     private string? poolName;
 
     public MapRow(MapCatalogEntry entry, IReadOnlyList<string> poolNames)
@@ -36,17 +37,6 @@ public sealed class MapRow : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Whether the map may be checked in the pool editor: previews and unfinished downloads are ignored.</summary>
-    public bool CanJoinPool
-    {
-        get => canJoinPool;
-        set
-        {
-            if (canJoinPool == value) return;
-            canJoinPool = value;
-            Raise(nameof(CanJoinPool));
-        }
-    }
     public string Key => Entry.Key;
     public ServerMapTarget Target => Entry.Source == MapCatalogSource.Workshop
         ? new(ServerMapKind.Workshop, Entry.WorkshopId!)
@@ -83,7 +73,15 @@ public sealed class MapRow : INotifyPropertyChanged
     public void SetPools(IReadOnlyList<string> names)
     {
         pools.Clear();
-        foreach (var name in names) pools.Add(new PresenceStackViewer(name));
+        PoolNames = names;
+        foreach (var name in names)
+        {
+            // Arc takes the first character of each word, with no separate initials override.
+            var letters = name.Where(char.IsAsciiLetter).Take(2).ToArray();
+            var han = name.FirstOrDefault(c => c is >= '\u3400' and <= '\u9fff');
+            var label = han != default ? han.ToString() : letters.Length > 0 ? string.Join(" ", letters) : name;
+            pools.Add(new PresenceStackViewer(label, detail: name));
+        }
         poolName = names.Count == 0 ? null : string.Join("、", names);
         inPool = names.Count > 0;
         Raise(nameof(InPool));
