@@ -549,14 +549,14 @@ var mapEntry = model.Instances.First(i => i.Entry.Definition is not null);
 PumpUntil(mapsPage.AttachAsync(new HCSL.Host.Views.MapsPageContext(model, mapEntry.Entry.Id,
     mapEntry.Entry.Presets.First().Id, mapToasts.Add)));
 Layout();
-WaitUntil(() => mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().FirstOrDefault()?.ItemsSource?.Cast<object>().Count() == 4);
-var mapsTable = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
+var mapsTable = mapsPage.FindControl<TKCode.Arc.TreeTable>("CollectionTree")!;
+Check(mapsTable.IsVisible && mapsTable.ItemsSource!.Cast<object>().Count() == 4, "The console must use a tree even without collections.");
 var mapsFilter = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single();
 Check(mapsFilter.IsSearchVisible && mapsFilter.Fields.Count == 2, "The map page must offer search plus source and pool filters.");
 var poolOptions = mapsFilter.Fields.Single(f => f.Id == "pool").Options;
 Check(poolOptions.Count == 1 && poolOptions[0].Hint?.Contains("张", StringComparison.Ordinal) == true,
     "The pool filter must list the instance pools with their map counts.");
-Check(mapsTable.Columns.Count == 5 && !mapsTable.IsSelectable, "The map table needs a rail, name, source, pool membership and a selected mark.");
+Check(mapsTable.Columns.Count == 3 && !mapsTable.IsSelectable, "The console tree must not offer batch checkboxes.");
 var mapsSelection = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.SelectionToolbar>().Single();
 Check(mapsSelection.Actions.Select(a => a.Label).SequenceEqual(new[] { "切换到该图" }),
     "With one map selectable, the bar must offer only the switch.");
@@ -569,11 +569,7 @@ var mapRows = mapsTable.ItemsSource!.Cast<HCSL.Host.ViewModels.MapRow>().ToArray
 mapRows[1].IsSelected = true; Layout();
 Check(mapRows[1].IsSelected && mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled,
     "Selecting one map must enable switching it.");
-// The marks are Arc presence hosts, so the appear/disappear motion comes from Arc rather than hand-written transitions.
-var marks = mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Primitives.PresenceHost>().ToArray();
-Check(marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Fade) && marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Pop),
-    $"The rail and the check must be PresenceHost marks with Arc's own motion: {marks.Length} host(s), modes {string.Join(",", marks.Select(m => m.Mode))}.");
-Check(marks.Any(m => m.Mode == TKCode.Arc.Primitives.PresenceMode.Pop && m.IsPresent), "A selected row must present its check.");
+
 mapRows[3].IsSelected = true; Layout();
 Check(!mapRows[1].IsSelected && mapRows[3].IsSelected && mapsSelection.SelectedCount == 1,
     "Selecting another map must move the single selection.");
@@ -585,11 +581,11 @@ var editorWindow = new Window { Width = 900, Height = 640, Content = editor };
 editorWindow.Show(owner); Layout();
 var editorContext = new HCSL.Host.Views.MapsPageContext(model, mapEntry.Entry.Id, mapPreset.Id, mapToasts.Add, ManagePools: true);
 PumpUntil(editor.AttachAsync(editorContext)); Layout();
-var editorTable = editor.GetVisualDescendants().OfType<TKCode.Arc.Table>().Single();
+var editorTable = editor.FindControl<TKCode.Arc.TreeTable>("CollectionTree")!;
 Check(editorTable.IsSelectable && editorTable.Columns.Count == 3 && editorTable.ItemsSource!.Cast<object>().Count() == 4,
     "All maps must include the full catalog with Arc checkboxes and no console selection columns.");
 Check(!editor.FindControl<StackPanel>("CatalogActions")!.IsVisible, "Console filter actions must be hidden in the pool editor.");
-editorTable.SelectAll(); Layout();
+editorTable.SelectedKeys = editorTable.ItemsSource!.Cast<object>().ToArray(); Layout();
 Check(!editorTable.GetVisualDescendants().OfType<Border>().Any(b => b.Name == "PART_Footer" && b.IsVisible),
     "The table's built-in selection footer must stay hidden after Select All.");
 Check(editor.GetVisualDescendants().OfType<TKCode.Arc.FilterToolbar>().Single().Fields.Any(f => f.Id == "pool"),
@@ -598,13 +594,13 @@ var poolSnapshot = model.MapPoolsAsync(new(MapPoolLibraryAction.List, mapInstanc
 PumpUntil(poolSnapshot);
 var editorPool = poolSnapshot.Result.Library.Pools.Single();
 PumpUntil(editor.AttachAsync(editorContext with { PoolId = editorPool.Id })); Layout();
-Check(editorTable.ItemsSource!.Cast<object>().Count() == editorPool.Maps.Length && (editorTable.SelectedItems?.Count ?? 0) == 0,
+Check(editorTable.ItemsSource!.Cast<object>().Count() == editorPool.Maps.Length && (editorTable.SelectedKeys?.Count ?? 0) == 0,
     "Switching to a pool must show only its members and clear selection.");
 daemon.IncludeWorkshopCollection = true;
 PumpUntil(editor.AttachAsync(editorContext)); Layout();
 var collectionTree = editor.FindControl<TKCode.Arc.TreeTable>("CollectionTree")!;
 Check(collectionTree.IsVisible && collectionTree.ItemsSource!.Cast<object>().Count() == 5,
-    "Importing a collection must switch the loaded map editor to a unified tree without crashing.");
+    "Importing a collection must append a branch to the existing map editor tree without crashing.");
 PumpUntil(editor.ReloadAsync()); Layout();
 daemon.IncludeWorkshopCollection = false;
 editorWindow.Close(); Layout();

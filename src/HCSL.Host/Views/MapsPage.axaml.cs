@@ -28,6 +28,7 @@ public sealed partial class MapsPage : UserControl
     private MapsPageContext? context;
     private MapPoolLibraryResult? library;
     private MapRow? selected;
+    private WorkshopItem? runningCollection;
     private int reloadVersion;
     public static readonly StyledProperty<bool> ManagePoolsProperty =
         AvaloniaProperty.Register<MapsPage, bool>(nameof(ManagePools));
@@ -43,7 +44,24 @@ public sealed partial class MapsPage : UserControl
         Table.ItemsSource = visible;
         CollectionTree.ChildrenSelector = node => (node as CollectionBranch)?.Children;
         CollectionTree.KeySelector = node => node is CollectionBranch branch ? branch.Key : node;
-        CollectionTree.Columns.Add(new TreeTableColumn { Header = "地图名", ValueSelector = node => node is CollectionBranch branch ? branch.Name : ((MapRow)node).Name });
+        CollectionTree.Columns.Add(new TreeTableColumn
+        {
+            Header = "地图名", ValueSelector = node => node is CollectionBranch branch ? branch.Name : ((MapRow)node).Name,
+            CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) =>
+            {
+                if (node is CollectionBranch branch) return new TextBlock { Text = branch.Name };
+                if (node is not MapRow row) return null;
+                var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
+                if (ManagePools) return label;
+                var mark = new Badge { Content = "已选", IsVisible = row.IsSelected };
+                mark.Bind(IsVisibleProperty, new Avalonia.Data.Binding(nameof(MapRow.IsSelected)) { Source = row });
+                var cell = new DockPanel { LastChildFill = true };
+                DockPanel.SetDock(mark, Dock.Right);
+                cell.Children.Add(mark);
+                cell.Children.Add(label);
+                return cell;
+            })
+        });
         CollectionTree.Columns.Add(new TreeTableColumn { Header = "来源", Width = new GridLength(120), IsSortable = false,
             CellTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<object>((node, _) => node is null ? null : new Badge
             { Content = node is MapRow row ? row.SourceText : "工坊合集", Tone = node is MapRow map ? map.SourceTone : BadgeTone.Info }) });
@@ -59,6 +77,10 @@ public sealed partial class MapsPage : UserControl
             Setters = { new Setter(Panel.BackgroundProperty, Avalonia.Media.Brushes.Transparent) }
         });
         CollectionTree.SelectionChanged += (_, _) => UpdatePoolSelection();
+        CollectionTree.RowActivated += (_, e) =>
+        {
+            if (!ManagePools && e.Item is MapRow row) row.IsSelected = true;
+        };
         Table.SelectionChanged += (_, _) => UpdatePoolSelection();
         AutomationProperties.SetName(RulesButton, "地图轮换规则");
         // Arc's tooltip, so it keeps the shared floating-surface material and typography.
@@ -127,7 +149,8 @@ public sealed partial class MapsPage : UserControl
             Table.ItemsSource = visible = [];
         }
         context = value;
-        if (value.ManagePools && !Table.IsSelectable)
+        CollectionTree.IsSelectable = value.ManagePools;
+        if (value.ManagePools && !ManagePools)
         {
             ManagePools = true;
             Table.LayoutUpdated += HidePoolTableFooter;
@@ -169,7 +192,21 @@ public sealed partial class MapsPage : UserControl
         {
             ctx.Notify(new ToastOptions { Title = "无法读取图池", Description = e.Message + "；地图列表仍可使用", Kind = ToastKind.Warning });
         }
+        WorkshopItem? activeCollection = null;
+        var running = ctx.Model.Server.Snapshot;
+        if (!ctx.ManagePools && running is { Active: true, InstanceId: var instanceId, Preset: { } preset } && instanceId == ctx.InstanceId)
+        {
+            var pool = snapshot?.Library.PoolOf(preset.Id);
+            var id = preset.MapKind == ServerMapKind.WorkshopCollection ? preset.Map
+                : pool?.Maps is [{ Kind: ServerMapKind.WorkshopCollection } target] ? target.Value : null;
+            if (ServerMapRules.TryValidateWorkshopId(id))
+            {
+                try { activeCollection = (await ctx.Model.WorkshopCatalogAsync(new(ctx.InstanceId, WorkshopId: id))).Workshop; }
+                catch (IOException) { /* The catalog and saved member snapshot remain usable offline. */ }
+            }
+        }
         if (version != reloadVersion) return;
+        runningCollection = ctx.Model.Server.Snapshot?.RunId == running?.RunId ? activeCollection : null;
         library = snapshot;
         var pools = snapshot?.Library.Pools ?? [];
         ClearSelection(this, new RoutedEventArgs());
@@ -231,8 +268,15 @@ public sealed partial class MapsPage : UserControl
             .Where(v => v is { Length: > 0 })
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var pools = chips.Where(c => c.Id == "pool").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var collections = context?.ManagePools == true && library is { } snapshot
-            ? snapshot.Library.Pools.Where(p => p.Maps is [{ Kind: ServerMapKind.WorkshopCollection }] &&
+        var collections = library?.Library.Pools ?? [];
+        if (runningCollection is { Children: { } live })
+        {
+            var match = collections.FirstOrDefault(p => p.Maps is [{ Kind: ServerMapKind.WorkshopCollection } map] && map.Value == runningCollection.Id);
+            collections = match is null
+                ? [.. collections, new MapPoolRecord(Guid.Empty, runningCollection.Title, [new(ServerMapKind.WorkshopCollection, runningCollection.Id)], live)]
+                : collections.Select(p => p.Id == match.Id ? p with { CollectionMembers = live } : p).ToArray();
+        }
+        var collectionBranches = collections.Where(p => p.Maps is [{ Kind: ServerMapKind.WorkshopCollection }] &&
                 (pools.Count == 0 || pools.Contains(p.Name)) && (query.Length == 0 ||
                     p.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     p.Maps[0].Value.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -242,10 +286,11 @@ public sealed partial class MapsPage : UserControl
                     (p.CollectionMembers ?? []).Select(m =>
                     {
                         var original = allRows.FirstOrDefault(r => r.WorkshopId == m.Id);
-                        return new MapRow(original?.Entry ?? new(m.Title, MapCatalogSource.Workshop, m.Id, Incomplete: true),
+                        var row = new MapRow(original?.Entry ?? new(m.Title, MapCatalogSource.Workshop, m.Id, Incomplete: true),
                             (original?.PoolNames ?? []).Append(p.Name).Distinct().ToArray());
-                    }).Where(r => sources.Count == 0 || r.SourceFilterValues.Any(sources.Contains)).ToArray())).ToArray()
-            : [];
+                        row.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MapRow.IsSelected)) Choose(row); };
+                        return row;
+                    }).Where(r => sources.Count == 0 || r.SourceFilterValues.Any(sources.Contains)).ToArray())).ToArray();
         var scope = context?.PoolId;
         var members = library?.Library.Pools.FirstOrDefault(p => p.Id == scope)?.Maps
             .Select(MapCatalogRules.KeyOf).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -260,14 +305,15 @@ public sealed partial class MapsPage : UserControl
                 && !(row.WorkshopId?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
             next.Add(row);
         }
-        var branches = collections.Where(branch => sources.Count == 0 || branch.Children.Count > 0).ToArray();
-        var useTree = context?.ManagePools == true && library?.Library.Pools.Any(p => p.Maps is [{ Kind: ServerMapKind.WorkshopCollection }]) == true;
+        var branches = collectionBranches.Where(branch => sources.Count == 0 || branch.Children.Count > 0).ToArray();
         var memberKeys = branches.SelectMany(b => b.Children).Select(r => r.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var roots = next.Where(r => !memberKeys.Contains(r.Key)).ToArray();
+        if (!ManagePools && selected is { } target && !roots.Contains(target) && !branches.Any(b => b.Children.Contains(target)))
+            target.IsSelected = false;
         treeMapCount = roots.Concat(branches.SelectMany(b => b.Children)).Select(r => r.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-        CollectionTree.IsVisible = useTree;
-        Table.IsVisible = !useTree;
-        CollectionTree.ItemsSource = useTree ? roots.Cast<object>().Concat(branches).ToArray() : null;
+        CollectionTree.IsVisible = true;
+        Table.IsVisible = false;
+        CollectionTree.ItemsSource = roots.Cast<object>().Concat(branches).ToArray();
         Table.ItemsSource = visible = next;
         if (Table.IsSelectable) UpdatePoolSelection();
         else UpdateActions();
@@ -278,7 +324,9 @@ public sealed partial class MapsPage : UserControl
     {
         if (row.IsSelected)
         {
+            var previous = selected;
             selected = row;
+            if (previous is not null && !ReferenceEquals(previous, row)) previous.IsSelected = false;
             foreach (var other in allRows)
                 if (!ReferenceEquals(other, row) && other.IsSelected) other.IsSelected = false;
             Selection.SelectedCount = 1;
@@ -404,6 +452,7 @@ public sealed partial class MapsPage : UserControl
         poolMenu?.Close();
         CollectionTree.SelectedKeys = [];
         if (Table.IsSelectable && Table.SelectedItems is { Count: > 0 }) Table.ClearSelection();
+        if (selected is { } target) target.IsSelected = false;
         foreach (var row in allRows) row.IsSelected = false;
         selected = null;
         Selection.SelectedCount = 0;
