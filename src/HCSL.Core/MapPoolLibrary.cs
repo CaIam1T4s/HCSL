@@ -1,7 +1,7 @@
 namespace HCSL.Core;
 
 /// <summary>One named map pool of an instance; presets reference it instead of carrying their own copy.</summary>
-public sealed record MapPoolRecord(Guid Id, string Name, ServerMapTarget[] Maps);
+public sealed record MapPoolRecord(Guid Id, string Name, ServerMapTarget[] Maps, WorkshopItem[]? CollectionMembers = null);
 
 /// <summary>
 /// Instance-level pool library. Pools are shared by every preset of one instance; the assignment map says which pool a
@@ -17,7 +17,7 @@ public enum MapPoolLibraryAction { List, Create, Rename, Delete, SaveMaps, Assig
 
 public sealed record MapPoolLibraryCommand(MapPoolLibraryAction Action, Guid InstanceId, long InstanceRevision = 0,
     Guid PoolId = default, Guid PresetId = default, string? Name = null, ServerMapTarget[]? Maps = null,
-    long ExpectedRevision = 0, string? ExpectedHash = null);
+    long ExpectedRevision = 0, string? ExpectedHash = null, WorkshopItem[]? CollectionMembers = null);
 
 public sealed record MapPoolLibraryResult(MapPoolLibrary Library, string? Hash);
 
@@ -40,6 +40,11 @@ public static class MapPoolLibraryRules
             if (!Names.Valid(pool.Name) || !names.Add(pool.Name.Trim()))
                 throw new InstanceException("HCSL-MAPPOOL-NAME", "Pool names must be 1-" + MaxNameLength + " characters and unique in the instance.");
             MapPoolRules.Validate(new(1, 0, pool.Maps ?? []));
+            if (pool.CollectionMembers is { } members &&
+                (pool.Maps is not [{ Kind: ServerMapKind.WorkshopCollection }] || members.Length > 100 ||
+                 members.Any(m => m is null || m.Children is not null || !ServerMapRules.TryValidateWorkshopId(m.Id) ||
+                     m.Title is not { Length: > 0 and <= 200 } || m.Title.Any(char.IsControl))))
+                throw new InstanceException("HCSL-MAPPOOL-COLLECTION", "合集成员快照无效。");
         }
         foreach (var pair in library.Assignments)
         {

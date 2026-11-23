@@ -78,7 +78,7 @@ public sealed class LocalMapPoolLibraryStore
                     throw new InstanceException("HCSL-MAPPOOL-LIMIT", "An instance holds at most 32 pools.");
                 if (library.Pools.Any(p => string.Equals(p.Name.Trim(), c.Name!.Trim(), StringComparison.OrdinalIgnoreCase)))
                     throw new InstanceException("HCSL-MAPPOOL-NAME", "A pool with that name already exists.");
-                var pool = new MapPoolRecord(Guid.NewGuid(), c.Name!.Trim(), c.Maps ?? []);
+                var pool = new MapPoolRecord(Guid.NewGuid(), c.Name!.Trim(), c.Maps ?? [], c.CollectionMembers);
                 MapPoolRules.Validate(new(1, 0, pool.Maps));
                 return library with { Revision = revision, Pools = [.. library.Pools, pool] };
             }

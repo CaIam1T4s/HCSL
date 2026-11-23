@@ -87,6 +87,8 @@
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
       </arc:SelectionToolbar.Actions>
+      <Grid>
+      <arc:TreeTable x:Name="CollectionTree" Caption="地图目录" IsSelectable="True" IsVisible="False"/>
       <arc:Table x:Name="Table" IsSelectable="False" Caption="地图目录"
                  EmptyMessage="没有符合条件的地图" LoadingMessage="正在读取地图目录"
                  ItemNameOne="张地图" ItemNameOther="张地图">
@@ -100,6 +102,7 @@
           <arc:DataTableColumn Header="" IsSortable="False" Width="*" CellTemplate="{StaticResource MapSelectedCell}"/>
         </arc:Table.Columns>
       </arc:Table>
+      </Grid>
     </arc:SelectionToolbar>
   </Grid>
   </Border>

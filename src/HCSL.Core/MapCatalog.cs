@@ -8,16 +8,16 @@ public enum MapCatalogSource { Standard, Workshop, Preview }
 /// of one instance runtime, so it is reported per query rather than stored here.
 /// </summary>
 public sealed record MapCatalogEntry(string Name, MapCatalogSource Source, string? WorkshopId,
-    long SizeBytes = 0, DateTimeOffset? ModifiedAt = null, bool Incomplete = false)
+    long SizeBytes = 0, DateTimeOffset? ModifiedAt = null, bool Incomplete = false, string? InternalName = null)
 {
     /// <summary>Stable identity of an entry inside one catalog: the kind plus the map name or Workshop id.</summary>
     public string Key => Source == MapCatalogSource.Workshop ? "workshop:" + WorkshopId : "standard:" + Name;
 }
 
-public sealed record MapCatalogResult(MapCatalogEntry[] Entries, string? Detail = null);
+public sealed record MapCatalogResult(MapCatalogEntry[] Entries, string? Detail = null, WorkshopItem? Workshop = null);
 
 /// <summary>Which instance runtime to read; the catalog itself is app-level, its download state is not.</summary>
-public sealed record MapCatalogCommand(Guid InstanceId);
+public sealed record MapCatalogCommand(Guid InstanceId, string? WorkshopId = null, WorkshopItem[]? Register = null);
 
 public static class MapCatalogRules
 {
