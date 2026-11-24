@@ -5,8 +5,15 @@
     <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space4}">
       <arc:SettingsGroup Appearance="Plain">
         <arc:SettingsRow Header="预设名称"><arc:Input x:Name="NameInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" MaxLength="80" AutomationProperties.Name="预设名称"/></arc:SettingsRow>
-        <arc:SettingsRow Header="地图来源"><arc:Select x:Name="MapKindInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="地图来源"/></arc:SettingsRow>
-        <arc:SettingsRow Header="启动地图"><arc:Input x:Name="MapInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="启动地图"/></arc:SettingsRow>
+        <arc:SettingsRow Header="图池">
+          <arc:TreeSelect x:Name="PoolPicker" IsClearable="False" IsEnabled="{Binding Servers.CanEditMapPool}" Width="220" Placeholder="选择图池" AutomationProperties.Name="图池"/>
+        </arc:SettingsRow>
+        <arc:SettingsRow Header="启动地图">
+          <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}">
+            <arc:TreeSelect x:Name="MapPicker" IsClearable="False" IsEnabled="{Binding Servers.CanMutate}" Width="220" Placeholder="选择启动地图" AutomationProperties.Name="启动地图"/>
+            <arc:Button Content="输入工坊 ID" Variant="Secondary" Size="Small" IsEnabled="{Binding Servers.CanMutate}" Click="EnterWorkshopId"/>
+          </WrapPanel>
+        </arc:SettingsRow>
         <arc:SettingsRow Header="game_type">
           <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
             <arc:Button x:Name="TypeHelp" Variant="Ghost" Size="Small" Padding="0" AutomationProperties.Name="game_type 说明"><lucide:LucideIcon Kind="CircleQuestionMark"/></arc:Button>

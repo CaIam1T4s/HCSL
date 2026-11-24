@@ -47,7 +47,6 @@ public sealed class ShellViewModel : ObservableObject
         new("overview", "基本信息"),
         new("cfg", "CFG"),
         new("content", "框架与插件"),
-        new("pools", "地图池"),
         new("admins", "管理员")
     ];
 
@@ -100,7 +99,6 @@ public sealed class ShellViewModel : ObservableObject
     public bool IsPresetOverview => IsPresetScope && SelectedPresetSection.Id == "overview";
     public bool IsPresetCfg => IsPresetScope && SelectedPresetSection.Id == "cfg";
     public bool IsPresetContent => IsPresetScope && SelectedPresetSection.Id == "content";
-    public bool IsPresetPools => IsPresetScope && SelectedPresetSection.Id == "pools";
     public bool IsPresetAdmins => IsPresetScope && SelectedPresetSection.Id == "admins";
 
     public void SelectPresetSection(string id)
@@ -137,7 +135,6 @@ public sealed class ShellViewModel : ObservableObject
         Notify(nameof(IsPresetOverview));
         Notify(nameof(IsPresetCfg));
         Notify(nameof(IsPresetContent));
-        Notify(nameof(IsPresetPools));
         Notify(nameof(IsPresetAdmins));
     }
 

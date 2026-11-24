@@ -86,7 +86,6 @@
                 <arc:SidebarItem Key="overview" Label="基本信息"/>
                 <arc:SidebarItem Key="cfg" Label="CFG"/>
                 <arc:SidebarItem Key="content" Label="框架与插件"/>
-                <arc:SidebarItem Key="pools" Label="地图池"/>
                 <arc:SidebarItem Key="admins" Label="管理员"/>
               </arc:SidebarSection>
             </arc:Sidebar>
@@ -108,7 +107,6 @@
             <pages:PresetOverviewPage IsVisible="{Binding IsPresetOverview}"/>
             <pages:PresetCfgPage x:Name="PresetCfg" IsVisible="{Binding IsPresetCfg}"/>
             <pages:InstanceContentPage x:Name="PresetContent" IsVisible="{Binding IsPresetContent}"/>
-            <pages:PresetMapPoolPage x:Name="PresetPools" IsVisible="{Binding IsPresetPools}"/>
             <pages:InstanceAdminsPage x:Name="PresetAdmins" IsVisible="{Binding IsPresetAdmins}"/>
           </Grid>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
