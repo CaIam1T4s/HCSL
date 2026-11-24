@@ -9,10 +9,7 @@
           <arc:TreeSelect x:Name="PoolPicker" IsClearable="False" IsEnabled="{Binding Servers.CanEditMapPool}" Width="220" Placeholder="选择图池" AutomationProperties.Name="图池"/>
         </arc:SettingsRow>
         <arc:SettingsRow Header="启动地图">
-          <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}">
-            <arc:TreeSelect x:Name="MapPicker" IsClearable="False" IsEnabled="{Binding Servers.CanMutate}" Width="220" Placeholder="选择启动地图" AutomationProperties.Name="启动地图"/>
-            <arc:Button Content="输入工坊 ID" Variant="Secondary" Size="Small" IsEnabled="{Binding Servers.CanMutate}" Click="EnterWorkshopId"/>
-          </WrapPanel>
+          <arc:TreeSelect x:Name="MapPicker" IsClearable="False" IsEnabled="{Binding Servers.CanMutate}" Width="220" Placeholder="选择启动地图" AutomationProperties.Name="启动地图"/>
         </arc:SettingsRow>
         <arc:SettingsRow Header="game_type">
           <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">

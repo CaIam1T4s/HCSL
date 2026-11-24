@@ -184,14 +184,6 @@ public partial class PresetOverviewPage : UserControl
         if (Scope()?.Preset.Id == scope.Preset.Id) RenderPools();
     }
 
-    private async void EnterWorkshopId(object? sender, RoutedEventArgs e)
-    {
-        if (operating || Scope() is not { } scope || !scope.Servers.CanMutate || Owner is not { } owner) return;
-        var value = await owner.TextAsync("启动地图", "工坊地图 ID", maxLength: 20);
-        if (value is null || Scope()?.Preset.Id != scope.Preset.Id) return;
-        await ChangeStartMapAsync(new(ServerMapKind.Workshop, value));
-    }
-
     private async Task ChangeStartMapAsync(ServerMapTarget map)
     {
         var ticket = pickerGeneration;
