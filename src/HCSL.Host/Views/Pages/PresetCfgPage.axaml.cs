@@ -138,20 +138,34 @@ public partial class PresetCfgPage : UserControl
             var content = new StackPanel { Spacing = 12, MaxWidth = 480 };
             content.Children.Add(new TextBlock
             {
-                Text = $"{instance.Name} / {preset.Name}\n拖动调整顺序，命令将从上到下逐条投递。CFG 可能换图或停止服务器。",
+                Text = $"{instance.Name} / {preset.Name}\n{(order.Count > 1 ? "拖动调整顺序，命令将从上到下逐条投递。" : "将向当前服务器投递此 CFG。 ")}CFG 可能换图或停止服务器。",
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap
             });
-            content.Children.Add(new ScrollViewer { MaxHeight = 300, Content = new ReorderableList { ItemsSource = order } });
+            if (order.Count == 1)
+                content.Children.Add(new TextBlock { Text = order[0].Title, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            else
+                content.Children.Add(new ScrollViewer
+                {
+                    MaxHeight = 340,
+                    Content = new Border
+                    {
+                        // Leave room inside the scroll viewport for the lifted row and its shadow.
+                        Padding = new Avalonia.Thickness(8, 12, 8, 20),
+                        Child = new ReorderableList { ItemsSource = order }
+                    }
+                });
             if (await Dialog.ShowAsync(this, "按顺序执行 CFG", content, null,
                 new DialogAction("取消", false), new DialogAction("执行", true, ButtonVariant.Primary)) is not true) return;
             foreach (var file in order.ToArray())
             {
+                // The runtime admits one console write per 250 ms. Pace the queue without retrying uncertain writes.
+                if (written > 0) await Task.Delay(300);
                 if (servers.Server.RunId != run) throw new IOException("服务器运行会话已改变。");
                 var receipt = await servers.DeliverCfgAsync(instance.Id, preset.Id, run, file.Id, hashes[file.Id]);
                 if (!receipt.Written) throw new IOException($"{file.Id}：{receipt.Message}");
                 written++;
             }
-            owner.ShowInstanceNotification($"已写入 {written} 条 CFG 命令", "写入不代表执行成功，请以服务器日志为准。");
+            owner.ShowInstanceNotification($"已写入 {written} 条 CFG 命令", "写入不代表执行成功，请以服务器日志为准。", ToastKind.Info);
         }
         catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
         { owner.ShowInstanceNotification($"CFG 投递已停止（已写入 {written}/{files.Length} 条）", ex.Message); }
