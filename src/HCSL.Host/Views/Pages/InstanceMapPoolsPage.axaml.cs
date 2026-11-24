@@ -185,7 +185,7 @@ public partial class InstanceMapPoolsPage : UserControl
                 form.Classes.Add("instance-editor");
                 form.Classes.Add("workshop-collection-preview");
                 form.Children.RemoveAt(0); // The expanded tree root already shows the collection name.
-                var hint = new TextBlock { Text = "勾选要在地图管理中显示的成员；服务端仍使用完整合集。", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+                var hint = new TextBlock { Text = "全选才能导入为合集；否则只登记所选地图，不创建图池。", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
                 ArcTokens.Bind(hint, TextBlock.ForegroundProperty, ArcDesignTokenKind.TextSecondary);
                 form.Children.Add(hint);
                 var tree = new TreeTable { Caption = "合集地图", IsSelectable = true,
@@ -199,14 +199,26 @@ public partial class InstanceMapPoolsPage : UserControl
                 });
                 form.Children.Add(new ScrollViewer { Height = 300, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled, Content = tree });
+                var asCollection = new TKCode.Arc.Checkbox { Content = "导入为合集", IsChecked = true };
+                tree.SelectionChanged += (_, e) =>
+                {
+                    var keys = e.SelectedKeys.ToHashSet();
+                    asCollection.IsEnabled = children.All(map => keys.Contains(map.Id));
+                    if (!asCollection.IsEnabled) asCollection.IsChecked = false;
+                };
+                form.Children.Add(asCollection);
                 if (await owner.ShowWorkshopPreviewAsync(form, ["取消", "导入"]) != 1 || Instance?.Id != instance.Id) return;
                 var selectedKeys = tree.SelectedKeys?.ToHashSet() ?? [];
                 var selectedMembers = children.Where(map => selectedKeys.Contains(map.Id)).ToArray();
                 if (selectedMembers.Length == 0) { Error("请至少勾选一张地图"); return; }
-                var name = item.Title[..Math.Min(item.Title.Length, MapPoolLibraryRules.MaxNameLength)].Trim();
-                await WriteAsync(i => new(MapPoolLibraryAction.Create, i.Id, i.Revision, Name: name,
-                    Maps: [new(ServerMapKind.WorkshopCollection, item.Id)], CollectionMembers: selectedMembers));
-                return;
+                if (asCollection.IsChecked == true && selectedMembers.Length == children.Length)
+                {
+                    var name = item.Title[..Math.Min(item.Title.Length, MapPoolLibraryRules.MaxNameLength)].Trim();
+                    await WriteAsync(i => new(MapPoolLibraryAction.Create, i.Id, i.Revision, Name: name,
+                        Maps: [new(ServerMapKind.WorkshopCollection, item.Id)], CollectionMembers: selectedMembers));
+                    return;
+                }
+                register = selectedMembers;
             }
             else
             {
