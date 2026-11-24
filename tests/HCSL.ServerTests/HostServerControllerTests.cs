@@ -60,8 +60,8 @@ public static class HostServerControllerTests
         Check(live.LastAdmin is { Action: AdminAction.Apply, ExpectedHash: not null } && applied.Code == "HCSL-ADMIN-WRITTEN", "admin write not delegated");
         try
         {
-            await players.ApplyAdminAsync(new(AdminAction.Apply, live.Second, live.PresetId, admins.Snapshot.Hash, [new(AdminMutationKind.Remove, "76561198000000000")]));
-            throw new Exception("admin write accepted for a different instance");
+            await players.ApplyAdminAsync(new(AdminAction.Apply, live.Second, Guid.NewGuid(), admins.Snapshot.Hash, [new(AdminMutationKind.Remove, "76561198000000000")]));
+            throw new Exception("admin write accepted for an unknown preset");
         }
         catch (IOException e) when (e.Message.Contains("HCSL-ADMIN-REQUEST", StringComparison.Ordinal)) { }
         var reloaded = await players.ReloadAdminsAsync();
