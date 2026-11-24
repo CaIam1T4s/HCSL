@@ -12,6 +12,7 @@ public partial class PresetCfgPage : UserControl
     private sealed record Node(PresetCfgFile File, string Path, Node[]? Children);
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private int generation;
+    private readonly SemaphoreSlim loadGate = new(1, 1);
     private bool executing;
     private Node? selected;
 
@@ -24,7 +25,8 @@ public partial class PresetCfgPage : UserControl
         CfgTree.SelectionChanged += (_, e) =>
         {
             selected = e.SelectedItems.OfType<Node>().Take(2).ToArray() is [ { File.Kind: PresetCfgKind.File } file ] ? file : null;
-            ExecButton.IsEnabled = selected is not null && !executing;
+            Selection.SelectedCount = e.SelectedItems.Count();
+            UpdateActions();
         };
         PropertyChanged += async (_, e) =>
         {
@@ -43,6 +45,21 @@ public partial class PresetCfgPage : UserControl
         return null;
     }
 
+    private void UpdateActions()
+    {
+        Selection.Actions.Clear();
+        if (selected is not null && !executing)
+            Selection.Actions.Add(new SelectionToolbarAction { Key = "exec", Label = "执行 exec" });
+    }
+
+    private void ClearSelection(object? sender, RoutedEventArgs e) => CfgTree.SelectedKeys = [];
+
+    private void SelectAll(object? sender, RoutedEventArgs e) =>
+        CfgTree.SelectedKeys = Keys(CfgTree.ItemsSource?.Cast<Node>() ?? []).ToArray();
+
+    private static IEnumerable<object> Keys(IEnumerable<Node> nodes) =>
+        nodes.SelectMany(node => Keys(node.Children ?? []).Prepend(node.Path));
+
     private async void Refresh(object? sender, RoutedEventArgs e) => await LoadAsync();
 
     private async Task LoadAsync()
@@ -52,13 +69,18 @@ public partial class PresetCfgPage : UserControl
         CfgTree.SelectedKeys = Array.Empty<object>();
         CfgTree.ExpandedKeys = Array.Empty<object>();
         selected = null;
-        ExecButton.IsEnabled = false;
+        Selection.SelectedCount = 0;
+        UpdateActions();
         if (Scope() is not { } scope) return;
         var remaining = 64;
         var truncated = false;
         bool Current() => generation == ticket && Scope()?.Preset.Id == scope.Preset.Id;
+        await loadGate.WaitAsync();
         try
         {
+            for (var i = 0; i < 40 && Current() && (scope.Servers.Busy || !scope.Servers.Server.Connected); i++)
+                await Task.Delay(125);
+            if (!Current()) return;
             var roots = await ReadAsync("");
             if (!Current()) return;
             CfgTree.ItemsSource = roots;
@@ -66,6 +88,7 @@ public partial class PresetCfgPage : UserControl
         }
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
         { if (Current()) Owner?.ShowInstanceNotification("无法读取 CFG", e.Message); }
+        finally { loadGate.Release(); }
 
         async Task<Node[]> ReadAsync(string path)
         {
@@ -84,7 +107,7 @@ public partial class PresetCfgPage : UserControl
         }
     }
 
-    private async void Exec(object? sender, RoutedEventArgs e)
+    private async void Exec(object? sender, SelectionToolbarActionEventArgs e)
     {
         if (executing || selected is not { } file || Scope() is not { } scope || Owner is not { } owner) return;
         var (servers, instance, preset) = scope;
@@ -94,7 +117,7 @@ public partial class PresetCfgPage : UserControl
             return;
         }
         executing = true;
-        ExecButton.IsEnabled = false;
+        UpdateActions();
         try
         {
             var read = await servers.CfgAsync(new(PresetCfgAction.Read, instance.Id, preset.Id, instance.Revision, file.Path));
@@ -105,6 +128,6 @@ public partial class PresetCfgPage : UserControl
         }
         catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
         { owner.ShowInstanceNotification("无法执行 CFG", ex.Message); }
-        finally { executing = false; ExecButton.IsEnabled = selected is not null; }
+        finally { executing = false; UpdateActions(); }
     }
 }

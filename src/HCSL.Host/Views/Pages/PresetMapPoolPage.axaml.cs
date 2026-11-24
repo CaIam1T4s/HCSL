@@ -17,6 +17,7 @@ public partial class PresetMapPoolPage : UserControl
 {
     private HostServerController? subscribed;
     private MapPoolLibrary? library;
+    private string? libraryHash;
     private MapPoolRow[] rows = [];
     private bool operating, loaded;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
@@ -59,6 +60,7 @@ public partial class PresetMapPoolPage : UserControl
         {
             var result = await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.List, instance.Id));
             library = result.Library;
+            libraryHash = result.Hash;
             var assigned = PresetId is { } presetId ? library.PoolOf(presetId)?.Id : null;
             rows = library.Pools.Select(pool => new MapPoolRow(pool,
                 pool.Maps.Length == 0 ? "空" : $"{pool.Maps.Length} 张",
@@ -83,17 +85,17 @@ public partial class PresetMapPoolPage : UserControl
         if (PoolChoices.SelectedItem is not MapPoolRow row) return;
         ShowMaps(row.Pool.Id);
         if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } instance || PresetId is not { } presetId) return;
-        if (library?.PoolOf(presetId)?.Id == row.Pool.Id) return;
+        if (library is not { } snapshot || snapshot.PoolOf(presetId)?.Id == row.Pool.Id) return;
         operating = true;
         try
         {
             await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset,
-                instance.Id, instance.Revision, row.Pool.Id, presetId));
-            loaded = false;
-            await LoadAsync();
+                instance.Id, instance.Revision, row.Pool.Id, presetId,
+                ExpectedRevision: snapshot.Revision, ExpectedHash: libraryHash));
         }
         catch (IOException error) { Error("指定图池失败", error.Message); }
         finally { operating = false; }
+        await LoadAsync();
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);

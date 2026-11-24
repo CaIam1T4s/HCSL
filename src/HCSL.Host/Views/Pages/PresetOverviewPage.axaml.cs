@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using TKCode.Arc;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
@@ -16,6 +17,10 @@ public partial class PresetOverviewPage : UserControl
     {
         InitializeComponent();
         MapKindInput.ItemsSource = new[] { "普通地图", "工坊地图 ID" };
+        Tooltip.SetTip(TypeHelp, "游戏类型编号，与 game_mode 一起决定服务器玩法。例如 0 表示经典类型。");
+        Tooltip.SetTip(ModeHelp, "该游戏类型下的模式编号。例如 game_type 为 0 时，0 为休闲，1 为竞技。");
+        foreach (var field in new Control[] { NameInput, MapKindInput, MapInput, TypeInput, ModeInput })
+            field.LostFocus += async (_, _) => await SavePresetAsync();
         DataContextChanged += (_, _) => LoadFields();
         PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) LoadFields(); };
     }
@@ -39,7 +44,7 @@ public partial class PresetOverviewPage : UserControl
         ModeInput.Text = loaded?.GameMode.ToString();
     }
 
-    private async void SavePreset(object? sender, RoutedEventArgs e)
+    private async Task SavePresetAsync()
     {
         if (Scope() is not { } scope || !scope.Servers.CanMutate || loaded?.Id != scope.Preset.Id) return;
         await RunAsync(async () =>
@@ -53,10 +58,11 @@ public partial class PresetOverviewPage : UserControl
                 Name = NameInput.Text?.Trim() ?? "", Map = MapInput.Text?.Trim() ?? "",
                 MapKind = (ServerMapKind)MapKindInput.SelectedIndex, GameType = type, GameMode = mode
             };
+            if (draft == loaded) return;
             InstanceRules.Preset(draft);
             if (!await scope.Servers.UpdatePresetAsync(scope.Instance.Id, scope.Instance.Revision, draft))
                 throw new IOException(scope.Servers.Error);
-            if (Scope()?.Preset.Id == draft.Id) LoadFields();
+            if (Scope() is { } current && current.Preset.Id == draft.Id) loaded = current.Preset;
             Owner?.ShowInstanceNotification("预设已保存");
         });
     }

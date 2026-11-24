@@ -7,7 +7,6 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space12}">
       <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
-        <TextBlock Text="地图池" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
         <!-- Pools belong to the instance; a preset only picks one of them, so there is no create/delete here. -->
         <arc:RadioGroup x:Name="PoolChoices" AutomationProperties.Name="本预设使用的图池"
                         SelectionChanged="PoolSelected">

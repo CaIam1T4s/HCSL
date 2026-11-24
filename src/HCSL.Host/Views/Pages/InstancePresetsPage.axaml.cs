@@ -96,6 +96,7 @@ public partial class InstancePresetsPage : UserControl
     private void OnPresetContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         Control? anchor = null;
+        Control? menuAnchor = null;
         if (e.TryGetPosition(PresetChoices, out var point))
         {
             var body = PresetChoices.GetVisualDescendants().OfType<ScrollViewer>()
@@ -106,10 +107,14 @@ public partial class InstancePresetsPage : UserControl
                 c.GetType().Name == "TableRow" && c.TranslatePoint(default, PresetChoices) is { } origin &&
                 new Rect(origin, c.Bounds.Size).Contains(point));
             anchor = row?.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Classes.Contains("preset-row-action"));
+            if (PresetChoices.TranslatePoint(point, PresetMenuLayer) is not { } position) return;
+            Canvas.SetLeft(PresetMenuAnchor, position.X);
+            Canvas.SetTop(PresetMenuAnchor, position.Y);
+            menuAnchor = PresetMenuAnchor;
         }
         else if (e.Source is Control source && source.Classes.Contains("preset-row-action")) anchor = source;
         if (anchor?.DataContext is not HostPresetItem item) return;
-        ShowPresetActions(item, anchor);
+        ShowPresetActions(item, menuAnchor ?? anchor);
         e.Handled = true;
     }
 

@@ -38,6 +38,9 @@
           </arc:DataTableColumn>
         </arc:Table.Columns>
       </arc:Table>
+      <Canvas x:Name="PresetMenuLayer" IsHitTestVisible="False">
+        <Border x:Name="PresetMenuAnchor" Width="1" Height="1"/>
+      </Canvas>
       <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" Offset="0" TriggerMode="Manual" HasShadow="False">
         <arc:Popover.Styles>
           <Style Selector="arc|PopoverSurface">

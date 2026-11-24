@@ -1,17 +1,24 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:vm="using:HCSL.Host.ViewModels"
+             xmlns:lucide="using:TKCode.Arc.Icons.Lucide" xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:vm="using:HCSL.Host.ViewModels"
              x:Class="HCSL.Host.Views.Pages.PresetOverviewPage" x:DataType="vm:ShellViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
     <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space4}">
-      <arc:SettingsGroup Appearance="Plain" IsEnabled="{Binding Servers.CanMutate}">
-        <arc:SettingsRow Header="预设名称"><arc:Input x:Name="NameInput" Width="220" MaxLength="80" AutomationProperties.Name="预设名称"/></arc:SettingsRow>
-        <arc:SettingsRow Header="地图来源"><arc:Select x:Name="MapKindInput" Width="220" AutomationProperties.Name="地图来源"/></arc:SettingsRow>
-        <arc:SettingsRow Header="启动地图"><arc:Input x:Name="MapInput" Width="220" AutomationProperties.Name="启动地图"/></arc:SettingsRow>
-        <arc:SettingsRow Header="game_type"><arc:Input x:Name="TypeInput" Width="220" AutomationProperties.Name="game_type"/></arc:SettingsRow>
-        <arc:SettingsRow Header="game_mode"><arc:Input x:Name="ModeInput" Width="220" AutomationProperties.Name="game_mode"/></arc:SettingsRow>
-        <arc:SettingsRow Header="预设配置"><arc:Button Content="保存" Variant="Secondary" Size="Small" Click="SavePreset"/></arc:SettingsRow>
-      </arc:SettingsGroup>
       <arc:SettingsGroup Appearance="Plain">
+        <arc:SettingsRow Header="预设名称"><arc:Input x:Name="NameInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" MaxLength="80" AutomationProperties.Name="预设名称"/></arc:SettingsRow>
+        <arc:SettingsRow Header="地图来源"><arc:Select x:Name="MapKindInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="地图来源"/></arc:SettingsRow>
+        <arc:SettingsRow Header="启动地图"><arc:Input x:Name="MapInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="启动地图"/></arc:SettingsRow>
+        <arc:SettingsRow Header="game_type">
+          <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+            <arc:Button x:Name="TypeHelp" Variant="Ghost" Size="Small" Padding="0" AutomationProperties.Name="game_type 说明"><lucide:LucideIcon Kind="CircleQuestionMark"/></arc:Button>
+            <arc:Input x:Name="TypeInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="game_type"/>
+          </StackPanel>
+        </arc:SettingsRow>
+        <arc:SettingsRow Header="game_mode">
+          <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+            <arc:Button x:Name="ModeHelp" Variant="Ghost" Size="Small" Padding="0" AutomationProperties.Name="game_mode 说明"><lucide:LucideIcon Kind="CircleQuestionMark"/></arc:Button>
+            <arc:Input x:Name="ModeInput" IsEnabled="{Binding Servers.CanMutate}" Width="220" AutomationProperties.Name="game_mode"/>
+          </StackPanel>
+        </arc:SettingsRow>
         <arc:SettingsRow Header="CFG 目录"><arc:Button Content="打开" Variant="Secondary" Size="Small" Click="OpenCfg" AutomationProperties.Name="打开 CFG 目录"/></arc:SettingsRow>
         <arc:SettingsRow Header="addons 目录"><arc:Button Content="打开" Variant="Secondary" Size="Small" Click="OpenAddons" AutomationProperties.Name="打开 addons 目录"/></arc:SettingsRow>
       </arc:SettingsGroup>
