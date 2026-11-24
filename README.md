@@ -1,102 +1,53 @@
-<h1 align="center">Hello Counter-Strike! Launcher</h1>
+# Hello Counter-Strike! Launcher
 
-Hello Counter-Strike! Launcher（**HCSL**）是面向服主与玩家的 Windows / Linux CS2启动器，使用 .NET 10 与 Avalonia 构建
+**HCSL · CS2 开服管理与连接工具 · 预览版**
 
-## 文档目录
+用 SteamCMD 部署 CS2 专用服务器，把不同玩法的配置保存为预设，再在控制台里查看日志、换图和管理玩家。不负责开服？可以单独使用连接客户端保存常用服务器，并通过 Steam 加入。
 
-- [项目简介](#项目简介)
-- [当前进展与下一步](#当前进展与下一步)
-- [快速开始](#快速开始)
-- [项目功能](#项目功能)
-- [当前功能的缺陷](#当前功能的缺陷)
-- [鸣谢和说明](#鸣谢和说明)
+## 选一个入口
 
-## 项目简介
+| 你想做什么                 | 入口                                |
+| -------------------------- | ----------------------------------- |
+| 在桌面上部署和管理服务器   | [服务端 GUI](src/HCSL.Host)         |
+| 在终端里管理服务器         | [服务端 TUI](src/HCSL.Tui)          |
+| 保存服务器地址并连接       | [连接客户端](src/HCSL.Client)       |
 
-本项目当前使用 Avalonia 12.1.5 与 TKCode.Arc 1.1.0构建
+GUI 和 TUI 都由[本机守护进程](src/HCSL.Daemon)负责管理 SteamCMD 和 CS2，但两者的功能并不完全相同。连接客户端不负责部署服务器。
 
-项目包含三个前端，一个服务端宿主和一个CLI工具：
+## 从源码启动
 
-- **服务端GUI**（`HCSL.Host`）：提供服务端下载，管理和运行，使用实例来隔离进行插件和配置隔离
-- **服务端TUI**（`HCSL.Tui`）：无桌面环境下的终端管理界面，提供GUI支持的全部功能，支持ssh远程终端使用
-- **玩家客户端**（`HCSL.Client`）：查看保存的服务器列表，提供相比CS2原本命令行更直观的进服操作，对所有已知ip和密码的CS2服务器都适用
-- **本机 Daemon**（`HCSL.Daemon`）：在服务端启动时自动启动，持有服务器进程与 SteamCMD 任务，通过本机 IPC 为 GUI/TUI 提供能力，已包含在服务端GUI/TUI的release中
-- **命令行调试工具**（`build/HCSL.dev`）：为方便开发者调试使用的CLI工具，不包含在Release中
-
-> 本项目与 Valve 无关联，未获 Valve 背书。Counter-Strike 及相关商标归 Valve 所有
-
-## 快速开始
-
-### 环境要求
-
-- .NET 10 SDK（开发与框架依赖版运行都需要）
-- Windows：无额外系统依赖
-- Linux：Avalonia GUI 需要 X11 相关系统库（如 `libx11`、`libfontconfig`），TUI 需要支持 UTF-8 的终端
-
-### 从源码构建并运行
+需要 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。Linux 下运行桌面入口需要图形会话和相关系统库（如 `libx11`、`libfontconfig`）；终端入口需要支持 UTF-8 的终端。使用连接客户端时，本机需要 Steam。
 
 ```sh
-git clone https://github.com/CaIam1T4s/Hello_Counter_Strike_Launcher.git
-cd Hello_Counter_Strike_Launcher
+git clone https://github.com/CaIam1T4s/HCSL.git
+cd HCSL
 
-dotnet restore Hello_Counter_Strike_Launcher.slnx
-dotnet build Hello_Counter_Strike_Launcher.slnx
-
-# 服主 GUI
+# 按需选择一条
+# 服务端 GUI
 dotnet run --project src/HCSL.Host
-
-# 服主 TUI
+# 服务端 TUI
 dotnet run --project src/HCSL.Tui
-
-# 玩家客户端
+# 连接客户端
 dotnet run --project src/HCSL.Client
 ```
 
-测试：
+## 开服时会用到什么？
 
-```sh
-bash build/test-fast.sh full
-```
+- **实例和预设**：用实例隔离运行环境，用预设保存插件与 CFG 配置。同一实例的多个预设可以引用同一个图池。
+- **部署和控制台**：通过 SteamCMD 安装、更新或校验 CS2；部署后可启动、停止服务，在独立控制台查看日志、发送命令、换图和管理在线玩家。
+- **地图与插件**：可登记工坊单图、导入合集、导入本地插件包、安装框架和管理管理员名单。登记工坊地图不会立即下载；插件能否热重载取决于框架。
 
-### 数据位置
+内容库默认位于用户主目录下的 `HCSL-Library`，与实例数据分开存放。
 
-设置、私有数据、实例与内容库分别管理。内容库默认位于用户主目录的 `HCSL-Library`文件夹下
+## 预览版边界
 
-## 项目功能
+- **平台**：项目面向 Windows 和 Linux；Linux 是服务端的主要验证环境。Windows 端到端运行、安装器和代码签名尚未完成验证。
+- **连接**：客户端通过 Steam 发起直连，地址格式通过校验不代表服务器可达。公网开服流程、GSLT 和 VAC 修改入口尚未接入。
+- **地图轮换**：内置图池可走地图组轮换，工坊合集可走服务端原生合集轮换；混合内置地图和工坊单图的图池不支持自动轮换。
+- **数据兼容**：实例导入和分享尚未接入。配置与目录布局可能变化，不建议用于生产环境。
 
-- **实例**：实例管理一个服务端可执行文件的链接，一个预设列表和多个图池列表
-- **配置预设**：预设包含已启用的插件和其相关cfg，用户的cfg，和启用的图池
-- **插件与框架**：本地插件包导入、框架安装（Metamod:Source、CounterStrikeSharp、Source2Mod、SwiftlyS2、ModSharp）、版本与依赖校验、部署清单与回滚。
-- **CFG 与地图**：只读 CFG 树浏览与 `exec`、地图池管理与顺序保存、普通地图与工坊地图/合集启动。
-- **服务器控制**：启动、停服、恢复、部署（不启动）、日志分页与跟随、本机控制台、低内存二次确认与退出策略。
-- **SteamCMD 与 CS2**：受管 SteamCMD 安装与自更新、匿名/账号登录探测、全局 CS2 安装/更新/校验。
-- **服务器管理**：在线玩家名单、踢人、管理员名单读写与按框架热重载。
-- **玩家客户端**：服务器列表、IP/域名与端口格式校验、系统密码存储、Steam 连接请求与手动命令后备。
-- **架构**：Core / Application / Infrastructure / Frontend / Contracts 分层，UI 不直接运行 SteamCMD 或 CS2；本机 IPC 由 Daemon 串行执行写操作。
+## 鸣谢与许可证
 
-## 当前功能的缺陷
+界面设计参考 [HMCL](https://github.com/HMCL-dev/HMCL)。项目使用 [Avalonia](https://avaloniaui.net/)、[TKCode.Arc](https://github.com/AIDotNet/TKCode.Arc)、[Terminal.Gui](https://github.com/gui-cs/Terminal.Gui) 和 [Inter](https://rsms.me/inter/) 字体。
 
-- **网络能力受限**：仅支持直接 IP/局域网，公网传输策略未实现；VAC 修改入口未接入，GSLT 与公网开服未实现。
-- **玩家身份链路未闭环**：玩家 Steam 身份认证、GUI 端的玩家 Steam 配对、真实 Steam/CS2 联动仍待验收；玩家客户端以格式校验为主，不预检可达性。
-- **Windows 覆盖不足**：TUI 仅在 Linux 终端实测，Windows 下未验证；Windows 打包安装器与代码签名尚未建立。
-- **界面验证不完整**：当前环境无 X 显示服务，GUI 只完成 Headless 测试与构建验证，真实渲染、输入设备与文件管理器交互需人工检查。
-- **设置不持久**：主题、背景、语言等偏好仅在当前会话生效；实例导入/分享与他人实例包尚未实现。
-- **部分入口为占位**：VAC 修改、部分配置预设执行业务与远端管理仍为禁用或未接入状态；开发者 CLI `hcsl` 不随发行包提供。
-- **文档缺失**：`docs/` 使用文档尚未创建；发行包（自包含/框架依赖、安装器、校验和）尚未产出。
-
-## 鸣谢和说明
-
-### 鸣谢
-
-- [HMCL](https://github.com/HMCL-dev/HMCL)：本项目的界面设计与交互参考。
-- [Avalonia](https://avaloniaui.net/)：跨平台桌面 UI 框架。
-- [TKCode.Arc](https://github.com/AIDotNet/TKCode.Arc)：Arc 控件与主题。
-- [Terminal.Gui](https://github.com/gui-cs/Terminal.Gui)：TUI 框架。
-- [.NET](https://dotnet.microsoft.com/) 与 [Inter](https://rsms.me/inter/) 字体：运行环境与界面字体。
-
-### 说明
-
-- 本项目以 MIT 许可证发布，见 [LICENSE](LICENSE)。
-- 项目处于早期预览阶段，接口、配置格式与目录布局仍可能变化；请勿用于生产环境。
-- 本项目不注入游戏进程、不读写游戏内存，也不提供作弊功能。
-- 本项目与 Valve 无关联；Counter-Strike、Steam 及相关商标归 Valve 所有。
+项目采用 [MIT 许可证](LICENSE)，与 Valve 无关联，也未获 Valve 背书。Counter-Strike 及相关商标归 Valve 所有。
