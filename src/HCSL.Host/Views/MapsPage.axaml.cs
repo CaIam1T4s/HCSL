@@ -26,6 +26,7 @@ public sealed partial class MapsPage : UserControl
 {
     private readonly ObservableCollection<MapRow> allRows = [];
     private MapsPageContext? context;
+    private ServerController? observedServer;
     private MapPoolLibraryResult? library;
     private MapRow? selected;
     private WorkshopItem? runningCollection;
@@ -51,9 +52,11 @@ public sealed partial class MapsPage : UserControl
             {
                 if (node is CollectionBranch branch) return new TextBlock { Text = branch.Name };
                 if (node is not MapRow row) return null;
-                var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
+                var label = new TextBlock { Text = row.Name, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
                 if (ManagePools) return label;
-                var mark = new Badge { Content = "已选", IsVisible = row.IsSelected };
+                var mark = new Badge { Content = "已选", IsVisible = row.IsSelected,
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
                 mark.Bind(IsVisibleProperty, new Avalonia.Data.Binding(nameof(MapRow.IsSelected)) { Source = row });
                 var cell = new DockPanel { LastChildFill = true };
                 DockPanel.SetDock(mark, Dock.Right);
@@ -96,12 +99,26 @@ public sealed partial class MapsPage : UserControl
             Clear = "清除选择",
             Toolbar = "批量操作"
         };
+        AttachedToVisualTree += (_, _) => ObserveServer(context?.Model.Server);
+        DetachedFromVisualTree += (_, _) => ObserveServer(null);
         Selection.PropertyChanged += (_, e) =>
         {
             if (e.Property == SelectionToolbar.SelectedCountProperty) UpdateActions();
         };
 
     }
+
+    private void ObserveServer(ServerController? server)
+    {
+        if (ReferenceEquals(observedServer, server)) return;
+        if (observedServer is not null) observedServer.PropertyChanged -= ServerChanged;
+        observedServer = server;
+        if (observedServer is not null) observedServer.PropertyChanged += ServerChanged;
+        UpdateActions();
+    }
+
+    private void ServerChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(UpdateActions);
 
     public async Task AttachAsync(MapsPageContext value)
     {
@@ -112,6 +129,8 @@ public sealed partial class MapsPage : UserControl
             CollectionTree.ItemsSource = null;
         }
         context = value;
+        if (this.IsAttachedToVisualTree()) ObserveServer(value.Model.Server);
+        UpdateActions();
         CollectionTree.IsSelectable = value.ManagePools;
         if (value.ManagePools && !ManagePools)
         {
@@ -300,7 +319,10 @@ public sealed partial class MapsPage : UserControl
         foreach (var action in Selection.Actions)
             action.IsEnabled = action.Key switch
             {
-                "switch" => selected is { IsSelected: true },
+                "switch" => selected is { IsSelected: true } && context is { } ctx &&
+                    ctx.Model.Server is { CanSendConsole: true, Busy: false,
+                        Snapshot: { Active: true, State: ServerState.Running, RunId: not null } run } &&
+                    run.InstanceId == ctx.InstanceId,
                 "add" => canEditMembership && context?.PoolId is null && EditablePools(library!, rows, true).Any(),
                 "remove" => canEditMembership && EditablePools(library!, rows, false).Any(),
                 "delete-workshop" => !savingPool && context?.Model.CanEditMapPool == true &&
