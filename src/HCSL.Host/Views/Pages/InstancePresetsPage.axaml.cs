@@ -1,5 +1,8 @@
 using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.VisualTree;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using HCSL.Core;
@@ -17,6 +20,7 @@ public partial class InstancePresetsPage : UserControl
     private HostPresetItem[] items = [];
     private HostPresetItem? browsed;
     private bool operating, updating;
+    private GlassMenu? rowMenu;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private PresetDefinition? BrowsedPreset => browsed?.Definition;
@@ -25,6 +29,8 @@ public partial class InstancePresetsPage : UserControl
     {
         InitializeComponent();
         DeleteButton.Icon = Lucide.Geometry(LucideIconKind.Trash);
+        PresetChoices.AddHandler(InputElement.ContextRequestedEvent, OnPresetContextRequested,
+            RoutingStrategies.Bubble, handledEventsToo: true);
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -61,11 +67,11 @@ public partial class InstancePresetsPage : UserControl
             var next = (entry?.Presets ?? []).Select(p => new HostPresetItem(p, p.Id == entry?.Definition?.SelectedPresetId)).ToArray();
             if (next.Length != items.Length || next.Where((item, index) => !items[index].Definition.Equals(item.Definition) || items[index].Selected != item.Selected).Any())
             {
-                var wanted = browsed?.Definition.Id ?? entry?.Definition?.SelectedPresetId;
+                rowMenu?.Close();
+                DeletePopover.IsOpen = false;
+                browsed = null;
                 items = next;
                 PresetChoices.ItemsSource = items;
-                browsed = items.FirstOrDefault(item => item.Definition.Id == wanted) ?? items.FirstOrDefault();
-                PresetChoices.SelectedItem = browsed;
             }
         }
         finally { updating = false; }
@@ -74,28 +80,70 @@ public partial class InstancePresetsPage : UserControl
 
     private void UpdateButtons()
     {
-        if (Model is not { } m) return;
-        var editable = !operating && m.CanMutate;
-        var preset = BrowsedPreset;
-        CreateButton.IsEnabled = editable;
-        PresetActions.IsVisible = preset is not null;
-        PresetActionsTitle.Text = preset is null ? null : $"已选中：{preset.Name}";
-        CopyButton.IsEnabled = EditButton.IsEnabled = editable && preset is not null;
-        var canSelect = preset is not null && preset.Id != m.Selected?.Entry.Definition?.SelectedPresetId;
-        SelectButton.IsVisible = canSelect;
-        SelectButton.IsEnabled = editable && canSelect;
-        DeleteButton.IsEnabled = editable && preset is not null && m.Selected?.Entry.Presets.Length > 1
-            && preset.Id != m.Selected.Entry.Definition?.SelectedPresetId;
-        var connected = !operating && !m.Busy && m.Server.Connected;
-        CfgButton.IsEnabled = connected && preset is not null;
-        OpenCfgButton.IsEnabled = OpenAddonsButton.IsEnabled = connected && preset is not null;
+        CreateButton.IsEnabled = !operating && Model?.CanMutate == true;
+        DeleteButton.IsEnabled = CanDelete();
     }
 
-    private void PresetSelected(object? sender, SelectionChangedEventArgs e)
+    private bool CanDelete() => !operating && Model is { CanMutate: true, Selected.Entry: { } entry }
+        && BrowsedPreset is { } preset && entry.Presets.Length > 1
+        && preset.Id != entry.Definition?.SelectedPresetId && entry.Presets.Any(p => p.Id == preset.Id);
+
+    private void OpenPresetActions(object? sender, RoutedEventArgs e)
     {
-        if (updating || PresetChoices.SelectedItem is not HostPresetItem item) return;
-        browsed = item;
-        UpdateButtons();
+        if (sender is Control { DataContext: HostPresetItem item } anchor) ShowPresetActions(item, anchor);
+    }
+
+    private void OnPresetContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        Control? anchor = null;
+        if (e.TryGetPosition(PresetChoices, out var point))
+        {
+            var body = PresetChoices.GetVisualDescendants().OfType<ScrollViewer>()
+                .FirstOrDefault(v => v.Name == "PART_ScrollViewer");
+            if (body?.TranslatePoint(default, PresetChoices) is not { } bodyOrigin ||
+                !new Rect(bodyOrigin, body.Bounds.Size).Contains(point)) return;
+            var row = body.GetVisualDescendants().OfType<Control>().FirstOrDefault(c =>
+                c.GetType().Name == "TableRow" && c.TranslatePoint(default, PresetChoices) is { } origin &&
+                new Rect(origin, c.Bounds.Size).Contains(point));
+            anchor = row?.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Classes.Contains("preset-row-action"));
+        }
+        else if (e.Source is Control source && source.Classes.Contains("preset-row-action")) anchor = source;
+        if (anchor?.DataContext is not HostPresetItem item) return;
+        ShowPresetActions(item, anchor);
+        e.Handled = true;
+    }
+
+    private void ShowPresetActions(HostPresetItem row, Control anchor)
+    {
+        if (Model is not { Selected.Entry: { } entry } m || !entry.Presets.Any(p => p.Id == row.Definition.Id)) return;
+        DeletePopover.IsOpen = false;
+        rowMenu?.Close();
+        browsed = row;
+        var menu = rowMenu = new GlassMenu();
+        var editable = !operating && m.CanMutate;
+        var connected = !operating && !m.Busy && m.Server.Connected;
+        Add("进入预设", ManagePreset, !operating);
+        Add("编辑基本信息", EditPreset, editable);
+        Add("复制预设", CopyPreset, editable);
+        if (row.Definition.Id != entry.Definition?.SelectedPresetId) Add("设为启动预设", SelectPreset, editable);
+        Add("CFG 管理", EditCfg, connected);
+        Add("打开 CFG 目录", OpenCfg, connected);
+        Add("打开 addons 目录", OpenAddons, connected);
+        Add("删除预设…", (_, _) =>
+        {
+            if (!CanDelete()) return;
+            DeleteButton.IsEnabled = true;
+            DeleteButton.IsConfirmed = false;
+            DeletePopover.ShowAt(anchor);
+        }, CanDelete());
+        menu.Open(anchor);
+
+        void Add(string label, EventHandler<RoutedEventArgs> click, bool enabled)
+        {
+            var item = new GlassMenuItem { Content = label, IsEnabled = enabled };
+            item.Click += click;
+            menu.Items.Add(item);
+        }
     }
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
@@ -112,8 +160,8 @@ public partial class InstancePresetsPage : UserControl
 
     private void ManagePreset(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: HostPresetItem item } || DataContext is not ShellViewModel shell) return;
-        shell.OpenPresetScope(item.Definition.Id);
+        if (BrowsedPreset is not { } preset || DataContext is not ShellViewModel shell) return;
+        shell.OpenPresetScope(preset.Id);
     }
 
     private async void CreatePreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(0);
@@ -125,8 +173,7 @@ public partial class InstancePresetsPage : UserControl
         if (Model is not { } m || Owner is not { } owner || !m.CanMutate || m.Selected?.Entry.Definition is not { } instance) return;
         var source = action == 0 ? null : BrowsedPreset;
         if (action != 0 && source is null) return;
-        var oldIds = m.Selected.Entry.Presets.Select(p => p.Id).ToHashSet();
-        var saved = await owner.EditPresetAsync(action switch { 0 => "新建配置预设", 1 => "复制配置预设", _ => "编辑配置预设" },
+        await owner.EditPresetAsync(action switch { 0 => "新建配置预设", 1 => "复制配置预设", _ => "编辑配置预设" },
             source, action == 1, async draft =>
             {
                 var success = action switch
@@ -137,10 +184,6 @@ public partial class InstancePresetsPage : UserControl
                 };
                 return success ? null : m.Error;
             });
-        if (!saved || action == 2) return;
-        var created = m.Selected?.Entry.Presets.FirstOrDefault(p => !oldIds.Contains(p.Id));
-        if (created is not null) browsed = items.FirstOrDefault(item => item.Definition.Id == created.Id) ?? browsed;
-        Update();
     });
 
     private async void SelectPreset(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
@@ -152,13 +195,9 @@ public partial class InstancePresetsPage : UserControl
 
     private async void DeletePreset(object? sender, RoutedEventArgs e)
     {
-        if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } preset) return;
+        DeletePopover.IsOpen = false;
         DeleteButton.IsConfirmed = false;
-        if (!m.CanMutate)
-        {
-            Error("删除未提交", "宿主正忙或服务器运行中。");
-            return;
-        }
+        if (!CanDelete() || Model is not { } m || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } preset) return;
         operating = true;
         DeleteButton.IsEnabled = false;
         try

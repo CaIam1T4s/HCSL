@@ -3,58 +3,52 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
              xmlns:frontend="using:HCSL.Frontend"
-             x:Class="HCSL.Host.Views.Pages.InstancePresetsPage" Classes="instance-presets-page">
-  <Border Padding="{DynamicResource ConsolePageInset}">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
-        <arc:Button x:Name="CreateButton" Variant="Secondary" HorizontalAlignment="Right"
-                    Click="CreatePreset" AutomationProperties.Name="新建预设">
-          <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-            <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
-            <TextBlock Text="新建预设" VerticalAlignment="Center"/>
-          </StackPanel>
-        </arc:Button>
-        <arc:RadioGroup x:Name="PresetChoices" AutomationProperties.Name="配置预设"
-                        SelectionChanged="PresetSelected">
-          <arc:RadioGroup.ItemTemplate>
-            <DataTemplate x:DataType="frontend:HostPresetItem">
-              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
-                <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Definition.Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
-                  <TextBlock Text="{Binding Definition.Map}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
-                             FontSize="{arc:ArcDesignTokenResource TypeXS}"/>
-                </StackPanel>
-                <arc:PresenceHost Grid.Column="1" Mode="Fade" IsPresent="{Binding Selected}"
-                                  VerticalAlignment="Center">
-                  <arc:Badge Size="Small" Tone="Success" Content="启动预设"/>
-                </arc:PresenceHost>
-                <arc:Button Grid.Column="2" Content="进入预设" Variant="Ghost" Size="Small" Click="ManagePreset"
-                            VerticalAlignment="Center" AutomationProperties.Name="{Binding Definition.Name, StringFormat='进入预设：{0}'}"/>
-              </Grid>
-            </DataTemplate>
-          </arc:RadioGroup.ItemTemplate>
-        </arc:RadioGroup>
-        <StackPanel x:Name="PresetActions" IsVisible="False" Spacing="{arc:ArcDesignTokenResource Space4}">
-          <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}">
-            <TextBlock x:Name="PresetActionsTitle" FontWeight="SemiBold" TextWrapping="Wrap"/>
-            <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-              <arc:Button x:Name="EditButton" Content="编辑基本信息" Variant="Secondary" Size="Medium" Click="EditPreset"/>
-              <arc:Button x:Name="CopyButton" Content="复制预设" Variant="Secondary" Size="Medium" Click="CopyPreset"/>
-              <arc:Button x:Name="SelectButton" Content="设为启动预设" Variant="Secondary" Size="Medium" Click="SelectPreset"/>
-            </WrapPanel>
-          </StackPanel>
-          <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}">
-            <TextBlock Text="CFG 与文件" FontWeight="SemiBold"/>
-            <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-              <arc:Button x:Name="CfgButton" Content="CFG 管理" Variant="Secondary" Size="Medium" Click="EditCfg"/>
-              <arc:Button x:Name="OpenCfgButton" Content="打开 CFG 目录" Variant="Secondary" Size="Medium" Click="OpenCfg"/>
-              <arc:Button x:Name="OpenAddonsButton" Content="打开 addons 目录" Variant="Secondary" Size="Medium" Click="OpenAddons"/>
-            </WrapPanel>
-          </StackPanel>
-          <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除预设" ConfirmedLabel="正在删除…"
-                             HorizontalAlignment="Left" HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePreset"/>
-        </StackPanel>
+             x:Class="HCSL.Host.Views.Pages.InstancePresetsPage"
+             x:CompileBindings="False" Classes="instance-presets-page">
+  <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}" Margin="{DynamicResource ConsolePageInset}">
+    <arc:Button x:Name="CreateButton" Variant="Secondary" HorizontalAlignment="Right"
+                Click="CreatePreset" AutomationProperties.Name="新建预设">
+      <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+        <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
+        <TextBlock Text="新建预设" VerticalAlignment="Center"/>
       </StackPanel>
-    </ScrollViewer>
-  </Border>
+    </arc:Button>
+    <Grid Grid.Row="1">
+      <arc:Table x:Name="PresetChoices" Caption="预设列表" IsSelectable="False"
+                 EmptyMessage="暂无预设" LoadingMessage="正在读取预设">
+        <arc:Table.Columns>
+          <arc:DataTableColumn Header="预设名" Binding="{Binding Definition.Name}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="地图" Binding="{Binding Definition.Map}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="状态" Width="112" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="frontend:HostPresetItem">
+                <arc:Badge Size="Small" Tone="Success" Content="启动预设" IsVisible="{Binding Selected}"
+                           HorizontalAlignment="Left" VerticalAlignment="Center"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+          <arc:DataTableColumn Header="操作" Width="72" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="frontend:HostPresetItem">
+                <arc:Button Classes="preset-row-action" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPresetActions"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            AutomationProperties.Name="{Binding Definition.Name, StringFormat='操作预设：{0}'}"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+        </arc:Table.Columns>
+      </arc:Table>
+      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" Offset="0" TriggerMode="Manual" HasShadow="False">
+        <arc:Popover.Styles>
+          <Style Selector="arc|PopoverSurface">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+          </Style>
+        </arc:Popover.Styles>
+        <arc:HoldToConfirm x:Name="DeleteButton" Label="长按删除预设" ConfirmedLabel="正在删除…"
+                           HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePreset"/>
+      </arc:Popover>
+    </Grid>
+  </Grid>
 </UserControl>
