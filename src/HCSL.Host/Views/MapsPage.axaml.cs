@@ -41,6 +41,7 @@ public sealed partial class MapsPage : UserControl
     public MapsPage()
     {
         InitializeComponent();
+        TreeTableHeaderAlignment.Attach(CollectionTree);
         CollectionTree.ChildrenSelector = node => (node as CollectionBranch)?.Children;
         CollectionTree.KeySelector = node => node is CollectionBranch branch ? branch.Key : node;
         CollectionTree.Columns.Add(new TreeTableColumn

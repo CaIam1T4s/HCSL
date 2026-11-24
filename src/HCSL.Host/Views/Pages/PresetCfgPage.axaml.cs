@@ -19,6 +19,7 @@ public partial class PresetCfgPage : UserControl
     public PresetCfgPage()
     {
         InitializeComponent();
+        TreeTableHeaderAlignment.Attach(CfgTree);
         CfgTree.KeySelector = item => ((Node)item).Path;
         CfgTree.RowLabelSelector = item => ((Node)item).File.Name;
         CfgTree.ChildrenSelector = item => ((Node)item).Children;
