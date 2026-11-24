@@ -59,7 +59,11 @@ public partial class DownloadsPage
             var dialog = new Dialog
             {
                 Title = "更换版本",
-                Description = $"将当前预设的 {FrameworkRules.Find(id)?.DisplayName ?? id} 从 {current} 更换为 {release.Version}？",
+                Content = new TextBlock
+                {
+                    Text = $"将当前预设的 {FrameworkRules.Find(id)?.DisplayName ?? id} 从 {current} 更换为 {release.Version}？",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                },
                 Actions = VersionConfirmationActions()
             };
             if (await dialog.ShowAsync(this) is not true || generation != catalogGeneration) return;
