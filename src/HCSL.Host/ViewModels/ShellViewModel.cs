@@ -44,7 +44,7 @@ public sealed class ShellViewModel : ObservableObject
     /// <summary>Sections of the preset scope: everything that belongs to one preset rather than to the instance.</summary>
     public IReadOnlyList<InstanceSection> PresetSections { get; } =
     [
-        new("overview", "概览"),
+        new("overview", "基本信息"),
         new("cfg", "CFG"),
         new("content", "框架与插件"),
         new("pools", "地图池"),

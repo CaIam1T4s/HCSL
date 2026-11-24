@@ -121,13 +121,9 @@ public partial class InstancePresetsPage : UserControl
         browsed = row;
         var menu = rowMenu = new GlassMenu();
         var editable = !operating && m.CanMutate;
-        var connected = !operating && !m.Busy && m.Server.Connected;
-        Add("进入预设", ManagePreset, !operating);
+        Add("编辑预设", ManagePreset, !operating);
         Add("复制预设", CopyPreset, editable);
         if (row.Definition.Id != entry.Definition?.SelectedPresetId) Add("设为启动预设", SelectPreset, editable);
-        Add("CFG 管理", EditCfg, connected);
-        Add("打开 CFG 目录", OpenCfg, connected);
-        Add("打开 addons 目录", OpenAddons, connected);
         Add("删除预设…", (_, _) =>
         {
             if (!CanDelete()) return;
@@ -171,11 +167,15 @@ public partial class InstancePresetsPage : UserControl
         if (Model is not { } m || Owner is not { } owner || !m.CanMutate || m.Selected?.Entry.Definition is not { } instance) return;
         var source = copy ? BrowsedPreset : null;
         if (copy && source is null) return;
-        await owner.EditPresetAsync(copy ? "复制配置预设" : "新建配置预设", source, copy, async draft =>
+        if (source is not null)
+        {
+            if (await owner.TextAsync("复制预设", "预设名称", source.Name + " 副本", maxLength: 80, confirmLabel: "复制") is { } name &&
+                !await m.CopyPresetAsync(instance.Id, instance.Revision, source.Id, name)) Error("复制未完成", m.Error);
+            return;
+        }
+        await owner.EditPresetAsync("新建配置预设", null, false, async draft =>
             {
-                var success = source is not null
-                    ? await m.CopyPresetAsync(instance.Id, instance.Revision, source.Id, draft.Name)
-                    : await m.CreatePresetAsync(instance.Id, instance.Revision, draft);
+                var success = await m.CreatePresetAsync(instance.Id, instance.Revision, draft);
                 return success ? null : m.Error;
             });
     });
@@ -202,21 +202,4 @@ public partial class InstancePresetsPage : UserControl
         finally { operating = false; Update(); }
     }
 
-    private async void EditCfg(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } preset) return;
-        await owner.EditCfgAsync(m, instance, preset);
-    });
-
-    private async void OpenCfg(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } preset) return;
-        if (!await m.OpenPresetCfgAsync(instance.Id, preset.Id)) Error("无法打开 CFG 目录", m.Error);
-    });
-
-    private async void OpenAddons(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
-    {
-        if (Model is not { } m || m.Selected?.Entry.Definition is not { } instance || BrowsedPreset is not { } preset) return;
-        if (!await m.OpenPresetDirectoryAsync(instance.Id, preset.Id, "addons")) Error("无法打开预设 addons", m.Error);
-    });
 }

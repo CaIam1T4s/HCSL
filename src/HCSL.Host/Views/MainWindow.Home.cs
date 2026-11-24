@@ -69,6 +69,7 @@ public partial class MainWindow
         foreach (var item in PresetSidebar.Sections.SelectMany(section => section.Items))
             item.Icon = Lucide.Geometry(item.Key switch
             {
+                "overview" => LucideIconKind.Info,
                 "cfg" => LucideIconKind.FileCode,
                 "content" => LucideIconKind.Puzzle,
                 "pools" => LucideIconKind.Map,

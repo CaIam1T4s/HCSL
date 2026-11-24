@@ -1,24 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             x:Class="HCSL.Host.Views.Pages.PresetCfgPage"
-             x:CompileBindings="False" Classes="preset-cfg-page">
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space12}">
-      <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
-        <TextBlock Text="CFG" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
-        <arc:SettingsGroup Appearance="Plain">
-          <arc:SettingsRow Header="CFG 管理" Description="查看与编辑本预设的 cfg 文件">
-            <arc:Button x:Name="EditCfgButton" Content="打开" Variant="Secondary" Size="Small" Click="EditCfg"/>
-          </arc:SettingsRow>
-          <arc:SettingsRow Header="CFG 目录">
-            <arc:Button x:Name="OpenCfgButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenCfg"/>
-          </arc:SettingsRow>
-          <arc:SettingsRow Header="addons 目录">
-            <arc:Button x:Name="OpenAddonsButton" Content="打开" Variant="Secondary" Size="Small" Click="OpenAddons"/>
-          </arc:SettingsRow>
-        </arc:SettingsGroup>
-      </StackPanel>
-    </StackPanel>
-  </ScrollViewer>
+             x:Class="HCSL.Host.Views.Pages.PresetCfgPage">
+  <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
+    <WrapPanel HorizontalAlignment="Right" ItemSpacing="{arc:ArcDesignTokenResource Space2}">
+      <arc:Button Content="刷新" Variant="Secondary" Click="Refresh"/>
+      <arc:Button x:Name="ExecButton" Content="执行 exec" Variant="Secondary" IsEnabled="False" Click="Exec"/>
+    </WrapPanel>
+    <arc:TreeTable Grid.Row="1" x:Name="CfgTree" Caption="CFG 文件" IsSelectable="True"/>
+  </Grid>
 </UserControl>
