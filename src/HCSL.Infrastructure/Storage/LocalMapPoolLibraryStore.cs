@@ -176,7 +176,8 @@ public sealed class LocalMapPoolLibraryStore
             var loaded = LocalPresetMapPoolStore.ReadForDeployment(legacy);
             if (loaded.Maps.Length == 0) continue;
             index++;
-            var pool = new MapPoolRecord(Guid.NewGuid(), "图池 " + index, loaded.Maps);
+            // List and the first write independently seed the same legacy pools.
+            var pool = new MapPoolRecord(preset.Id, "图池 " + index, loaded.Maps);
             pools.Add(pool);
             assignments[preset.Id] = pool.Id;
         }
