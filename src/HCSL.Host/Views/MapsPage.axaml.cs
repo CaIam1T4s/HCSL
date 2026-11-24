@@ -9,6 +9,7 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views;
 
@@ -357,7 +358,11 @@ public sealed partial class MapsPage : UserControl
         foreach (var pool in targets.OrderByDescending(p => add && p.Id == ctx.AddToPoolId)
                      .ThenBy(p => p.Name, StringComparer.CurrentCulture))
         {
-            var item = new GlassMenuItem { Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name };
+            var item = new GlassMenuItem
+            {
+                Content = add && pool.Id == ctx.AddToPoolId ? $"{pool.Name}（目标图池）" : pool.Name,
+                Icon = Lucide.Geometry(LucideIconKind.Map)
+            };
             item.Click += async (_, _) => await ChangePoolAsync(ctx, snapshot, pool, rows, add);
             menu.Items.Add(item);
         }

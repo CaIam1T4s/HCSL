@@ -147,7 +147,7 @@ public sealed partial class PlayerRosterPage : UserControl
         Point? menuOrigin = pointer;
         void CaptureOrigin()
         {
-            if (menuOrigin is null && menu.IsAttachedToVisualTree())
+            if (menu.IsAttachedToVisualTree())
                 menuOrigin = AnchorLayer.PointToClient(menu.PointToScreen(default));
         }
         menu.LayoutUpdated += (_, _) => { if (menu.IsOpen) CaptureOrigin(); };
@@ -157,9 +157,6 @@ public sealed partial class PlayerRosterPage : UserControl
             item.Click += (_, _) => { CaptureOrigin(); menu.Close(); action(); };
             menu.Items.Add(item);
         }
-        Entry("踢出玩家", LucideIconKind.UserRoundMinus,
-            () => ShowHold(menuOrigin, rowControl, "长按踢出", "已请求踢出", LucideIconKind.UserRoundMinus,
-                () => Actions?.KickAsync(row) ?? Task.CompletedTask), danger: true);
         Entry(row.IsAdmin ? "移除管理员" : "授予管理员",
             row.IsAdmin ? LucideIconKind.ShieldMinus : LucideIconKind.ShieldPlus,
             () =>
@@ -168,7 +165,11 @@ public sealed partial class PlayerRosterPage : UserControl
                     ShowHold(menuOrigin, rowControl, "长按移除管理员", "已移除", LucideIconKind.ShieldMinus,
                         () => RevokeAdminAsync(row));
                 else OpenGrant(row);
-            });
+            }, danger: row.IsAdmin);
+        if (!row.IsAdmin) menu.Items.Add(new GlassMenuSeparator());
+        Entry("踢出玩家", LucideIconKind.UserRoundMinus,
+            () => ShowHold(menuOrigin, rowControl, "长按踢出", "已请求踢出", LucideIconKind.UserRoundMinus,
+                () => Actions?.KickAsync(row) ?? Task.CompletedTask), danger: true);
         menu.Open(pointer is null ? rowControl : MenuAnchor);
     }
 
@@ -183,6 +184,7 @@ public sealed partial class PlayerRosterPage : UserControl
         HoldAction.Label = label;
         HoldAction.ConfirmedLabel = confirmedLabel;
         HoldAction.Icon = Lucide.Geometry(icon);
+        HoldAction.IsConfirmed = false;
         var origin = menuOrigin ?? container.TranslatePoint(default, AnchorLayer) ?? default;
         Canvas.SetLeft(Anchor, origin.X);
         Canvas.SetTop(Anchor, origin.Y - Anchor.Bounds.Height);

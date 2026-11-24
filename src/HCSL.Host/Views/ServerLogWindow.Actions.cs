@@ -192,10 +192,11 @@ public sealed partial class ServerLogWindow
         AutomationProperties.SetName(menu, name);
         return menu;
     }
-    private static void MenuEntry(GlassMenu menu, string label, Action action, bool selected = false, bool enabled = true)
+    private static void MenuEntry(GlassMenu menu, string label, Action action, bool selected = false, bool enabled = true,
+        LucideIconKind icon = LucideIconKind.Settings, bool destructive = false)
     {
         var item = new GlassMenuItem { Content = label, IsEnabled = enabled,
-            Icon = selected ? Lucide.Geometry(LucideIconKind.Check) : null };
+            IsDestructive = destructive, Icon = Lucide.Geometry(selected ? LucideIconKind.Check : icon) };
         item.Click += (_, _) => { if (!item.IsEnabled) return; menu.Close(); action(); };
         menu.Items.Add(item);
     }
@@ -203,31 +204,33 @@ public sealed partial class ServerLogWindow
     {
         var menu = NewConsoleMenu("日志查看");
         foreach (var limit in new[] { 500, 1000, 2000 })
-            MenuEntry(menu, "显示最近 " + limit + " 行", () => { displayLimit = limit; limitNoticeShown = false; nextEarlierLoadAt = 0; Update(); }, displayLimit == limit);
+            MenuEntry(menu, "显示最近 " + limit + " 行", () => { displayLimit = limit; limitNoticeShown = false; nextEarlierLoadAt = 0; Update(); }, displayLimit == limit, icon: LucideIconKind.ScrollText);
         menu.Items.Add(new GlassMenuSeparator());
-        MenuEntry(menu, "显示采集时间", () => { showTimestamps = !showTimestamps; Update(); }, showTimestamps);
+        MenuEntry(menu, "显示采集时间", () => { showTimestamps = !showTimestamps; Update(); }, showTimestamps, icon: LucideIconKind.Clock);
         MenuEntry(menu, "显示命令回执", () => { showCommandReceipts = !showCommandReceipts; }, showCommandReceipts);
         MenuEntry(menu, "自动跟随", () => { if (following) { following = false; Update(); } else JumpLatest(); }, following);
-        MenuEntry(menu, "跳到最新", JumpLatest);
-        MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier);
+        menu.Items.Add(new GlassMenuSeparator());
+        MenuEntry(menu, "跳到最新", JumpLatest, icon: LucideIconKind.ArrowDown);
+        MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier, icon: LucideIconKind.ArrowUp);
         menu.Open(anchor);
     }
     private void OpenOptionsMenu(Control anchor)
     {
         var menu = NewConsoleMenu("日志选项");
-        MenuEntry(menu, "导出当前显示日志…", async () => await ExportConsoleAsync(), enabled: rows.Count > 0);
-        MenuEntry(menu, "清空显示（不删除文件）", () =>
-        {
-            model.Server.ClearConsoleDisplay(); reading.Reset(); historyNoticeShown = false; limitNoticeShown = false; JumpLatest();
-        }, enabled: rows.Count > 0);
+        MenuEntry(menu, "导出当前显示日志…", async () => await ExportConsoleAsync(), enabled: rows.Count > 0, icon: LucideIconKind.Download);
         menu.Items.Add(new GlassMenuSeparator());
         MenuEntry(menu, "命令历史（仅内存）", () =>
         {
             model.Server.ConsoleHistoryEnabled = !model.Server.ConsoleHistoryEnabled;
             historyIndex = -1;
         }, model.Server.ConsoleHistoryEnabled);
+        menu.Items.Add(new GlassMenuSeparator());
+        MenuEntry(menu, "清空显示（不删除文件）", () =>
+        {
+            model.Server.ClearConsoleDisplay(); reading.Reset(); historyNoticeShown = false; limitNoticeShown = false; JumpLatest();
+        }, enabled: rows.Count > 0, icon: LucideIconKind.Trash, destructive: true);
         MenuEntry(menu, "清空命令历史", () => { model.Server.ClearConsoleHistory(); historyIndex = -1; },
-            enabled: model.Server.ConsoleHistory.Count > 0);
+            enabled: model.Server.ConsoleHistory.Count > 0, icon: LucideIconKind.Trash, destructive: true);
         menu.Open(anchor);
     }
     private async Task ExportConsoleAsync()
