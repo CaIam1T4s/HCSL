@@ -78,10 +78,16 @@ public partial class DownloadsPage
         InstallPersistentPaths.Text = paths is null ? "" : string.Join(Environment.NewLine, paths.Select(p => p.RuntimePath));
     }
 
+    private (Guid Instance, Guid Preset)? installPresetTarget;
+
     private void ShowPresetTarget()
     {
-        var selected = Servers?.Selected?.Entry;
-        var preset = selected?.Presets.FirstOrDefault(p => p.Id == selected.Definition?.SelectedPresetId);
+        var selected = catalogPresetTarget is { } source
+            ? Servers?.Instances.FirstOrDefault(item => item.Entry.Id == source.Instance)?.Entry
+            : Servers?.Selected?.Entry;
+        var presetId = catalogPresetTarget?.Preset ?? selected?.Definition?.SelectedPresetId;
+        var preset = selected?.Presets.FirstOrDefault(p => p.Id == presetId);
+        installPresetTarget = selected is not null && preset is not null ? (selected.Id, preset.Id) : null;
         InstallPreset.IsVisible = false;
         InstallPreset.Content = selected is null || preset is null ? "" : selected.Definition?.Name + " · " + preset.Name;
         // Frameworks live in the shared library, so adding one to a preset only needs a writable preset.
@@ -89,7 +95,7 @@ public partial class DownloadsPage
         InstallAddToPreset.IsEnabled = Servers is { CanEditPlugins: true } && preset is not null;
         InstallAddToPreset.Description = InstallAddToPreset.IsEnabled
             ? null
-            : "服务器运行中或未连接，安装后可到「插件」页启用";
+            : "服务器运行中或未连接，当前目标预设不可修改";
     }
 
     private async Task ShowDependenciesAsync(string id)
@@ -207,6 +213,7 @@ public partial class DownloadsPage
             throw new IOException("HCSL-FRAMEWORK-BUSY: 无法读取安装目标。");
 
         var name = FrameworkRules.Find(id)?.DisplayName ?? id;
+        var presetTarget = InstallAddToPreset.IsChecked == true ? installPresetTarget : null;
         var pending = installDependencies
             .Where(d => d.Check.IsChecked == true && d.Check.IsEnabled)
             .ToArray();
@@ -238,8 +245,8 @@ public partial class DownloadsPage
             await poll;
             InstallSpeed.Text = "-";
             InstallStepsList.CurrentIndex++;
-            if (InstallAddToPreset.IsChecked == true)
-                await AddFrameworkToPresetAsync(id);
+            if (presetTarget is { } target)
+                await AddFrameworkToPresetAsync(id, result.Version, target);
 
             await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
             InstallStepsList.CurrentIndex = InstallStepsList.Steps.Count;
@@ -333,16 +340,18 @@ public partial class DownloadsPage
     /// Enables the freshly installed framework in the selected preset through the shared plugin
     /// manifest path, so the preset keeps its old framework selectable instead of losing plugins.
     /// </summary>
-    private async Task AddFrameworkToPresetAsync(string id)
+    private async Task AddFrameworkToPresetAsync(string id, string version, (Guid Instance, Guid Preset) target)
     {
-        if (Servers is not { } servers || servers.Selected?.Entry is not { Definition: { } definition } entry)
-            return;
-        var preset = entry.Presets.FirstOrDefault(p => p.Id == definition.SelectedPresetId);
+        if (Servers is not { } servers || servers.Instances.FirstOrDefault(item => item.Entry.Id == target.Instance)?.Entry
+            is not { Definition: { } definition } entry) return;
+        var preset = entry.Presets.FirstOrDefault(p => p.Id == target.Preset);
         if (preset is null) return;
 
         var current = await servers.PluginsAsync(new(PluginAction.List, entry.Id, preset.Id));
         var selections = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToArray();
-        var choice = FrameworkSelection.Apply(selections, id, current);
+        var choice = FrameworkRules.Find(id)?.Kind == FrameworkKind.Base
+            ? new FrameworkChoice([new(id, version, true), .. selections.Where(s => s.Id != id)], null, [])
+            : FrameworkSelection.Apply(selections, id, current, version);
         if (choice.MissingFramework is not null)
         {
             Owner?.ShowInstanceNotification("未能加入当前预设", choice.MissingFramework, ToastKind.Warning);

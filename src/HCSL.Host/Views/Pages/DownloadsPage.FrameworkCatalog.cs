@@ -16,6 +16,7 @@ namespace HCSL.Host.Views.Pages;
 public partial class DownloadsPage
 {
     private string? catalogId;
+    private (Guid Instance, Guid Preset)? catalogPresetTarget;
     private int catalogGeneration;
     private bool catalogBusy;
     private bool loadMoreAnimating;
@@ -83,10 +84,11 @@ public partial class DownloadsPage
         var generation = catalogGeneration;
         await LoadCatalogAsync(new(id, Refresh: true), generation);
     }
-    private async Task OpenFrameworkCatalogAsync(string id)
+    internal async Task OpenFrameworkCatalogAsync(string id, (Guid Instance, Guid Preset)? presetTarget = null)
     {
         if (held || subscribed is null) return;
         catalogId = id;
+        catalogPresetTarget = presetTarget;
         catalogGeneration++;
         catalogBusy = false;
         loadMoreAnimating = false;
@@ -112,6 +114,7 @@ public partial class DownloadsPage
     {
         catalogGeneration++;
         catalogId = null;
+        catalogPresetTarget = null;
         catalogBusy = false;
         loadMoreAnimating = false;
         CatalogBack.IsVisible = false;

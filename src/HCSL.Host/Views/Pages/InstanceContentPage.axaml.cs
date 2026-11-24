@@ -95,12 +95,11 @@ public partial class InstanceContentPage : UserControl
         if (opening || sender is not Control { DataContext: Row row } || Scope() is not { } scope ||
             TopLevel.GetTopLevel(this) is not MainWindow owner) return;
         opening = true;
-        try { await owner.ShowFrameworkVersionsAsync(scope.Model, scope.Instance, scope.Preset, row.Framework); }
+        try { await owner.OpenFrameworkDownloadsAsync(row.Framework.Id, scope.Instance.Id, scope.Preset.Id); }
         finally
         {
             opening = false;
             loaded = null;
-            owner.RefreshAdminAvailability();
             await LoadAsync();
         }
     }

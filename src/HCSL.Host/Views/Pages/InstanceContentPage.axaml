@@ -5,17 +5,21 @@
     <ItemsControl x:Name="Frameworks" AutomationProperties.Name="框架列表">
       <ItemsControl.ItemTemplate>
         <DataTemplate>
-          <arc:Button Variant="Ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                      MinHeight="{arc:ArcDesignTokenResource ControlSizeMD}" Click="OpenFramework"
-                      AutomationProperties.Name="{Binding Name}">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
-              <lucide:LucideIcon Kind="Layers" VerticalAlignment="Center"/>
-              <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"/>
-              <TextBlock Grid.Column="2" Text="{Binding State}" VerticalAlignment="Center"
-                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-              <lucide:LucideIcon Grid.Column="3" Kind="ArrowRight" VerticalAlignment="Center"/>
+          <Border BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource Border}"
+                  MinHeight="{arc:ArcDesignTokenResource Space12}">
+            <Grid>
+              <arc:Button Variant="Ghost" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          Click="OpenFramework" AutomationProperties.Name="{Binding Name}"/>
+              <Grid IsHitTestVisible="False" Margin="{arc:ArcDesignTokenResource Space3}"
+                    ColumnDefinitions="Auto,2*,3*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
+                <lucide:LucideIcon Kind="Layers" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="2" Text="{Binding State}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+                <lucide:LucideIcon Grid.Column="3" Kind="ArrowRight" VerticalAlignment="Center"/>
+              </Grid>
             </Grid>
-          </arc:Button>
+          </Border>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
