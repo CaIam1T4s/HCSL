@@ -112,6 +112,7 @@ public partial class DownloadsPage
     }
     private void CloseFrameworkCatalog(object? sender, RoutedEventArgs e)
     {
+        var sourcePreset = catalogPresetTarget;
         catalogGeneration++;
         catalogId = null;
         catalogPresetTarget = null;
@@ -121,7 +122,10 @@ public partial class DownloadsPage
         FrameworkCatalogPanel.IsVisible = false;
         ResourceList.IsVisible = true;
         DownloadsHeading.Text = "下载中心";
-        _ = RefreshFrameworkRowsAsync();
+        if (sourcePreset is { } source && subscribed is { } shell)
+            shell.ReturnToPresetFrameworks(source.Instance, source.Preset);
+        else
+            _ = RefreshFrameworkRowsAsync();
     }
     private async Task LoadCatalogAsync(FrameworkCatalogCommand command, int generation)
     {

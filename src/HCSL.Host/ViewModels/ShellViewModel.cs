@@ -287,6 +287,19 @@ public sealed class ShellViewModel : ObservableObject
     }
 
     private readonly IThemeService _themeService;
+    internal void OpenPresetFrameworkCatalog() => SelectedPage = Pages.First(page => page.Id == "downloads");
+
+    internal void ReturnToPresetFrameworks(Guid instanceId, Guid presetId)
+    {
+        if (Servers.Selected?.Entry is not { } entry || entry.Id != instanceId ||
+            !entry.Presets.Any(preset => preset.Id == presetId)) return;
+        managedPresetId = presetId;
+        SelectPresetSection("content");
+        SelectedPage = Pages.First(page => page.Id == "instance");
+        Notify(nameof(ManagedPresetId));
+        Notify(nameof(ManagedPresetName));
+    }
+
     public NavigationItem SelectedPage
     {
         get => _selectedPage;
@@ -299,6 +312,8 @@ public sealed class ShellViewModel : ObservableObject
             Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads));
             Notify(nameof(IsInstanceOverview)); Notify(nameof(IsInstancePresets));
             Notify(nameof(IsInstancePools)); Notify(nameof(IsInstanceScopeVisible));
+            Notify(nameof(IsPresetScope));
+            NotifyPresetSections();
         }
     }
     public bool IsHome => SelectedPage.Id == "home";

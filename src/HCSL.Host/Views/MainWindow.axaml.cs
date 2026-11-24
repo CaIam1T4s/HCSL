@@ -61,8 +61,8 @@ public partial class MainWindow : ArcWindow
     internal Task OpenFrameworkDownloadsAsync(string frameworkId, Guid instanceId, Guid presetId)
     {
         if (DataContext is not ShellViewModel shell || shell.DownloadsBlocked) return Task.CompletedTask;
-        shell.NavigateCommand.Execute("downloads");
-        return shell.IsDownloads ? Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId)) : Task.CompletedTask;
+        shell.OpenPresetFrameworkCatalog();
+        return Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId));
     }
 
     public void OpenDownloadSettings()

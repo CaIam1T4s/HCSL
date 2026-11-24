@@ -8,7 +8,7 @@
           <Border BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource Border}"
                   MinHeight="{arc:ArcDesignTokenResource Space12}">
             <Grid>
-              <arc:Button Variant="Ghost" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+              <arc:Button Variant="Ghost" CornerRadius="0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           Click="OpenFramework" AutomationProperties.Name="{Binding Name}"/>
               <Grid IsHitTestVisible="False" Margin="{DynamicResource ConsolePageInset}"
                     ColumnDefinitions="Auto,2*,3*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
