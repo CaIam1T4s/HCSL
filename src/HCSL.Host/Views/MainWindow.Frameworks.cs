@@ -8,7 +8,7 @@ namespace HCSL.Host.Views;
 public partial class MainWindow
 {
     /// <summary>Library-level framework install/update page; it never changes the preset selection.</summary>
-    public async Task EditFrameworksAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset)
+    public async Task EditFrameworksAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset, string? frameworkId = null)
     {
         var content = new StackPanel { Spacing = 10 };
         content.Children.Add(new TextBlock { Text = "框架 · " + instance.Name + " / " + preset.Name, FontSize = 20 });
@@ -42,7 +42,7 @@ public partial class MainWindow
             cards.Children.Clear();
             var checks = new List<(FrameworkDefinition Framework, Action<FrameworkVersionInfo?> Apply)>();
 
-            foreach (var framework in FrameworkRules.Known)
+            foreach (var framework in FrameworkRules.Known.Where(f => frameworkId is null || f.Id == frameworkId))
             {
                 var script = framework.Kind == FrameworkKind.ScriptFramework;
                 var incompatible = script && current is not null && current != framework.Id;
@@ -192,7 +192,7 @@ public partial class MainWindow
             if (plugins is null) return;
             var selected = plugins.Selected.Select(s => s.Id + "\0" + s.Version).ToHashSet(StringComparer.Ordinal);
             var targets = new List<(string Id, string Version, long Bytes)>();
-            foreach (var framework in FrameworkRules.Known)
+            foreach (var framework in FrameworkRules.Known.Where(f => frameworkId is null || f.Id == frameworkId))
             {
                 var highest = FrameworkRules.OrderVersions(framework.Id, plugins.Available.Where(p => p.Id == framework.Id).Select(p => p.Version)).FirstOrDefault();
                 foreach (var package in plugins.Available.Where(p => p.Id == framework.Id))

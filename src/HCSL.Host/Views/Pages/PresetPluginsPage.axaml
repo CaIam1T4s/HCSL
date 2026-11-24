@@ -3,10 +3,17 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
   <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
-    <WrapPanel HorizontalAlignment="Right" ItemSpacing="{arc:ArcDesignTokenResource Space2}">
-      <arc:Button Content="刷新" Variant="Secondary" Click="Refresh"/>
-      <arc:Button x:Name="ManageButton" Content="管理插件" Variant="Secondary" IsEnabled="False" Click="Manage"/>
-    </WrapPanel>
-    <arc:TreeTable Grid.Row="1" x:Name="Plugins" Caption="预设插件"/>
+    <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
+                       Label="插件筛选" FiltersChanged="FilterPlugins">
+      <arc:FilterToolbar.Actions>
+        <arc:ExpandingButtonGroup Label="插件列表操作">
+          <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
+          <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="添加／导入" IsEnabled="False" Click="Manage"/>
+        </arc:ExpandingButtonGroup>
+      </arc:FilterToolbar.Actions>
+    </arc:FilterToolbar>
+    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" Classes="selection-actions" ActionInvoked="EditSelection" Cleared="ClearSelection" SelectAllRequested="SelectAll">
+      <arc:TreeTable x:Name="Plugins" Caption="预设插件" IsSelectable="True"/>
+    </arc:SelectionToolbar>
   </Grid>
 </UserControl>

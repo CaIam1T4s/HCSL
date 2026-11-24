@@ -4,21 +4,28 @@
              x:Class="HCSL.Host.Views.Pages.InstanceContentPage" x:CompileBindings="False" Classes="instance-content-page">
   <Border Padding="{DynamicResource ConsolePageInset}">
     <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-      <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
-        <arc:Button x:Name="FrameworkButton" Content="管理框架" Variant="Primary" Size="Medium" Click="EditFrameworks"/>
-        <arc:Button x:Name="RefreshButton" Content="检查框架" Variant="Secondary" Size="Medium" Click="RefreshFrameworks"/>
-      </StackPanel>
-      <arc:Table x:Name="Frameworks" Grid.Row="1" Caption="框架" IsSelectable="False"
+      <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索框架"
+                         Label="框架筛选" FiltersChanged="FilterFrameworks">
+        <arc:FilterToolbar.Actions>
+          <arc:ExpandingButtonGroup Label="框架列表操作">
+            <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="检查更新" Click="RefreshFrameworks"/>
+          </arc:ExpandingButtonGroup>
+        </arc:FilterToolbar.Actions>
+      </arc:FilterToolbar>
+      <arc:SelectionToolbar Grid.Row="1" x:Name="FrameworkSelectionBar" Classes="selection-actions"
+                            ActionInvoked="EditFrameworks" Cleared="ClearFrameworkSelection">
+      <arc:Table x:Name="Frameworks" Caption="框架" IsSelectable="True" SelectionChanged="FrameworkSelected"
                  EmptyMessage="没有可用的框架" LoadingMessage="正在检查框架"
                  ItemNameOne="个框架" ItemNameOther="个框架">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="框架" Binding="{Binding DisplayName}" Width="260"/>
+          <arc:DataTableColumn Header="框架" Binding="{Binding DisplayName}" Width="*"/>
           <arc:DataTableColumn Header="预设启用" Binding="{Binding Enabled}" Width="120"/>
           <arc:DataTableColumn Header="已安装" Binding="{Binding Installed}" Width="140"/>
           <arc:DataTableColumn Header="最新" Binding="{Binding Latest}" Width="140"/>
           <arc:DataTableColumn Header="" Binding="{Binding State}" Width="*"/>
         </arc:Table.Columns>
       </arc:Table>
+      </arc:SelectionToolbar>
     </Grid>
   </Border>
 </UserControl>

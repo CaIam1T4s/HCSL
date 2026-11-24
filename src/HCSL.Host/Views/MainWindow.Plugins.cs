@@ -7,7 +7,8 @@ namespace HCSL.Host.Views;
 
 public partial class MainWindow
 {
-    public async Task EditPluginsAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset)
+    public async Task EditPluginsAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset,
+        string[]? targets = null, bool? enabled = null)
     {
         var draft = new PluginDraft();
         var content = new StackPanel { Spacing = 8 };
@@ -75,7 +76,15 @@ public partial class MainWindow
             var result = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id));
             if (windowClosed) return;
             draft.Load(result);
-            Refresh(); status.Text = "已读取插件清单；未部署。" + RejectionText(result);
+            var indices = Enumerable.Range(0, draft.Plugins.Count).Where(i =>
+                targets?.Contains(draft.Plugins[i].Id, StringComparer.Ordinal) == true && Visible(draft.Plugins[i])).ToArray();
+            var changed = 0;
+            if (enabled is { } desired && model.CanEditPlugins)
+                foreach (var index in indices)
+                    if (draft.Plugins[index].Enabled != desired) { draft.Toggle(index); changed++; }
+            enabled = null; // Reload discards the draft rather than reapplying the initial action.
+            Refresh(indices.FirstOrDefault());
+            status.Text = (changed > 0 ? $"已修改 {changed} 个插件的草稿状态，保存清单后生效。" : "已读取插件清单；未部署。") + RejectionText(result);
         }
 
         async Task<bool> Discard() => !draft.Dirty || await ChooseAsync("未保存的插件清单", "丢弃未保存的插件选择？", "继续编辑", "丢弃草稿") == 1;
