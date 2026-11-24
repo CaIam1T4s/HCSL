@@ -58,11 +58,11 @@ public partial class MainWindow : ArcWindow
             shell.NavigateCommand.Execute(route);
     }
 
-    internal Task OpenFrameworkDownloadsAsync(string frameworkId, Guid instanceId, Guid presetId)
+    internal Task OpenFrameworkDownloadsAsync(string frameworkId, Guid instanceId, Guid presetId, string? presetVersion)
     {
         if (DataContext is not ShellViewModel shell || shell.DownloadsBlocked) return Task.CompletedTask;
         shell.OpenPresetFrameworkCatalog();
-        return Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId));
+        return Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId), presetVersion);
     }
 
     public void OpenDownloadSettings()

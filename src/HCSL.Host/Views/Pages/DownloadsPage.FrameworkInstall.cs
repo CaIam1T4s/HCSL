@@ -14,6 +14,7 @@ namespace HCSL.Host.Views.Pages;
 public partial class DownloadsPage
 {
     private FrameworkReleaseEntry? installRelease;
+    private bool choosingRelease;
     private Guid? installRequest;
     private bool installCancelled;
     private readonly System.Diagnostics.Stopwatch installElapsed = new();
@@ -34,10 +35,66 @@ public partial class DownloadsPage
     /// Fills the install dialog for one release. Dependencies are resolved through the same read-only
     /// catalog call the version list uses, so the version shown here matches what would be installed.
     /// </summary>
-    private async Task OpenInstallDialogAsync(FrameworkReleaseEntry release)
+    private async Task ChooseReleaseAsync(FrameworkReleaseEntry release)
     {
-        if (catalogId is not { } id)
-            return;
+        if (choosingRelease || InstallDialog.IsOpen || InstallProgressDialog.IsOpen || catalogId is not { } id) return;
+        choosingRelease = true;
+        var generation = catalogGeneration;
+        try
+        {
+            if (catalogPresetTarget is null || catalogPresetVersion is not { } current)
+            {
+                await PrepareInstallAsync(id, release);
+                if (generation != catalogGeneration || !IsVisible) return;
+                InstallDialog.IsOpen = true;
+                InstallConfirm.Focus();
+                return;
+            }
+            if (current == release.Version) return;
+            if (Servers?.CanEditPlugins != true || (!release.Downloadable && !downloadedVersions.Contains(release.Version)))
+            {
+                Owner?.ShowInstanceNotification("暂不能更换框架版本", release.UnavailableReason ?? "请确认目标预设可修改，且所选版本可用。", ToastKind.Warning);
+                return;
+            }
+            var dialog = new Dialog
+            {
+                Title = "更换版本",
+                Description = $"将当前预设的 {FrameworkRules.Find(id)?.DisplayName ?? id} 从 {current} 更换为 {release.Version}？",
+                Actions = VersionConfirmationActions()
+            };
+            if (await dialog.ShowAsync(this) is not true || generation != catalogGeneration) return;
+            await PrepareInstallAsync(id, release);
+            if (generation != catalogGeneration || !IsVisible || !InstallAddToPreset.IsEnabled || installPresetTarget is null) return;
+            InstallAddToPreset.IsChecked = true;
+            if (downloadedVersions.Contains(release.Version))
+            {
+                await AddFrameworkToPresetAsync(id, release.Version, installPresetTarget.Value, current);
+                return;
+            }
+            if (InstallConfirm.IsEnabled) await InstallAsync(current);
+            else Owner?.ShowInstanceNotification("暂不能更换框架版本", InstallReason.Text, ToastKind.Warning);
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or InstanceException)
+        { Owner?.ShowInstanceNotification("无法选择框架版本", error.Message, ToastKind.Error); }
+        finally { choosingRelease = false; }
+    }
+
+    private static StackPanel VersionConfirmationActions()
+    {
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        actions.Classes.Add("dialog-actions");
+        var cancel = new TKCode.Arc.Button { Content = "取消", Variant = ButtonVariant.Secondary };
+        var confirm = new TKCode.Arc.Button { Content = "更换", Variant = ButtonVariant.Primary };
+        confirm.Classes.Add("dialog-primary");
+        Dialog.SetResult(cancel, false);
+        Dialog.SetResult(confirm, true);
+        actions.Children.Add(cancel);
+        actions.Children.Add(confirm);
+        return actions;
+    }
+
+    private async Task PrepareInstallAsync(string id, FrameworkReleaseEntry release)
+    {
         installRelease = release;
         InstallDialog.Title = "安装 " + (FrameworkRules.Find(id)?.DisplayName ?? id);
         InstallChannel.Content = release.Prerelease ? "预发布版" : "正式版";
@@ -53,8 +110,6 @@ public partial class DownloadsPage
         ShowPersistentPaths(id);
         ShowPresetTarget();
         await ShowDependenciesAsync(id);
-        InstallDialog.IsOpen = true;
-        InstallConfirm.Focus();
     }
 
     /// <summary>
@@ -91,8 +146,8 @@ public partial class DownloadsPage
         InstallPreset.IsVisible = false;
         InstallPreset.Content = selected is null || preset is null ? "" : selected.Definition?.Name + " · " + preset.Name;
         // Frameworks live in the shared library, so adding one to a preset only needs a writable preset.
-        InstallAddToPreset.IsChecked = false;
         InstallAddToPreset.IsEnabled = Servers is { CanEditPlugins: true } && preset is not null;
+        InstallAddToPreset.IsChecked = catalogPresetTarget is not null && InstallAddToPreset.IsEnabled;
         InstallAddToPreset.Description = InstallAddToPreset.IsEnabled
             ? null
             : "服务器运行中或未连接，当前目标预设不可修改";
@@ -207,7 +262,7 @@ public partial class DownloadsPage
         InstallProgressDialog.IsOpen = false;
     }
 
-    private async Task InstallAsync()
+    private async Task InstallAsync(string? expectedPresetVersion = null)
     {
         if (installRelease is not { } release || catalogId is not { } id || Servers is not { } servers)
             throw new IOException("HCSL-FRAMEWORK-BUSY: 无法读取安装目标。");
@@ -246,7 +301,7 @@ public partial class DownloadsPage
             InstallSpeed.Text = "-";
             InstallStepsList.CurrentIndex++;
             if (presetTarget is { } target)
-                await AddFrameworkToPresetAsync(id, result.Version, target);
+                await AddFrameworkToPresetAsync(id, result.Version, target, expectedPresetVersion);
 
             await LoadCatalogAsync(new(id, CacheOnly: true), catalogGeneration);
             InstallStepsList.CurrentIndex = InstallStepsList.Steps.Count;
@@ -340,7 +395,7 @@ public partial class DownloadsPage
     /// Enables the freshly installed framework in the selected preset through the shared plugin
     /// manifest path, so the preset keeps its old framework selectable instead of losing plugins.
     /// </summary>
-    private async Task AddFrameworkToPresetAsync(string id, string version, (Guid Instance, Guid Preset) target)
+    private async Task AddFrameworkToPresetAsync(string id, string version, (Guid Instance, Guid Preset) target, string? expectedPresetVersion = null)
     {
         if (Servers is not { } servers || servers.Instances.FirstOrDefault(item => item.Entry.Id == target.Instance)?.Entry
             is not { Definition: { } definition } entry) return;
@@ -348,6 +403,8 @@ public partial class DownloadsPage
         if (preset is null) return;
 
         var current = await servers.PluginsAsync(new(PluginAction.List, entry.Id, preset.Id));
+        if (expectedPresetVersion is not null && current.Selected.FirstOrDefault(s => s.Id == id && s.Enabled)?.Version != expectedPresetVersion)
+            throw new IOException("预设框架已变更，请重新打开框架页确认。");
         var selections = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToArray();
         var choice = FrameworkRules.Find(id)?.Kind == FrameworkKind.Base
             ? new FrameworkChoice([new(id, version, true), .. selections.Where(s => s.Id != id)], null, [])
@@ -358,6 +415,7 @@ public partial class DownloadsPage
             return;
         }
         await servers.PluginsAsync(new(PluginAction.Save, entry.Id, preset.Id, definition.Revision, current.Hash, choice.Selections));
+        if (catalogPresetTarget == target && catalogId == id) catalogPresetVersion = version;
         Owner?.ShowInstanceNotification("已加入当前预设",
             definition.Name + " · " + preset.Name + "，重新部署后生效", ToastKind.Info);
     }

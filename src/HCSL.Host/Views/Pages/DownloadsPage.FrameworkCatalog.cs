@@ -17,6 +17,7 @@ public partial class DownloadsPage
 {
     private string? catalogId;
     private (Guid Instance, Guid Preset)? catalogPresetTarget;
+    private string? catalogPresetVersion;
     private int catalogGeneration;
     private bool catalogBusy;
     private bool loadMoreAnimating;
@@ -84,11 +85,12 @@ public partial class DownloadsPage
         var generation = catalogGeneration;
         await LoadCatalogAsync(new(id, Refresh: true), generation);
     }
-    internal async Task OpenFrameworkCatalogAsync(string id, (Guid Instance, Guid Preset)? presetTarget = null)
+    internal async Task OpenFrameworkCatalogAsync(string id, (Guid Instance, Guid Preset)? presetTarget = null, string? presetVersion = null)
     {
         if (held || subscribed is null) return;
         catalogId = id;
         catalogPresetTarget = presetTarget;
+        catalogPresetVersion = presetVersion;
         catalogGeneration++;
         catalogBusy = false;
         loadMoreAnimating = false;
@@ -116,6 +118,7 @@ public partial class DownloadsPage
         catalogGeneration++;
         catalogId = null;
         catalogPresetTarget = null;
+        catalogPresetVersion = null;
         catalogBusy = false;
         loadMoreAnimating = false;
         CatalogBack.IsVisible = false;
@@ -237,8 +240,19 @@ public partial class DownloadsPage
                 VerticalAlignment = VerticalAlignment.Center,
                 Content = new LucideIcon { Kind = LucideIconKind.ArrowDownToLine, Size = 16 }
             };
-            install.SetValue(AutomationProperties.NameProperty, "安装 " + release.Version);            var target = release;
-            install.Click += async (_, _) => await OpenInstallDialogAsync(target);
+            install.SetValue(AutomationProperties.NameProperty, "安装 " + release.Version);
+            var target = release;
+            install.Click += async (_, _) => await ChooseReleaseAsync(target);
+            if (catalogPresetTarget is not null)
+            {
+                textPanel.IsHitTestVisible = badges.IsHitTestVisible = false;
+                var hit = new ArcButton { Variant = ButtonVariant.Ghost, CornerRadius = new CornerRadius(0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch };
+                hit.SetValue(AutomationProperties.NameProperty, "选择 " + release.Version);
+                hit.Click += async (_, _) => await ChooseReleaseAsync(target);
+                Grid.SetColumnSpan(hit, 2);
+                row.Children.Insert(0, hit);
+            }
             Grid.SetColumn(install, 2); row.Children.Add(install);
             VersionRows.Children.Add(row);
         }
