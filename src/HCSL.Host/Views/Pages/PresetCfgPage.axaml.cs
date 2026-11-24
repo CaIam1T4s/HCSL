@@ -39,7 +39,6 @@ public partial class PresetCfgPage : UserControl
         CfgTree.Columns.Add(TreeTableColumn.Create<Node>("名称", node => node.File.Name));
         CfgTree.Columns.Add(new TreeTableColumn { Header = "类型", Width = new Avalonia.Controls.GridLength(112),
             ValueSelector = item => ((Node)item).File.Kind == PresetCfgKind.Directory ? "目录" : "CFG" });
-        Selection.Actions.Add(new SelectionToolbarAction { Key = "exec", Label = "执行 exec", IsEnabled = false });
         CfgTree.SelectionChanged += (_, e) =>
         {
             selected = e.SelectedItems.OfType<Node>().Where(node => node.File.Kind == PresetCfgKind.File)
@@ -85,8 +84,13 @@ public partial class PresetCfgPage : UserControl
 
     private void UpdateActions()
     {
-        Selection.Actions[0].IsEnabled = selected.Length > 0 && !executing && Scope() is { } scope
+        var action = Selection.Actions.FirstOrDefault(item => item.Key == "exec");
+        var enabled = selected.Length > 0 && !executing && Scope() is { } scope
             && scope.Servers.CanExecCfg(scope.Instance.Id, scope.Preset.Id);
+        if (action is null)
+            Selection.Actions.Add(new SelectionToolbarAction { Key = "exec", Label = "执行 exec", IsEnabled = enabled });
+        else
+            action.IsEnabled = enabled;
     }
 
     private void ClearSelection(object? sender, RoutedEventArgs e) => CfgTree.SelectedKeys = [];
