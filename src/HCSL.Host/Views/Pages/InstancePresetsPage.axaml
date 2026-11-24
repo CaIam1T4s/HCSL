@@ -7,20 +7,18 @@
   <Border Padding="{DynamicResource ConsolePageInset}">
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
       <StackPanel Spacing="{arc:ArcDesignTokenResource Space4}">
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
-          <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
-            <TextBlock Text="预设" FontSize="{arc:ArcDesignTokenResource TypeLG}" FontWeight="SemiBold"/>
-            <TextBlock Text="选中预设可查看配置，不会切换启动预设。" TextWrapping="Wrap"
-                       Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+        <arc:Button x:Name="CreateButton" Variant="Secondary" HorizontalAlignment="Right"
+                    Click="CreatePreset" AutomationProperties.Name="新建预设">
+          <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
+            <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
+            <TextBlock Text="新建预设" VerticalAlignment="Center"/>
           </StackPanel>
-          <arc:Button Grid.Column="1" x:Name="CreateButton" Content="新建预设" Variant="Primary" Size="Medium"
-                      VerticalAlignment="Center" Click="CreatePreset"/>
-        </Grid>
+        </arc:Button>
         <arc:RadioGroup x:Name="PresetChoices" AutomationProperties.Name="配置预设"
                         SelectionChanged="PresetSelected">
           <arc:RadioGroup.ItemTemplate>
             <DataTemplate x:DataType="frontend:HostPresetItem">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space4}">
                 <StackPanel Spacing="{arc:ArcDesignTokenResource Space1}" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Definition.Name}" Foreground="{arc:ArcDesignTokenResource Foreground}"/>
                   <TextBlock Text="{Binding Definition.Map}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
@@ -30,6 +28,8 @@
                                   VerticalAlignment="Center">
                   <arc:Badge Size="Small" Tone="Success" Content="启动预设"/>
                 </arc:PresenceHost>
+                <arc:Button Grid.Column="2" Content="进入预设" Variant="Ghost" Size="Small" Click="ManagePreset"
+                            VerticalAlignment="Center" AutomationProperties.Name="{Binding Definition.Name, StringFormat='进入预设：{0}'}"/>
               </Grid>
             </DataTemplate>
           </arc:RadioGroup.ItemTemplate>
@@ -38,7 +38,6 @@
           <StackPanel Spacing="{arc:ArcDesignTokenResource Space2}">
             <TextBlock x:Name="PresetActionsTitle" FontWeight="SemiBold" TextWrapping="Wrap"/>
             <WrapPanel ItemSpacing="{arc:ArcDesignTokenResource Space2}" LineSpacing="{arc:ArcDesignTokenResource Space2}">
-              <arc:Button x:Name="ManageButton" Content="查看配置" Variant="Secondary" Size="Medium" Click="ManagePreset"/>
               <arc:Button x:Name="EditButton" Content="编辑基本信息" Variant="Secondary" Size="Medium" Click="EditPreset"/>
               <arc:Button x:Name="CopyButton" Content="复制预设" Variant="Secondary" Size="Medium" Click="CopyPreset"/>
               <arc:Button x:Name="SelectButton" Content="设为启动预设" Variant="Secondary" Size="Medium" Click="SelectPreset"/>

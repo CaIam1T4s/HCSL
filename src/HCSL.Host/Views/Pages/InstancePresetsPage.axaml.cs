@@ -80,7 +80,6 @@ public partial class InstancePresetsPage : UserControl
         CreateButton.IsEnabled = editable;
         PresetActions.IsVisible = preset is not null;
         PresetActionsTitle.Text = preset is null ? null : $"已选中：{preset.Name}";
-        ManageButton.IsEnabled = preset is not null;
         CopyButton.IsEnabled = EditButton.IsEnabled = editable && preset is not null;
         var canSelect = preset is not null && preset.Id != m.Selected?.Entry.Definition?.SelectedPresetId;
         SelectButton.IsVisible = canSelect;
@@ -113,8 +112,8 @@ public partial class InstancePresetsPage : UserControl
 
     private void ManagePreset(object? sender, RoutedEventArgs e)
     {
-        if (BrowsedPreset is not { } preset || DataContext is not ShellViewModel shell) return;
-        shell.OpenPresetScope(preset.Id);
+        if (sender is not Control { DataContext: HostPresetItem item } || DataContext is not ShellViewModel shell) return;
+        shell.OpenPresetScope(item.Definition.Id);
     }
 
     private async void CreatePreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(0);
