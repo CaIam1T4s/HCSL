@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Styling;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
@@ -21,6 +23,13 @@ public partial class PresetCfgPage : UserControl
     {
         InitializeComponent();
         TreeTableHeaderAlignment.Attach(CfgTree);
+        // Arc 1.1 keeps its row type internal. Override only the CFG table's selected row fill;
+        // its checkbox and selection toolbar still show which files are selected.
+        if (typeof(TreeTable).Assembly.GetType("TKCode.Arc.TreeTableRow") is { } rowType)
+            CfgTree.Styles.Add(new Style(selector => selector.OfType(rowType).Class(":selected"))
+            {
+                Setters = { new Setter(Panel.BackgroundProperty, Brushes.Transparent) }
+            });
         CfgTree.KeySelector = item => ((Node)item).Path;
         CfgTree.RowLabelSelector = item => ((Node)item).File.Name;
         CfgTree.ChildrenSelector = item => ((Node)item).Children;
