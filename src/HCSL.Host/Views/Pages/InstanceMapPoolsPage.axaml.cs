@@ -39,7 +39,7 @@ public partial class InstanceMapPoolsPage : UserControl
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
-        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible && !loaded) _ = LoadAsync(); };
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) { loaded = false; _ = LoadAsync(); } };
     }
 
     private void Subscribe()

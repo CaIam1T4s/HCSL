@@ -19,7 +19,7 @@ public partial class PresetMapPoolPage : UserControl
     private MapPoolLibrary? library;
     private string? libraryHash;
     private MapPoolRow[] rows = [];
-    private bool operating, loaded;
+    private bool operating, loaded, projecting;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private Guid? PresetId => (DataContext as ShellViewModel)?.ManagedPresetId;
@@ -50,7 +50,11 @@ public partial class PresetMapPoolPage : UserControl
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
-        if (IsVisible) Dispatcher.UIThread.Post(() => { if (!loaded) { loaded = true; _ = LoadAsync(); } });
+        if (IsVisible) Dispatcher.UIThread.Post(() =>
+        {
+            UpdateChoices();
+            if (!loaded && Model?.Server.Connected == true) { loaded = true; _ = LoadAsync(); }
+        });
     }
 
     private async Task LoadAsync()
@@ -66,8 +70,14 @@ public partial class PresetMapPoolPage : UserControl
                 pool.Maps.Length == 0 ? "空" : $"{pool.Maps.Length} 张",
                 pool.Id == assigned ? "本预设使用" : "",
                 pool.Id == assigned ? BadgeTone.Success : BadgeTone.Neutral)).ToArray();
-            PoolChoices.ItemsSource = rows;
-            PoolChoices.SelectedItem = rows.FirstOrDefault(row => row.Pool.Id == assigned);
+            projecting = true;
+            try
+            {
+                PoolChoices.ItemsSource = rows;
+                PoolChoices.SelectedItem = rows.FirstOrDefault(row => row.Pool.Id == assigned);
+            }
+            finally { projecting = false; }
+            UpdateChoices();
             EmptyHint.IsVisible = rows.Length == 0;
             ShowMaps(assigned);
         }
@@ -82,11 +92,20 @@ public partial class PresetMapPoolPage : UserControl
 
     private async void PoolSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (PoolChoices.SelectedItem is not MapPoolRow row) return;
+        if (projecting || PoolChoices.SelectedItem is not MapPoolRow row) return;
+        if (Model?.CanEditMapPool != true)
+        {
+            projecting = true;
+            try { PoolChoices.SelectedItem = rows.FirstOrDefault(r => r.Pool.Id == (PresetId is { } id ? library?.PoolOf(id)?.Id : null)); }
+            finally { projecting = false; }
+            UpdateChoices();
+            return;
+        }
         ShowMaps(row.Pool.Id);
         if (operating || Model is not { } m || m.Selected?.Entry.Definition is not { } instance || PresetId is not { } presetId) return;
         if (library is not { } snapshot || snapshot.PoolOf(presetId)?.Id == row.Pool.Id) return;
         operating = true;
+        UpdateChoices();
         try
         {
             await m.MapPoolsAsync(new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset,
@@ -94,9 +113,11 @@ public partial class PresetMapPoolPage : UserControl
                 ExpectedRevision: snapshot.Revision, ExpectedHash: libraryHash));
         }
         catch (IOException error) { Error("指定图池失败", error.Message); }
-        finally { operating = false; }
+        finally { operating = false; UpdateChoices(); }
         await LoadAsync();
     }
+
+    private void UpdateChoices() => PoolChoices.IsEnabled = !operating && Model?.CanEditMapPool == true;
 
     private void Error(string title, string? detail = null) => Owner?.ShowInstanceNotification(title, detail);
 }

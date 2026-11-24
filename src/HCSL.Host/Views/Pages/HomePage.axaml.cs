@@ -27,7 +27,7 @@ public partial class HomePage : UserControl
     public HomePage()
     {
         InitializeComponent();
-        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) Update(); };
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) { loaded = null; Update(); } };
         // Arc 1.1.0 measures the action using PART_Row.Margin, not Button.Padding.
         // Forward the dynamic Arc padding preset without imposing a minimum width.
         LaunchButton.Loaded += (_, _) =>
