@@ -103,10 +103,15 @@ public partial class InstancePresetsPage : UserControl
                 .FirstOrDefault(v => v.Name == "PART_ScrollViewer");
             if (body?.TranslatePoint(default, PresetChoices) is not { } bodyOrigin ||
                 !new Rect(bodyOrigin, body.Bounds.Size).Contains(point)) return;
-            var row = body.GetVisualDescendants().OfType<Control>().FirstOrDefault(c =>
-                c.GetType().Name == "TableRow" && c.TranslatePoint(default, PresetChoices) is { } origin &&
-                new Rect(origin, c.Bounds.Size).Contains(point));
-            anchor = row?.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Classes.Contains("preset-row-action"));
+            // Use the actual hit row first; a recycled or hidden row can also have matching bounds.
+            var row = (e.Source as Visual)?.GetSelfAndVisualAncestors().OfType<Control>()
+                .FirstOrDefault(c => c.GetType().Name == "TableRow");
+            anchor = row?.GetVisualDescendants().OfType<Control>()
+                .FirstOrDefault(c => c.Classes.Contains("preset-row-action") && c.DataContext is HostPresetItem);
+            anchor ??= body.GetVisualDescendants().OfType<Control>().FirstOrDefault(c =>
+                c.Classes.Contains("preset-row-action") && c.IsEffectivelyVisible && c.DataContext is HostPresetItem &&
+                c.GetVisualAncestors().OfType<Control>().Any(r => r.GetType().Name == "TableRow" &&
+                    r.TranslatePoint(default, PresetChoices) is { } origin && new Rect(origin, r.Bounds.Size).Contains(point)));
             if (PresetChoices.TranslatePoint(point, PresetMenuLayer) is not { } position) return;
             Canvas.SetLeft(PresetMenuAnchor, position.X);
             Canvas.SetTop(PresetMenuAnchor, position.Y);
