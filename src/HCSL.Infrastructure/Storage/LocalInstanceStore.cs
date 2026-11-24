@@ -20,24 +20,26 @@ public sealed class LocalInstanceStore : IInstanceStore
             return (Directory.Exists(listRoot) ? Catalog(listRoot) : new InstanceCatalog([]))
                 with { ConnectionAddresses = LocalServerAddresses.Discover() };
         }
+        if (command.Action == InstanceAction.RevealPassword)
+        {
+            // Like catalog reads, this owner-only read must not acquire the live server's write lease.
+            var listRoot = ListRoot(workspace);
+            var target = Path.Combine(listRoot, command.InstanceId.ToString("D"));
+            Safe(target);
+            if (!Directory.Exists(target)) throw new InstanceException("HCSL-INSTANCE-MISSING", "Unknown instance.");
+            return Catalog(listRoot) with
+            {
+                ConnectionAddresses = LocalServerAddresses.Discover(),
+                RevealedPassword = InstancePasswordConfig.Read(target)
+            };
+        }
         using var lease = new LocalWorkspaceManager().Acquire(workspace);
         var root = lease.Layout.InstancesRoot;
         Safe(root);
         if (command.Action is InstanceAction.Create or InstanceAction.CreatePreset or InstanceAction.CopyPreset &&
             JsonSerializer.SerializeToUtf8Bytes(Catalog(root)).Length > 16000)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog capacity reached; paginated management is not implemented yet.");
-        if (command.Action == InstanceAction.RevealPassword)
-        {
-            // Owner-only local read: the caller already has the same access as the file itself.
-            var target = Path.Combine(root, command.InstanceId.ToString("D"));
-            if (!Directory.Exists(target)) throw new InstanceException("HCSL-INSTANCE-MISSING", "Unknown instance.");
-            return Catalog(root) with
-            {
-                ConnectionAddresses = LocalServerAddresses.Discover(),
-                RevealedPassword = InstancePasswordConfig.Read(target)
-            };
-        }
-        if (command.Action != InstanceAction.List) Mutate(root, command);
+        Mutate(root, command);
         return Catalog(root) with { ConnectionAddresses = LocalServerAddresses.Discover() };
     }
     /// <summary>Read-only bind address of one instance, without taking the lease a live run holds.
