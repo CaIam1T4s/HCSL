@@ -123,7 +123,6 @@ public partial class InstancePresetsPage : UserControl
         var editable = !operating && m.CanMutate;
         var connected = !operating && !m.Busy && m.Server.Connected;
         Add("进入预设", ManagePreset, !operating);
-        Add("编辑基本信息", EditPreset, editable);
         Add("复制预设", CopyPreset, editable);
         if (row.Definition.Id != entry.Definition?.SelectedPresetId) Add("设为启动预设", SelectPreset, editable);
         Add("CFG 管理", EditCfg, connected);
@@ -164,24 +163,19 @@ public partial class InstancePresetsPage : UserControl
         shell.OpenPresetScope(preset.Id);
     }
 
-    private async void CreatePreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(0);
-    private async void CopyPreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(1);
-    private async void EditPreset(object? sender, RoutedEventArgs e) => await EditPresetCoreAsync(2);
+    private async void CreatePreset(object? sender, RoutedEventArgs e) => await CreatePresetAsync(copy: false);
+    private async void CopyPreset(object? sender, RoutedEventArgs e) => await CreatePresetAsync(copy: true);
 
-    private Task EditPresetCoreAsync(int action) => RunAsync(async () =>
+    private Task CreatePresetAsync(bool copy) => RunAsync(async () =>
     {
         if (Model is not { } m || Owner is not { } owner || !m.CanMutate || m.Selected?.Entry.Definition is not { } instance) return;
-        var source = action == 0 ? null : BrowsedPreset;
-        if (action != 0 && source is null) return;
-        await owner.EditPresetAsync(action switch { 0 => "新建配置预设", 1 => "复制配置预设", _ => "编辑配置预设" },
-            source, action == 1, async draft =>
+        var source = copy ? BrowsedPreset : null;
+        if (copy && source is null) return;
+        await owner.EditPresetAsync(copy ? "复制配置预设" : "新建配置预设", source, copy, async draft =>
             {
-                var success = action switch
-                {
-                    0 => await m.CreatePresetAsync(instance.Id, instance.Revision, draft),
-                    1 => await m.CopyPresetAsync(instance.Id, instance.Revision, source!.Id, draft.Name),
-                    _ => await m.UpdatePresetAsync(instance.Id, instance.Revision, draft)
-                };
+                var success = source is not null
+                    ? await m.CopyPresetAsync(instance.Id, instance.Revision, source.Id, draft.Name)
+                    : await m.CreatePresetAsync(instance.Id, instance.Revision, draft);
                 return success ? null : m.Error;
             });
     });

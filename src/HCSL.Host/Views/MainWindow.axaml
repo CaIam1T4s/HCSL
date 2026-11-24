@@ -83,6 +83,7 @@
                          Background="Transparent" Label="预设导航"
                          SelectedKey="{Binding SelectedPresetSection.Id, Mode=OneWay}" ItemInvoked="PresetSidebarItemInvoked">
               <arc:SidebarSection Header="预设">
+                <arc:SidebarItem Key="overview" Label="概览"/>
                 <arc:SidebarItem Key="cfg" Label="CFG"/>
                 <arc:SidebarItem Key="content" Label="框架与插件"/>
                 <arc:SidebarItem Key="pools" Label="地图池"/>
@@ -104,6 +105,7 @@
             <pages:InstanceMapPoolsPage x:Name="InstanceMapPools" IsVisible="{Binding IsInstancePools}"/>
           </Grid>
           <Grid x:Name="PresetScopeHost" IsVisible="{Binding IsPresetScope}">
+            <pages:PresetOverviewPage IsVisible="{Binding IsPresetOverview}"/>
             <pages:PresetCfgPage x:Name="PresetCfg" IsVisible="{Binding IsPresetCfg}"/>
             <pages:InstanceContentPage x:Name="PresetContent" IsVisible="{Binding IsPresetContent}"/>
             <pages:PresetMapPoolPage x:Name="PresetPools" IsVisible="{Binding IsPresetPools}"/>

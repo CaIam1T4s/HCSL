@@ -1,0 +1,17 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:vm="using:HCSL.Host.ViewModels"
+             x:Class="HCSL.Host.Views.Pages.PresetOverviewPage" x:DataType="vm:ShellViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource InstancePageInset}" Spacing="{arc:ArcDesignTokenResource Space4}">
+      <TextBlock Text="基本信息" FontSize="{arc:ArcDesignTokenResource TypeXL}" FontWeight="Medium"/>
+      <arc:SettingsGroup Appearance="Plain">
+        <arc:SettingsRow Header="预设名称" Description="{Binding ManagedPresetName}">
+          <arc:Button Content="编辑基本信息" Variant="Secondary" Size="Small"
+                      IsEnabled="{Binding Servers.CanMutate}" Click="EditPreset"/>
+        </arc:SettingsRow>
+      </arc:SettingsGroup>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

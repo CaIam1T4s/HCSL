@@ -44,6 +44,7 @@ public sealed class ShellViewModel : ObservableObject
     /// <summary>Sections of the preset scope: everything that belongs to one preset rather than to the instance.</summary>
     public IReadOnlyList<InstanceSection> PresetSections { get; } =
     [
+        new("overview", "概览"),
         new("cfg", "CFG"),
         new("content", "框架与插件"),
         new("pools", "地图池"),
@@ -92,13 +93,11 @@ public sealed class ShellViewModel : ObservableObject
             _selectedPresetSection = value;
             value.IsSelected = true;
             Notify(nameof(SelectedPresetSection));
-            Notify(nameof(IsPresetCfg));
-            Notify(nameof(IsPresetContent));
-            Notify(nameof(IsPresetPools));
-            Notify(nameof(IsPresetAdmins));
+            NotifyPresetSections();
         }
     }
 
+    public bool IsPresetOverview => IsPresetScope && SelectedPresetSection.Id == "overview";
     public bool IsPresetCfg => IsPresetScope && SelectedPresetSection.Id == "cfg";
     public bool IsPresetContent => IsPresetScope && SelectedPresetSection.Id == "content";
     public bool IsPresetPools => IsPresetScope && SelectedPresetSection.Id == "pools";
@@ -135,6 +134,7 @@ public sealed class ShellViewModel : ObservableObject
     }
     private void NotifyPresetSections()
     {
+        Notify(nameof(IsPresetOverview));
         Notify(nameof(IsPresetCfg));
         Notify(nameof(IsPresetContent));
         Notify(nameof(IsPresetPools));
