@@ -73,6 +73,8 @@ internal sealed class SteamCmdOutput(Guid operation, Action<SteamCmdStage, strin
     private void Observe(string text, bool complete = false)
     {
         var lower = text.ToLowerInvariant();
+        if (complete && Regex.IsMatch(lower, @"^\s*error!\s+app\s+'730'\s+state is 0x[0-9a-f]+ after update job\.\s*$"))
+            report(SteamCmdStage.InstallingContent, text.Trim());
         if (complete && Regex.IsMatch(lower, @"^\s*success!\s+app\s+'730'\s+(?:fully installed|already up to date)\.\s*$")) AppInstalled = true;
         var update = Regex.Match(lower, @"^\s*update state [\[(]0x[0-9a-f]+[\])]\s+([^,\r\n]+)");
         if (update.Success)
@@ -103,8 +105,9 @@ internal sealed class SteamCmdOutput(Guid operation, Action<SteamCmdStage, strin
                     SteamCmdStage.ValidatingContent => TransferPhase.Verifying,
                     _ => TransferPhase.Installing
                 };
-            if (done is null && lastProgress is { Transfer: { } previous } && previous.Phase != phase) meter.Reset();
-            var rate = done is { } current ? meter.Sample(current, totalBytes) : null;
+            if (!complete && !bytes.Success) return;
+            if (lastProgress is { Transfer: { } previous } && previous.Phase != phase) meter.Reset();
+            var rate = phase == TransferPhase.Downloading && done is { } current ? meter.Sample(current, totalBytes) : null;
             var transfer = done is null && totalBytes is null
                 ? new TransferProgress(phase, Percent: percent)
                 : TransferProgress.Measure(phase, done, totalBytes, rate);

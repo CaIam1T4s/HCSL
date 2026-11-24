@@ -173,7 +173,7 @@ public partial class DownloadsPage : UserControl
             ProbeStage.Authenticating or ProbeStage.Authenticated or ProbeStage.WaitingForPassword or
                 ProbeStage.WaitingForGuardCode or ProbeStage.WaitingForMobileApproval => 1,
             ProbeStage.DownloadingContent or ProbeStage.ValidatingContent => 2,
-            ProbeStage.InstallingContent => validating ? 2 : 3,
+            ProbeStage.InstallingContent => 2,
             ProbeStage.CheckingBaseline => TaskSteps.Steps.Count - 1,
             _ => TaskSteps.CurrentIndex
         };
@@ -255,10 +255,9 @@ public partial class DownloadsPage : UserControl
     private async Task<bool> ShowFailureAsync(string reason, OperationSnapshot? snapshot)
     {
         if (Owner is not { } owner) return false;
-        var window = new ArcWindow { Title = "下载失败", Width = 560, Height = 440, MinWidth = 400, MinHeight = 320 };
-        window.Classes.Add("download-error");
-        var content = new StackPanel { Margin = new Avalonia.Thickness(24), Spacing = 12 };
-        content.Children.Add(new TextBlock { Text = reason, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        var content = new StackPanel { Spacing = 12, MaxWidth = 480 };
+        var summary = snapshot?.Result?.ExitCode is { } exit ? $"{reason} · SteamCMD 退出码 {exit}" : reason;
+        content.Children.Add(new TextBlock { Text = summary, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
         var lines = snapshot?.Events.Select(e => e.Message).ToArray() ?? [];
         var lastError = Array.FindLastIndex(lines, l => l.Contains("error", StringComparison.OrdinalIgnoreCase) || l.Contains("failed", StringComparison.OrdinalIgnoreCase) || l.Contains("失败", StringComparison.Ordinal));
         var excerpt = string.Join(Environment.NewLine, lines.Skip(Math.Max(0, (lastError < 0 ? lines.Length : lastError + 1) - 12)).Take(20));
@@ -266,25 +265,27 @@ public partial class DownloadsPage : UserControl
         content.Children.Add(new TextBlock { Text = lastError < 0 ? "末尾任务记录" : "最后报错片段" });
         content.Children.Add(new Textarea { Text = excerpt.Length == 0 ? "没有可用的报错记录。" : excerpt, IsReadOnly = true, Height = 180,
             FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve() });
-        content.Children.Add(new TextBlock { Text = "宿主尚未提供日志文件位置。", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         var copy = new TKCode.Arc.Button { Content = "复制错误信息", Variant = ButtonVariant.Ghost };
         copy.Click += async (_, _) =>
         {
             try
             {
-                if (window.Clipboard is { } clipboard) await clipboard.SetTextAsync(reason + Environment.NewLine + excerpt);
-                else copy.Content = "剪贴板不可用";
+                if (owner.Clipboard is { } clipboard)
+                    await clipboard.SetTextAsync(summary + Environment.NewLine + excerpt);
+                else owner.ShowInstanceNotification("剪贴板不可用");
             }
-            catch (Exception) { copy.Content = "复制失败"; }
+            catch (Exception) { owner.ShowInstanceNotification("复制失败"); }
         };
-        var close = new TKCode.Arc.Button { Content = "关闭", Variant = ButtonVariant.Secondary };
-        var retry = new TKCode.Arc.Button { Content = "重试", Variant = ButtonVariant.Primary, IsEnabled = !authenticationCancelled && snapshot is { Stage: not ProbeStage.RecoveryRequired } };
-        close.Click += (_, _) => window.Close(false);
-        retry.Click += (_, _) => window.Close(true);
-        actions.Children.Add(copy); actions.Children.Add(close); actions.Children.Add(retry); content.Children.Add(actions);
-        window.Content = new ScrollViewer { Content = content };
-        return await window.ShowDialog<bool>(owner);
+        copy.HorizontalAlignment = HorizontalAlignment.Left;
+        content.Children.Add(copy);
+        var retry = !authenticationCancelled && snapshot is { Stage: not ProbeStage.RecoveryRequired };
+        var close = new DialogAction("关闭", false);
+        DownloadDialog.IsOpen = false;
+        if (retry)
+            return await Dialog.ShowAsync(this, "下载失败", content, null, close,
+                new DialogAction("重试", true, ButtonVariant.Primary)) is true;
+        await Dialog.ShowAsync(this, "下载失败", content, null, close);
+        return false;
     }
 
     private void EndTask()
