@@ -126,21 +126,24 @@ public partial class InstancePresetsPage : UserControl
         browsed = row;
         var menu = rowMenu = new GlassMenu();
         var editable = !operating && m.CanMutate;
-        Add("编辑预设", ManagePreset, !operating);
-        Add("复制预设", CopyPreset, editable);
-        if (row.Definition.Id != entry.Definition?.SelectedPresetId) Add("设为启动预设", SelectPreset, editable);
-        Add("删除预设…", (_, _) =>
-        {
-            if (!CanDelete()) return;
-            DeleteButton.IsEnabled = true;
-            DeleteButton.IsConfirmed = false;
-            DeletePopover.ShowAt(anchor);
-        }, CanDelete());
+        Add("编辑预设", LucideIconKind.Settings, ManagePreset, !operating);
+        Add("复制预设", LucideIconKind.Copy, CopyPreset, editable);
+        if (row.Definition.Id != entry.Definition?.SelectedPresetId)
+            Add("设为启动预设", LucideIconKind.Play, SelectPreset, editable);
+        menu.Items.Add(new GlassMenuSeparator());
+        Add("删除预设…", LucideIconKind.Trash, (_, _) =>
+            RowMenuConfirmation.Replace(menu, anchor, PresetMenuLayer, PresetMenuAnchor, DeletePopover, () =>
+            {
+                if (!IsVisible || !ReferenceEquals(browsed, row) || !CanDelete()) return false;
+                DeleteButton.IsEnabled = true;
+                DeleteButton.IsConfirmed = false;
+                return true;
+            }), CanDelete(), danger: true);
         menu.Open(anchor);
 
-        void Add(string label, EventHandler<RoutedEventArgs> click, bool enabled)
+        void Add(string label, LucideIconKind icon, EventHandler<RoutedEventArgs> click, bool enabled, bool danger = false)
         {
-            var item = new GlassMenuItem { Content = label, IsEnabled = enabled };
+            var item = new GlassMenuItem { Content = label, Icon = Lucide.Geometry(icon), IsEnabled = enabled, IsDestructive = danger };
             item.Click += click;
             menu.Items.Add(item);
         }

@@ -68,7 +68,7 @@
       <Canvas x:Name="PoolMenuLayer" IsHitTestVisible="False">
         <Border x:Name="PoolMenuAnchor" Width="1" Height="1"/>
       </Canvas>
-      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="End" Offset="0" TriggerMode="Manual" HasShadow="False">
+      <arc:Popover x:Name="DeletePopover" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual" HasShadow="False">
         <arc:Popover.Styles>
           <Style Selector="arc|PopoverSurface">
             <Setter Property="Background" Value="Transparent"/>
