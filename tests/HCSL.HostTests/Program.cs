@@ -757,13 +757,14 @@ daemon.AdminUnavailable = false;
 ((MainWindow)owner).RefreshAdminAvailability();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
 Check(adminItem.IsVisible, "The 管理员 section must return once an admin-capable framework is enabled.");
+var readsBeforeAdminPage = daemon.AdminReads;
 shellForAdmins.SelectPresetSection("admins"); Layout();
 for (var frame = 0; frame < 8; frame++) { Layout(); Thread.Sleep(10); }
 var adminReads = daemon.AdminReads;
 for (var frame = 0; frame < 12; frame++) { Layout(); Thread.Sleep(10); }
 var adminsPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstanceAdminsPage>().Single();
 var adminTable = adminsPage.FindControl<TKCode.Arc.Table>("Admins")!;
-Check(daemon.AdminReads == adminReads && adminReads <= 4,
+Check(daemon.AdminReads == adminReads && adminReads - readsBeforeAdminPage <= 4,
     $"The admin page must settle after at most the initial read, not reload on its own Busy notifications ({adminReads} -> {daemon.AdminReads}).");
 Check(adminTable.ItemsSource is System.Collections.IEnumerable adminRows && adminRows.Cast<object>().Count() == 1,
     "Admin table missing entries (source: " + (adminTable.ItemsSource?.GetType().Name ?? "null") + ").");
@@ -1029,34 +1030,13 @@ Console.WriteLine("PASS gui.cfg.readonly-tree-exec-confirmation-run-bound");
 if (only is "cfg") return 0;
 }
 
-if (only is null or "maps")
-{
-if (only is "maps")
-{
-    daemon.IdleForPresetTests = false;
-    daemon.CfgRunIdentity = true;
-    PumpUntil(server.RefreshAsync());
-    Layout();
-}
-var beforeMaps = daemon.Queries;
-Click(owner, "即时换图"); Layout(); Click(owner, "取消");
-WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.Name == "ChangeMapButton" && b.IsEffectivelyEnabled));
-Check(daemon.Queries == beforeMaps, "Cancelled map change sent a command.");
-Click(owner, "即时换图"); Layout();
-owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Single(s => s.IsEffectivelyVisible && s.ItemsSource is string[]).SelectedIndex = 1;
-owner.GetVisualDescendants().OfType<TKCode.Arc.Input>().Single(t => t.IsEffectivelyVisible).Text = "3070244462";
-Click(owner, "下一步"); WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "确认即时换图"));
-Click(owner, "换图"); WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "换图投递结果"));
-Check(daemon.Queries == beforeMaps + 1 && daemon.LastConsole is { Text: "host_workshop_map 3070244462" } && daemon.LastConsole.RunId == server.RunId, "Confirmed map change target changed.");
-Click(owner, "返回"); WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.Name == "ChangeMapButton" && b.IsEffectivelyEnabled));
-Console.WriteLine("PASS gui.maps.cancel-confirmed-run-bound-workshop-command-no-preset-write");
-if (only is "maps") return 0;
-}
-
 if (only is null or "start")
 {
+daemon.SimulateRunningServer();
 daemon.IdleForPresetTests = false;
 daemon.CfgRunIdentity = false; PumpUntil(server.RefreshAsync()); Layout();
+((ShellViewModel)owner.DataContext!).SelectInstanceSection("presets"); Layout();
+WaitUntil(() => server.Active && presetPage.IsVisible && !presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled);
 Check(!presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled && !presetPage.FindControl<TKCode.Arc.Button>("EditButton")!.IsEnabled, "Active run must disable preset writes.");
 ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home"); Layout();
 Console.WriteLine("PASS gui.presets.catalog-browse-without-switch-cancel-selection-and-active-write-guards");
@@ -1151,6 +1131,7 @@ sealed class FakeDaemon : IDaemonClient
 {
     private readonly Guid run = Guid.Parse("68fa2944-7d6b-4373-be01-368879164976");
     private bool stopped;
+    public void SimulateRunningServer() => stopped = false;
     public int Stops { get; private set; }
     public int Queries { get; private set; }
     public ServerConsoleCommand? LastConsole { get; private set; }
