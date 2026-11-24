@@ -22,14 +22,15 @@ public static class FrameworkSelection
     /// Disable the old scripting framework and its plugins, enable metamod, and enable the chosen
     /// framework package. Nothing is removed; the caller saves the manifest explicitly.
     /// </summary>
-    public static FrameworkChoice Apply(PluginSelection[] current, string? target, PluginResult available)
+    public static FrameworkChoice Apply(PluginSelection[] current, string? target, PluginResult available, string? version = null)
     {
         if (target is not null && (FrameworkRules.Find(target)?.Kind != FrameworkKind.ScriptFramework))
             throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-ID", "Not a scripting framework.");
         var warnings = new List<string>();
         var needsBase = target is not null && FrameworkRules.Find(target)?.Requires == "metamod";
         PluginSelection? metamod = current.FirstOrDefault(s => s.Id == "metamod");
-        var targetPackage = target is null ? null : LatestFramework(available, target);
+        var targetPackage = target is null ? null : version is null ? LatestFramework(available, target)
+            : available.Available.FirstOrDefault(p => p.Id == target && p.Version == version && p.FrameworkPayload);
         if (target is not null && targetPackage is null)
             return new(current, target, ["Framework package is not installed: " + target]);
         var next = new List<PluginSelection>();

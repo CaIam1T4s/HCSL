@@ -75,7 +75,9 @@ public sealed partial class HostServerController
 
     public async Task<PluginResult> PluginsAsync(PluginCommand command)
     {
-        if (Busy || !Server.Connected || (command.Action != PluginAction.List && !CanEditPlugins))
+        if (command.Action == PluginAction.List && Server.Connected)
+            return await Plugins.ExecuteAsync(command);
+        if (!Server.Connected || !CanEditPlugins)
             throw new IOException("HCSL-PLUGIN-BUSY: Stop the server/SteamCMD and finish recovery before editing plugins.");
         if (!Instances.Any(i => i.Entry.Id == command.InstanceId && i.Entry.Presets.Any(p => p.Id == command.PresetId)))
             throw new IOException("HCSL-PLUGIN-PRESET: Refresh the instance catalog.");

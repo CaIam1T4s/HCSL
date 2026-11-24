@@ -1,31 +1,23 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             x:Class="HCSL.Host.Views.Pages.InstanceContentPage" x:CompileBindings="False" Classes="instance-content-page">
-  <Border Padding="{DynamicResource ConsolePageInset}">
-    <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
-      <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索框架"
-                         Label="框架筛选" FiltersChanged="FilterFrameworks">
-        <arc:FilterToolbar.Actions>
-          <arc:ExpandingButtonGroup Label="框架列表操作">
-            <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="检查更新" Click="RefreshFrameworks"/>
-          </arc:ExpandingButtonGroup>
-        </arc:FilterToolbar.Actions>
-      </arc:FilterToolbar>
-      <arc:SelectionToolbar Grid.Row="1" x:Name="FrameworkSelectionBar" Classes="selection-actions"
-                            ActionInvoked="EditFrameworks" Cleared="ClearFrameworkSelection">
-      <arc:Table x:Name="Frameworks" Caption="框架" IsSelectable="True" SelectionChanged="FrameworkSelected"
-                 EmptyMessage="没有可用的框架" LoadingMessage="正在检查框架"
-                 ItemNameOne="个框架" ItemNameOther="个框架">
-        <arc:Table.Columns>
-          <arc:DataTableColumn Header="框架" Binding="{Binding DisplayName}" Width="*"/>
-          <arc:DataTableColumn Header="预设启用" Binding="{Binding Enabled}" Width="120"/>
-          <arc:DataTableColumn Header="已安装" Binding="{Binding Installed}" Width="140"/>
-          <arc:DataTableColumn Header="最新" Binding="{Binding Latest}" Width="140"/>
-          <arc:DataTableColumn Header="" Binding="{Binding State}" Width="*"/>
-        </arc:Table.Columns>
-      </arc:Table>
-      </arc:SelectionToolbar>
-    </Grid>
-  </Border>
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             x:Class="HCSL.Host.Views.Pages.InstanceContentPage" x:CompileBindings="False">
+  <ScrollViewer Margin="{DynamicResource ConsolePageInset}" HorizontalScrollBarVisibility="Disabled">
+    <ItemsControl x:Name="Frameworks" AutomationProperties.Name="框架列表">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <arc:Button Variant="Ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      MinHeight="{arc:ArcDesignTokenResource ControlSizeMD}" Click="OpenFramework"
+                      AutomationProperties.Name="{Binding Name}">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
+              <lucide:LucideIcon Kind="Layers" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="2" Text="{Binding State}" VerticalAlignment="Center"
+                         Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
+              <lucide:LucideIcon Grid.Column="3" Kind="ArrowRight" VerticalAlignment="Center"/>
+            </Grid>
+          </arc:Button>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </ScrollViewer>
 </UserControl>
