@@ -11,11 +11,12 @@ public sealed partial class HostServerController
 
     public async Task<PresetCfgResult> CfgAsync(PresetCfgCommand command)
     {
-        if (Busy || !Server.Connected) throw new IOException("HCSL-CFG-BUSY: Host is disconnected or another operation is active.");
+        if (!Server.Connected) throw new IOException("HCSL-CFG-OFFLINE: Host is disconnected.");
         var write = command.Action is not (PresetCfgAction.List or PresetCfgAction.Read);
         if (write && !CanEditCfg) throw new IOException("HCSL-CFG-BUSY: Stop the server and complete recovery before saving CFG.");
         if (!Instances.Any(i => i.Entry.Id == command.InstanceId && i.Entry.Presets.Any(p => p.Id == command.PresetId)))
             throw new IOException("HCSL-CFG-PRESET: Refresh the instance catalog.");
+        if (!write) return await Cfg.ExecuteAsync(command);
         Busy = true; Notify();
         try { return await Cfg.ExecuteAsync(command); }
         finally { Busy = false; Notify(); }

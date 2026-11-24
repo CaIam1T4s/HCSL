@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -15,6 +17,7 @@ public partial class PresetCfgPage : UserControl
     private sealed record Node(PresetCfgFile File, string Path, Node[]? Children);
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private int generation;
+    private HostServerController? subscribed;
     private readonly SemaphoreSlim loadGate = new(1, 1);
     private bool executing;
     private Node[] selected = [];
@@ -44,6 +47,9 @@ public partial class PresetCfgPage : UserControl
             Selection.SelectedCount = selected.Length;
             UpdateActions();
         };
+        DataContextChanged += (_, _) => Subscribe();
+        AttachedToVisualTree += (_, _) => Subscribe();
+        DetachedFromVisualTree += (_, _) => Unsubscribe();
         PropertyChanged += async (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
@@ -61,9 +67,26 @@ public partial class PresetCfgPage : UserControl
         return null;
     }
 
+    private void Subscribe()
+    {
+        Unsubscribe();
+        subscribed = (DataContext as ShellViewModel)?.Servers;
+        if (subscribed is not null) subscribed.PropertyChanged += ServerChanged;
+        UpdateActions();
+    }
+
+    private void Unsubscribe()
+    {
+        if (subscribed is not null) subscribed.PropertyChanged -= ServerChanged;
+        subscribed = null;
+    }
+
+    private void ServerChanged(object? sender, PropertyChangedEventArgs e) => Dispatcher.UIThread.Post(UpdateActions);
+
     private void UpdateActions()
     {
-        Selection.Actions[0].IsEnabled = selected.Length > 0 && !executing;
+        Selection.Actions[0].IsEnabled = selected.Length > 0 && !executing && Scope() is { } scope
+            && scope.Servers.CanExecCfg(scope.Instance.Id, scope.Preset.Id);
     }
 
     private void ClearSelection(object? sender, RoutedEventArgs e) => CfgTree.SelectedKeys = [];
@@ -92,7 +115,7 @@ public partial class PresetCfgPage : UserControl
         await loadGate.WaitAsync();
         try
         {
-            for (var i = 0; i < 40 && Current() && (scope.Servers.Busy || !scope.Servers.Server.Connected); i++)
+            for (var i = 0; i < 40 && Current() && !scope.Servers.Server.Connected; i++)
                 await Task.Delay(125);
             if (!Current()) return;
             var roots = await ReadAsync("");
@@ -131,7 +154,13 @@ public partial class PresetCfgPage : UserControl
 
         void Add(string label, bool result, ButtonVariant variant)
         {
-            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76 };
+            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76,
+                BorderThickness = new Avalonia.Thickness(0) };
+            if (variant == ButtonVariant.Primary)
+            {
+                ArcTokens.Bind(button, TKCode.Arc.Button.BackgroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Accent);
+                ArcTokens.Bind(button, TKCode.Arc.Button.ForegroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentForeground);
+            }
             Dialog.SetResult(button, result);
             ArcTokens.Bind(button, HeightProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.ControlSizeMD);
             actions.Children.Add(new HCSL.UI.Shared.Controls.ElevatedSurface(button));

@@ -85,19 +85,29 @@ public partial class InstanceContentPage : UserControl
             loadedKey = (target.Id, ScopedPreset(target)?.Id ?? target.SelectedPresetId);
         try
         {
-            var check = await m.CheckFrameworksAsync();
-            Frameworks.ItemsSource = check.Frameworks.Select(f => new FrameworkRow(
-                f.DisplayName,
-                f.InstalledVersion ?? "未安装",
-                f.LatestVersion ?? "—",
-                f.Error is { Length: > 0 } error ? error : f.UpdateAvailable ? "可更新" : f.InstalledVersion is null ? "未安装" : "已是最新")).ToArray();
+            var rows = FrameworkRules.Known.Select(f => new FrameworkRow(f.DisplayName, "-", "-", "检查更新中")).ToArray();
             if (m.Selected?.Entry.Definition is { } definition && ScopedPreset(definition) is { } scoped)
             {
                 var plugins = await m.PluginsAsync(new PluginCommand(PluginAction.List, definition.Id, scoped.Id));
+                rows = FrameworkRules.Known.Select(f => new FrameworkRow(f.DisplayName,
+                    FrameworkRules.OrderVersions(f.Id, plugins.Available.Where(p => p.Id == f.Id).Select(p => p.Version)).FirstOrDefault() ?? "未安装",
+                    "-", "检查更新中")).ToArray();
                 PluginSummary.Text = plugins.Selected.Length == 0
                     ? "插件：未启用"
                     : "插件：" + string.Join("、", plugins.Selected.Select(p => p.Id + " " + p.Version));
             }
+            Frameworks.ItemsSource = rows.ToArray();
+            await Task.WhenAll(FrameworkRules.Known.Select(async (f, i) =>
+            {
+                try
+                {
+                    if ((await m.CheckFrameworkAsync(f.Id)).Frameworks.FirstOrDefault() is { } result)
+                        rows[i] = new FrameworkRow(f.DisplayName, result.InstalledVersion ?? "未安装", result.LatestVersion ?? "-",
+                            result.Error ?? (result.UpdateAvailable ? "可更新" : result.InstalledVersion is null ? "未安装" : "已是最新"));
+                }
+                catch (IOException) { rows[i] = rows[i] with { State = "无法检查更新" }; }
+                Frameworks.ItemsSource = rows.ToArray();
+            }));
         }
         catch (IOException error) { Error("读取内容失败", error.Message); loaded = false; }
         finally { loading = false; Update(); }
