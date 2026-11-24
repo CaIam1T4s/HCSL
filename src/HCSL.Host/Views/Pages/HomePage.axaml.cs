@@ -144,11 +144,13 @@ public partial class HomePage : UserControl
         reading = true; maps = []; failure = null; hasCollection = false; Update();
         try
         {
-            var result = await m.MapPoolAsync(new(MapPoolAction.Read, instance.Id, preset.Id));
+            var library = await m.MapPoolsAsync(new(MapPoolLibraryAction.List, instance.Id));
+            var poolMaps = library.Library.PoolOf(preset.Id)?.Maps
+                ?? (await m.MapPoolAsync(new(MapPoolAction.Read, instance.Id, preset.Id))).Pool.Maps;
             if (ticket == generation && m.Selected?.Entry.Id == instance.Id && CurrentPreset?.Id == preset.Id)
             {
-                hasCollection = result.Pool.Maps.Any(x => x.Kind == ServerMapKind.WorkshopCollection);
-                maps = result.Pool.Maps.Where(x => x.Kind != ServerMapKind.WorkshopCollection).ToArray();
+                hasCollection = poolMaps.Any(x => x.Kind == ServerMapKind.WorkshopCollection);
+                maps = poolMaps.Where(x => x.Kind != ServerMapKind.WorkshopCollection).ToArray();
             }
         }
         catch (Exception e) when (e is IOException or InvalidOperationException or UnauthorizedAccessException)
