@@ -87,8 +87,7 @@ public partial class DownloadsPage : UserControl
         TaskSteps.Steps.Clear();
         TaskSteps.Steps.Add(new StepperStep { Label = "准备下载工具" });
         TaskSteps.Steps.Add(new StepperStep { Label = "验证下载条件" });
-        TaskSteps.Steps.Add(new StepperStep { Label = isValidation ? "校验服务端文件" : "下载服务端文件" });
-        if (!isValidation) TaskSteps.Steps.Add(new StepperStep { Label = "应用服务端文件" });
+        TaskSteps.Steps.Add(new StepperStep { Label = isValidation ? "校验服务端文件" : "更新服务端文件" });
         TaskSteps.Steps.Add(new StepperStep { Label = "检查部署校验记录" });
         TaskSteps.CurrentIndex = 0;
         ProgressRegion.IsVisible = true;
@@ -181,8 +180,14 @@ public partial class DownloadsPage : UserControl
         {
             TaskSteps.CurrentIndex = Math.Clamp(index, 0, TaskSteps.Steps.Count - 1);
             foreach (var step in TaskSteps.Steps) { step.Error = null; step.Description = null; }
-            if (snapshot.Stage == ProbeStage.ValidatingContent) TaskSteps.Steps[2].Label = "校验服务端文件";
-            if (snapshot.Stage == ProbeStage.DownloadingContent) TaskSteps.Steps[2].Label = "下载服务端文件";
+            TaskSteps.Steps[2].Description = snapshot.Stage switch
+            {
+                ProbeStage.ValidatingContent => "正在校验服务端文件",
+                ProbeStage.DownloadingContent => "正在下载服务端文件",
+                ProbeStage.InstallingContent when snapshot.Transfer?.Phase == HCSL.Contracts.TransferPhase.Idle => "正在准备服务端文件",
+                ProbeStage.InstallingContent => "正在应用服务端文件",
+                _ => null
+            };
             if (snapshot.Stage == ProbeStage.Cancelling) TaskSteps.Steps[TaskSteps.CurrentIndex].Description = "正在取消，等待任务清理完成。";
             var known = snapshot.Stage != ProbeStage.Cancelling &&
                 snapshot.Percent is { } p && double.IsFinite(p) && p is >= 0 and <= 100;
