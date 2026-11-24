@@ -64,7 +64,7 @@ public partial class InstanceContentPage : UserControl
         Frameworks.ItemsSource = null;
         try
         {
-            var plugins = await scope.Model.PluginsAsync(new(PluginAction.List, key.Item1, key.Item2));
+            var plugins = await scope.Model.PluginsAsync(new(PluginAction.List, key.Item1, key.Item2, FrameworkOverviewOnly: true));
             if (Scope()?.Preset.Id != key.Item2) return;
             var current = FrameworkSelection.Current(plugins);
             Frameworks.ItemsSource = FrameworkRules.Known.Select(framework =>

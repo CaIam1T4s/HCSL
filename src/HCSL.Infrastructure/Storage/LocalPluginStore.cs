@@ -136,6 +136,11 @@ public sealed class LocalPluginStore : IPluginStore
         var preset = SafePath(Path.Combine(instance, "presets", c.PresetId.ToString("D")));
         var file = SafePath(Path.Combine(preset, "plugins.json"));
         var (manifest, hash) = ReadManifest(file);
+        if (c.Action == PluginAction.List && c.FrameworkOverviewOnly)
+        {
+            var metadata = FrameworkMetadata(packagesRoot, manifest);
+            return Result(manifest, hash, metadata, [], metadata.Length);
+        }
         var (available, rejected) = Catalog(packagesRoot);
         var ordered = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
         var listed = ordered.Length > PluginRules.MaxListedPackages ? ordered[..PluginRules.MaxListedPackages] : ordered;
@@ -185,6 +190,39 @@ public sealed class LocalPluginStore : IPluginStore
         var plugins = manifest.Plugins ?? [];
         PluginRules.Validate(plugins);
         return (new(1, manifest.Revision, plugins), Hash(file));
+    }
+
+    // Overview only: trust the package identity metadata for display, not for enabling or deployment.
+    private static PluginPackageInfo[] FrameworkMetadata(string packagesRoot, PluginManifest manifest)
+    {
+        var result = new List<PluginPackageInfo>();
+        foreach (var framework in FrameworkRules.Known)
+        {
+            var folder = SafePath(Path.Combine(packagesRoot, framework.Id));
+            if (!Directory.Exists(folder)) continue;
+            var versions = Directory.EnumerateDirectories(folder).Select(Path.GetFileName).OfType<string>();
+            var enabledVersion = manifest.Plugins.FirstOrDefault(p => p.Id == framework.Id && p.Enabled)?.Version;
+            var latestFound = false;
+            foreach (var version in FrameworkRules.OrderVersions(framework.Id, versions))
+            {
+                try
+                {
+                    if (latestFound && version != enabledVersion) continue;
+                    PluginRules.Version(version);
+                    var root = SafePath(Path.Combine(folder, version));
+                    var file = new FileInfo(SafePath(Path.Combine(root, "plugin.json")));
+                    if (!file.Exists || file.Length > PluginRules.MaxManifestBytes) continue;
+                    var package = JsonSerializer.Deserialize<PackageManifest>(File.ReadAllText(file.FullName), Json);
+                    if (package is not { FormatVersion: 1 } || package.Id != framework.Id || package.Version != version ||
+                        !Directory.Exists(SafePath(Path.Combine(root, SafeRelative(package.FilesRoot ?? "files"))))) continue;
+                    result.Add(new(framework.Id, framework.DisplayName, version, "", 0, 0, framework.Id, true, PluginCategory.Framework));
+                    latestFound = true;
+                    if (enabledVersion is null || version == enabledVersion) break;
+                }
+                catch (Exception e) when (e is InstanceException or IOException or UnauthorizedAccessException or JsonException) { }
+            }
+        }
+        return [.. result];
     }
 
     private static (PluginPackageInfo[] Available, PluginPackageRejection[] Rejected) Catalog(string packagesRoot)
