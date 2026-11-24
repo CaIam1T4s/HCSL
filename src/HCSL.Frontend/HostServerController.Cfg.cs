@@ -23,6 +23,9 @@ public sealed partial class HostServerController
     public bool CanExecCfg(Guid instanceId, Guid presetId) => !Busy && Cfg.CanExec(instanceId, presetId);
 
     public async Task<string> ExecCfgAsync(Guid instanceId, Guid presetId, Guid expectedRun, string name, string expectedHash)
+        => (await DeliverCfgAsync(instanceId, presetId, expectedRun, name, expectedHash)).Message;
+
+    public async Task<(bool Written, string Message)> DeliverCfgAsync(Guid instanceId, Guid presetId, Guid expectedRun, string name, string expectedHash)
     {
         if (!CanExecCfg(instanceId, presetId)) throw new IOException("HCSL-CFG-RUN: Running target does not match.");
         Busy = true; Notify();

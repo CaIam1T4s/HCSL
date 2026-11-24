@@ -17,7 +17,7 @@ public sealed class PresetCfgClient(InstanceClient instances, ServerController s
         server.State == ServerState.Running && server.Active && server.Snapshot?.InstanceId == instanceId &&
         server.Snapshot.Preset?.Id == presetId && server.RunId is not null;
 
-    public async Task<string> ExecAsync(Guid instanceId, Guid presetId, Guid expectedRun, string name, string expectedHash)
+    public async Task<(bool Written, string Message)> ExecAsync(Guid instanceId, Guid presetId, Guid expectedRun, string name, string expectedHash)
     {
         name = PresetCfgRules.Path(name, requireCfgFile: true);
         void CheckRun()
@@ -30,11 +30,11 @@ public sealed class PresetCfgClient(InstanceClient instances, ServerController s
         if (saved.Hash != expectedHash) throw new IOException("HCSL-CFG-CONFLICT: File changed; reload before executing.");
         CheckRun();
         var receipt = await server.SendConsoleAsync(expectedRun, "exec " + name);
-        return receipt is null ? "未发送 / Not sent: run changed or console busy." : receipt.Code + ": " + (receipt.Delivery switch
+        return (receipt?.Delivery == ConsoleDelivery.Written, receipt is null ? "未发送 / Not sent: run changed or console busy." : receipt.Code + ": " + (receipt.Delivery switch
         {
             ConsoleDelivery.Written => "已写入输入通道，不代表执行成功 / Written; execution not confirmed.",
             ConsoleDelivery.Rejected => "已拒绝，未发送 / Rejected; not sent.",
             _ => "投递结果未知；未自动重发 / Delivery unknown; not retried."
-        });
+        }));
     }
 }
