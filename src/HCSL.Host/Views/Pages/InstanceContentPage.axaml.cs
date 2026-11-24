@@ -18,11 +18,12 @@ public partial class InstanceContentPage : UserControl
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     /// <summary>One table row; Arc binds by property name, so this stays a plain record.</summary>
-    public sealed record FrameworkRow(string DisplayName, string Installed, string Latest, string State);
+    public sealed record FrameworkRow(string DisplayName, string Installed, string Latest, string State, string Enabled = "-");
 
     public InstanceContentPage()
     {
         InitializeComponent();
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) _ = LoadAsync(); };
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) =>
@@ -69,7 +70,6 @@ public partial class InstanceContentPage : UserControl
         var connected = m.Server.Connected && !m.Busy;
         var preset = ScopedPreset(definition);
         FrameworkButton.IsEnabled = connected && !operating && preset is not null;
-        PluginButton.IsEnabled = connected && !operating && preset is not null;
         RefreshButton.IsEnabled = connected && !operating;
     }
 
@@ -91,10 +91,7 @@ public partial class InstanceContentPage : UserControl
                 var plugins = await m.PluginsAsync(new PluginCommand(PluginAction.List, definition.Id, scoped.Id));
                 rows = FrameworkRules.Known.Select(f => new FrameworkRow(f.DisplayName,
                     FrameworkRules.OrderVersions(f.Id, plugins.Available.Where(p => p.Id == f.Id).Select(p => p.Version)).FirstOrDefault() ?? "未安装",
-                    "-", "检查更新中")).ToArray();
-                PluginSummary.Text = plugins.Selected.Length == 0
-                    ? "插件：未启用"
-                    : "插件：" + string.Join("、", plugins.Selected.Select(p => p.Id + " " + p.Version));
+                    "-", "检查更新中", plugins.Selected.FirstOrDefault(p => p.Id == f.Id && p.Enabled)?.Version ?? "未启用")).ToArray();
             }
             Frameworks.ItemsSource = rows.ToArray();
             await Task.WhenAll(FrameworkRules.Known.Select(async (f, i) =>
@@ -103,7 +100,7 @@ public partial class InstanceContentPage : UserControl
                 {
                     if ((await m.CheckFrameworkAsync(f.Id)).Frameworks.FirstOrDefault() is { } result)
                         rows[i] = new FrameworkRow(f.DisplayName, result.InstalledVersion ?? "未安装", result.LatestVersion ?? "-",
-                            result.Error ?? (result.UpdateAvailable ? "可更新" : result.InstalledVersion is null ? "未安装" : "已是最新"));
+                            result.Error ?? (result.UpdateAvailable ? "可更新" : result.InstalledVersion is null ? "未安装" : "已是最新"), rows[i].Enabled);
                 }
                 catch (IOException) { rows[i] = rows[i] with { State = "无法检查更新" }; }
                 Frameworks.ItemsSource = rows.ToArray();
@@ -130,25 +127,7 @@ public partial class InstanceContentPage : UserControl
         operating = true;
         Update();
         try { await owner.EditFrameworksAsync(m, instance, preset); }
-        finally { operating = false; loaded = false; Update(); await LoadAsync(); }
+        finally { operating = false; loaded = false; Update(); owner.RefreshAdminAvailability(); await LoadAsync(); }
     }
 
-    private async void EditPlugins(object? sender, RoutedEventArgs e)
-    {
-        if (operating || Model is not { } m || Owner is not { } owner ||
-            m.Selected?.Entry.Definition is not { } instance ||
-            ScopedPreset(instance) is not { } preset) return;
-        operating = true;
-        Update();
-        try { await owner.EditPluginsAsync(m, instance, preset); }
-        finally
-        {
-            operating = false;
-            loaded = false;
-            Update();
-            await LoadAsync();
-            // A newly enabled framework can make the admin list readable, so the sidebar re-checks it.
-            owner.RefreshAdminAvailability();
-        }
-    }
 }

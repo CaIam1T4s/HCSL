@@ -71,7 +71,8 @@ public partial class MainWindow
             {
                 "overview" => LucideIconKind.Info,
                 "cfg" => LucideIconKind.FileCode,
-                "content" => LucideIconKind.Puzzle,
+                "content" => LucideIconKind.Layers,
+                "plugins" => LucideIconKind.Puzzle,
                 "pools" => LucideIconKind.Map,
                 _ => LucideIconKind.ShieldCheck
             });

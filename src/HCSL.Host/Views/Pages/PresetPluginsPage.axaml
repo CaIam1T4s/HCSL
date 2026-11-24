@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
+  <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
+    <WrapPanel HorizontalAlignment="Right" ItemSpacing="{arc:ArcDesignTokenResource Space2}">
+      <arc:Button Content="刷新" Variant="Secondary" Click="Refresh"/>
+      <arc:Button x:Name="ManageButton" Content="管理插件" Variant="Secondary" IsEnabled="False" Click="Manage"/>
+    </WrapPanel>
+    <arc:TreeTable Grid.Row="1" x:Name="Plugins" Caption="预设插件"/>
+  </Grid>
+</UserControl>

@@ -14,20 +14,13 @@ public partial class MainWindow
         content.Children.Add(new TextBlock { Text = "插件 · " + instance.Name + " / " + preset.Name, FontSize = 20 });
         content.Children.Add(new TextBlock
         {
-            Text = "插件包来自内容库 plugin-packages；这里只选择版本和顺序，不联网下载。启用的包在下次部署时复制到预设 addons，禁用后重新部署会移除未被修改的包文件。Metamod/CSS 需要包本身提供正确的 addons 和 gameinfo 覆盖。",
+            Text = "从内容库选择插件版本和加载顺序，保存后在下次部署时生效。",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
-        var frameworkSelect = new Select();
-        content.Children.Add(new TextBlock { Text = "基础框架（Metamod 必需）" });
-        var baseText = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-        content.Children.Add(baseText);
-        content.Children.Add(new TextBlock { Text = "当前脚本框架" });
-        content.Children.Add(frameworkSelect);
         var smxButton = new TKCode.Arc.Button { Content = "导入 .smx 子插件（需要 source2mod + metamod）", Variant = ButtonVariant.Secondary, IsEnabled = false };
         content.Children.Add(smxButton);
         var list = new Select(); content.Children.Add(list);
         var status = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap }; content.Children.Add(status);
-        var updatingFramework = false;
         int[] visible = [];
         string Label(PluginSelection p)
         {
@@ -50,9 +43,9 @@ public partial class MainWindow
         }
         bool Visible(PluginSelection p)
         {
-            if (p.Id == "metamod") return true;
+            if (FrameworkRules.Find(p.Id) is not null) return false;
             var package = PackageFor(p);
-            if (package?.Category == PluginCategory.Framework) return false;
+            if (package is { Category: PluginCategory.Framework } or { FrameworkPayload: true }) return false;
             if (package?.Framework is null or "metamod") return true;
             return string.Equals(package.Framework, CurrentFramework(), StringComparison.Ordinal);
         }
@@ -60,20 +53,7 @@ public partial class MainWindow
         {
             var current = CurrentFramework();
             var baseSelection = draft.Plugins.FirstOrDefault(p => p.Id == "metamod");
-            baseText.Text = baseSelection is null
-                ? "Metamod:Source：未选择（未安装或尚未加入预设）"
-                : "Metamod:Source " + baseSelection.Version + (baseSelection.Enabled ? "（已启用）" : "（已禁用，部署前需启用）");
             smxButton.IsEnabled = !model.Busy && current == "source2mod" && baseSelection?.Enabled == true;
-            updatingFramework = true;
-            try
-            {
-                var choices = new List<(string? Id, string Label)> { (null, "无脚本框架") };
-                choices.AddRange(FrameworkRules.Known.Where(f => f.Kind == FrameworkKind.ScriptFramework)
-                    .Select(f => ((string?)f.Id, f.DisplayName + (draft.Loaded?.Available.Any(a => a.Id == f.Id && a.FrameworkPayload) == true ? "" : "（未安装）"))));
-                frameworkSelect.ItemsSource = choices.Select(c => c.Label).ToArray();
-                frameworkSelect.SelectedIndex = Math.Max(0, choices.FindIndex(c => c.Id == current));
-            }
-            finally { updatingFramework = false; }
             var indices = Enumerable.Range(0, draft.Plugins.Count).Where(i => Visible(draft.Plugins[i]))
                 .OrderBy(i => Array.IndexOf(PluginPresentation.CategoryOrder, PackageFor(draft.Plugins[i])?.Category ?? PluginCategory.Other))
                 .ThenBy(i => i).ToArray();
@@ -97,39 +77,13 @@ public partial class MainWindow
             draft.Load(result);
             Refresh(); status.Text = "已读取插件清单；未部署。" + RejectionText(result);
         }
-        async void FrameworkChanged(object? sender, SelectionChangedEventArgs e)
-        {
-            if (updatingFramework || model.Busy) return;
-            var labels = frameworkSelect.ItemsSource?.Cast<string>().ToArray() ?? [];
-            var at = frameworkSelect.SelectedIndex;
-            var ids = new List<string?> { null };
-            ids.AddRange(FrameworkRules.Known.Where(f => f.Kind == FrameworkKind.ScriptFramework).Select(f => f.Id));
-            if (at < 0 || at >= ids.Count) return;
-            var target = ids[at];
-            try
-            {
-                if (target is not null && draft.Loaded is { } loaded && !loaded.Available.Any(a => a.Id == target && a.FrameworkPayload))
-                {
-                    status.Text = "安装中… " + (FrameworkRules.Find(target)?.DisplayName ?? target);
-                    await model.InstallFrameworkAsync(target);
-                    draft.Load(await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id)));
-                }
-                var choice = FrameworkSelection.Apply(draft.Plugins.ToArray(), target, draft.Loaded!);
-                if (choice.MissingFramework is not null) { status.Text = "框架尚未安装：" + target; return; }
-                draft.SetSelections(choice.Selections);
-                Refresh(); status.Text = "已切换脚本框架草稿；旧框架插件已禁用但保留，保存后生效。"
-                    + (choice.Warnings.Length > 0 ? " " + string.Join("；", choice.Warnings) : "");
-            }
-            catch (Exception error) { status.Text = error.Message; Refresh(); }
-        }
-        frameworkSelect.SelectionChanged += FrameworkChanged;
 
         async Task<bool> Discard() => !draft.Dirty || await ChooseAsync("未保存的插件清单", "丢弃未保存的插件选择？", "继续编辑", "丢弃草稿") == 1;
         async Task AddPlugin()
         {
             var current = CurrentFramework();
             var available = draft.Loaded?.Available.Where(a => draft.Plugins.All(p => p.Id != a.Id)
-                && (a.Category != PluginCategory.Framework || a.Id == "metamod")
+                && a.Category != PluginCategory.Framework && !a.FrameworkPayload && FrameworkRules.Find(a.Id) is null
                 && (a.Framework is null or "metamod" || a.Framework == current))
                 .OrderBy(a => Array.IndexOf(PluginPresentation.CategoryOrder, a.Category))
                 .ThenBy(a => a.Id, StringComparer.Ordinal).ToArray() ?? [];

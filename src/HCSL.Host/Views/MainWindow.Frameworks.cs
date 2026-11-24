@@ -14,7 +14,7 @@ public partial class MainWindow
         content.Children.Add(new TextBlock { Text = "框架 · " + instance.Name + " / " + preset.Name, FontSize = 20 });
         content.Children.Add(new TextBlock
         {
-            Text = "这里只管理框架文件（下载/更新到内容库），不会启用或部署。选择某个框架作为当前预设使用，请在「插件」页切换；不兼容按当前预设已启用的脚本框架判断。打开页面时会并行检查官方版本，未完成的卡片显示「更新检测中」。",
+            Text = "下载和更新写入内容库；启用或停用只修改当前预设，下次部署生效。",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         var currentText = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -63,7 +63,7 @@ public partial class MainWindow
                 if (framework.Requires is not null) body.Children.Add(new TextBlock { Text = "需要 " + framework.Requires, Classes = { "muted" } });
                 body.Children.Add(note);
                 body.Children.Add(download); body.Children.Add(choose);
-                if (incompatible) body.Children.Add(new TextBlock { Text = "切换前先在「插件」页停用当前框架，或直接在此选择目标框架（会自动禁用旧框架插件）。", Classes = { "muted" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                if (incompatible) body.Children.Add(new TextBlock { Text = "切换到此框架会停用原脚本框架及其插件。", Classes = { "muted" }, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
                 card.Child = body; cards.Children.Add(card);
 
                 async Task Install()
@@ -100,10 +100,24 @@ public partial class MainWindow
                     try
                     {
                         var currentSelections = plugins.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToArray();
-                        var choice = FrameworkSelection.Apply(currentSelections, framework.Id, plugins);
+                        var selected = currentSelections.FirstOrDefault(s => s.Id == framework.Id && s.Enabled);
+                        FrameworkChoice choice;
+                        if (framework.Kind == FrameworkKind.Base)
+                        {
+                            if (selected is not null && currentSelections.Any(s => s.Enabled && FrameworkRules.Find(s.Id)?.Requires == framework.Id))
+                            { status.Text = "请先停用依赖此基础框架的脚本框架。"; return; }
+                            var version = selected?.Version ?? LocalVersion(plugins, framework.Id);
+                            if (version is null) return;
+                            choice = new([.. currentSelections.Where(s => s.Id != framework.Id), new(framework.Id, version, selected is null)], null, []);
+                        }
+                        else
+                        {
+                            var disable = selected is not null && selected.Version == LocalVersion(plugins, framework.Id);
+                            choice = FrameworkSelection.Apply(currentSelections, disable ? null : framework.Id, plugins);
+                        }
                         if (choice.MissingFramework is not null) { status.Text = "框架尚未安装：" + framework.Id; return; }
                         await model.PluginsAsync(new(PluginAction.Save, instance.Id, preset.Id, instance.Revision, plugins.Hash, choice.Selections));
-                        status.Text = "已切换当前预设框架；旧的框架插件已禁用但保留。下次部署生效。"
+                        status.Text = "已更新当前预设框架，下次部署生效。"
                             + (choice.Warnings.Length > 0 ? " " + string.Join("；", choice.Warnings) : "");
                         await Refresh();
                     }
@@ -131,11 +145,10 @@ public partial class MainWindow
                         : update ? "更新到 " + latest
                         : "已安装";
                     download.IsEnabled = framework.Installable && !incompatible && info?.Error is null && (installed is null || update);
-                    choose.Content = incompatible ? "与 " + FrameworkRules.Find(current)?.DisplayName + " 不兼容"
-                        : framework.Kind == FrameworkKind.Base ? "基础框架（必需）"
-                        : !installedPayload ? "未安装，先下载"
-                        : currentVersion ? "当前预设框架" : "设为当前预设框架";
-                    choose.IsEnabled = installedPayload && framework.Kind == FrameworkKind.ScriptFramework && !incompatible && !currentVersion;
+                    choose.Content = framework.Kind == FrameworkKind.Base && selectedVersion is not null || currentVersion && installedPayload
+                        ? "停用" : !installedPayload ? "未安装，先下载" : incompatible ? "切换到此框架" : "启用此框架";
+                    choose.IsEnabled = model.CanEditPlugins && (installedPayload || selectedVersion is not null && framework.Kind == FrameworkKind.Base)
+                        && framework.Kind is FrameworkKind.Base or FrameworkKind.ScriptFramework;
                     note.Text = incompatible ? "" : OldVersionsText(framework, installed);
                 }
 

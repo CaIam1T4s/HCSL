@@ -3,18 +3,17 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="HCSL.Host.Views.Pages.InstanceContentPage" x:CompileBindings="False" Classes="instance-content-page">
   <Border Padding="{DynamicResource ConsolePageInset}">
-    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
+    <Grid RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
       <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
         <arc:Button x:Name="FrameworkButton" Content="管理框架" Variant="Primary" Size="Medium" Click="EditFrameworks"/>
-        <arc:Button x:Name="PluginButton" Content="管理插件" Variant="Secondary" Size="Medium" Click="EditPlugins"/>
         <arc:Button x:Name="RefreshButton" Content="检查框架" Variant="Secondary" Size="Medium" Click="RefreshFrameworks"/>
       </StackPanel>
-      <TextBlock x:Name="PluginSummary" Grid.Row="1" Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
-      <arc:Table x:Name="Frameworks" Grid.Row="2" Caption="框架" IsSelectable="False"
+      <arc:Table x:Name="Frameworks" Grid.Row="1" Caption="框架" IsSelectable="False"
                  EmptyMessage="没有可用的框架" LoadingMessage="正在检查框架"
                  ItemNameOne="个框架" ItemNameOther="个框架">
         <arc:Table.Columns>
           <arc:DataTableColumn Header="框架" Binding="{Binding DisplayName}" Width="260"/>
+          <arc:DataTableColumn Header="预设启用" Binding="{Binding Enabled}" Width="120"/>
           <arc:DataTableColumn Header="已安装" Binding="{Binding Installed}" Width="140"/>
           <arc:DataTableColumn Header="最新" Binding="{Binding Latest}" Width="140"/>
           <arc:DataTableColumn Header="" Binding="{Binding State}" Width="*"/>
