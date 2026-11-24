@@ -272,7 +272,12 @@ public sealed class ServerOperations : IAsyncDisposable
             runToken = cancellation.Token;
         }
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct, runToken);
-        return await service.SendCfgBatchAsync(command.RunId, [.. paths], stop.Token);
+        return await service.SendCfgBatchAsync(command.RunId, [.. paths], receipt =>
+        {
+            if (receipt is not { Delivery: ConsoleDelivery.Written, DisplayText: { } text }) return;
+            lock (sync)
+                if (receipt.RunId == runId && active) echoWindow.Record(text, DateTimeOffset.UtcNow);
+        }, stop.Token);
     }
 
     public Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)

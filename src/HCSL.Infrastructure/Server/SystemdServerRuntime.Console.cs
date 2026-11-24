@@ -94,7 +94,7 @@ public sealed partial class SystemdServerRuntime
         finally { session.Admission.Release(); }
     }
 
-    public async Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths, CancellationToken ct = default)
+    public async Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths, Action<ServerConsoleReceipt> onReceipt, CancellationToken ct = default)
     {
         if (!consoleSessions.TryGetValue(runId, out var session) || session.Stop.IsCancellationRequested)
             throw new ServerException("HCSL-CONSOLE-STALE", "Server session changed.");
@@ -108,6 +108,7 @@ public sealed partial class SystemdServerRuntime
                 var command = new ServerConsoleCommand(runId, Guid.NewGuid(), "exec " + PresetCfgRules.Path(path, requireCfgFile: true));
                 var receipt = await WriteConsoleAsync(command, ServerConsoleRules.ValidateConfirmed(command), session, receipts.Count == 0, ct);
                 receipts.Add(receipt);
+                onReceipt(receipt);
                 if (receipt.Delivery != ConsoleDelivery.Written) break;
             }
             return [.. receipts];

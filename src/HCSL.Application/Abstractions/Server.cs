@@ -21,7 +21,7 @@ public interface IServerRuntimeService
 
     Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
         => Task.FromResult(new ServerConsoleReceipt(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-UNAVAILABLE"));
-    Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths, CancellationToken ct = default)
+    Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths, Action<ServerConsoleReceipt> onReceipt, CancellationToken ct = default)
         => Task.FromException<ServerConsoleReceipt[]>(new ServerException("HCSL-CONSOLE-UNAVAILABLE", "CFG batch is unavailable."));
     void Recover(WorkspaceRequest workspace, Guid instanceId, Guid? expectedRunId = null);
 }

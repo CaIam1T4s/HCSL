@@ -41,7 +41,7 @@ public partial class PresetCfgPage : UserControl
         {
             selected = e.SelectedItems.OfType<Node>().Where(node => node.File.Kind == PresetCfgKind.File)
                 .OrderBy(node => node.Path, StringComparer.Ordinal).ToArray();
-            Selection.SelectedCount = e.SelectedItems.Count();
+            Selection.SelectedCount = selected.Length;
             UpdateActions();
         };
         PropertyChanged += async (_, e) =>
@@ -150,25 +150,13 @@ public partial class PresetCfgPage : UserControl
             }
             var order = new ObservableCollection<ReorderableListEntry>(files.Select(file =>
                 new ReorderableListEntry { Id = file.Path, Title = file.Path }));
-            var content = new StackPanel { Spacing = 12, MaxWidth = 480 };
-            content.Children.Add(new TextBlock
+            var list = new ReorderableList { ItemsSource = order };
+            // The lift shadow extends past the scroll viewport. Keep the drag motion without that shadow.
+            list.Styles.Add(new Style(selector => selector.Class(":lifted").Descendant().OfType<Border>().Name("PART_Lift"))
             {
-                Text = $"{instance.Name} / {preset.Name}\n{(order.Count > 1 ? "拖动调整顺序，命令将从上到下逐条投递。" : "将向当前服务器投递此 CFG。 ")}CFG 可能换图或停止服务器。",
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                Setters = { new Setter(Border.BoxShadowProperty, default(BoxShadows)) }
             });
-            if (order.Count == 1)
-                content.Children.Add(new TextBlock { Text = order[0].Title, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-            else
-                content.Children.Add(new ScrollViewer
-                {
-                    MaxHeight = 340,
-                    Content = new Border
-                    {
-                        // Leave room inside the scroll viewport for the lifted row and its shadow.
-                        Padding = new Avalonia.Thickness(8, 12, 8, 20),
-                        Child = new ReorderableList { ItemsSource = order }
-                    }
-                });
+            var content = new ScrollViewer { MaxWidth = 480, MaxHeight = 340, Content = list };
             if (await Dialog.ShowAsync(this, "按顺序执行 CFG", content, null,
                 new DialogAction("取消", false), new DialogAction("执行", true, ButtonVariant.Primary)) is not true) return;
             var batch = order.Select(file => new CfgBatchFile(file.Id, hashes[file.Id])).ToArray();
