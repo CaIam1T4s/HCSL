@@ -121,6 +121,23 @@ public partial class PresetCfgPage : UserControl
         }
     }
 
+    private static Control CfgDialogActions()
+    {
+        var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
+        Add("取消", false, ButtonVariant.Secondary);
+        Add("执行", true, ButtonVariant.Primary);
+        return actions;
+
+        void Add(string label, bool result, ButtonVariant variant)
+        {
+            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76 };
+            Dialog.SetResult(button, result);
+            ArcTokens.Bind(button, HeightProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.ControlSizeMD);
+            actions.Children.Add(new HCSL.UI.Shared.Controls.ElevatedSurface(button));
+        }
+    }
+
     private async void Exec(object? sender, SelectionToolbarActionEventArgs e)
     {
         if (executing || selected.Length == 0 || Scope() is not { } scope || Owner is not { } owner) return;
@@ -151,14 +168,15 @@ public partial class PresetCfgPage : UserControl
             var order = new ObservableCollection<ReorderableListEntry>(files.Select(file =>
                 new ReorderableListEntry { Id = file.Path, Title = file.Path }));
             var list = new ReorderableList { ItemsSource = order };
-            // The lift shadow extends past the scroll viewport. Keep the drag motion without that shadow.
-            list.Styles.Add(new Style(selector => selector.Class(":lifted").Descendant().OfType<Border>().Name("PART_Lift"))
+            var content = new Border { MaxWidth = 480, Padding = new Avalonia.Thickness(16, 16, 16, 24), Child = list };
+            // Short lists do not need a clipping viewport. Long lists retain scrolling with room for lift.
+            var dialog = new Dialog
             {
-                Setters = { new Setter(Border.BoxShadowProperty, default(BoxShadows)) }
-            });
-            var content = new ScrollViewer { MaxWidth = 480, MaxHeight = 340, Content = list };
-            if (await Dialog.ShowAsync(this, "按顺序执行 CFG", content, null,
-                new DialogAction("取消", false), new DialogAction("执行", true, ButtonVariant.Primary)) is not true) return;
+                Title = "按顺序执行 CFG",
+                Content = order.Count <= 3 ? content : new ScrollViewer { MaxHeight = 360, Content = content },
+                Actions = CfgDialogActions()
+            };
+            if (await dialog.ShowAsync(this) is not true) return;
             var batch = order.Select(file => new CfgBatchFile(file.Id, hashes[file.Id])).ToArray();
             submitted = true;
             var receipts = await servers.DeliverCfgBatchAsync(new(run, instance.Id, preset.Id, batch));
