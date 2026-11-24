@@ -155,7 +155,7 @@ public partial class PresetCfgPage : UserControl
 
         void Add(string label, bool result, ButtonVariant variant)
         {
-            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76 };
+            var button = new TKCode.Arc.Button { Content = label, Variant = variant };
             if (variant == ButtonVariant.Primary) button.Classes.Add("dialog-primary");
             Dialog.SetResult(button, result);
             actions.Children.Add(button);
