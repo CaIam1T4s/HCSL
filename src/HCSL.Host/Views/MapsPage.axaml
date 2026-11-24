@@ -56,25 +56,8 @@
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
 
-    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" HorizontalAlignment="Stretch"
+    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" Classes="selection-actions" HorizontalAlignment="Stretch"
                           SelectAllRequested="SelectAll" Cleared="ClearSelection" ActionInvoked="Invoked">
-      <arc:SelectionToolbar.Styles>
-        <Style Selector="arc|Button:not(:disabled)">
-          <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
-        </Style>
-        <!-- Override the shared disabled chrome before Arc's brush transitions run. -->
-        <Style Selector="arc|Button:not(:disabled), arc|Button:disabled">
-          <Setter Property="BorderThickness" Value="0"/>
-          <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
-        <Style Selector="arc|Button:disabled">
-          <Setter Property="Background" Value="Transparent"/>
-        </Style>
-        <Style Selector="arc|Button /template/ Border#PART_Frame">
-          <Setter Property="BorderThickness" Value="0"/>
-          <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
-      </arc:SelectionToolbar.Styles>
       <arc:SelectionToolbar.Actions>
         <arc:SelectionToolbarAction Key="switch" Label="切换到该图"/>
       </arc:SelectionToolbar.Actions>

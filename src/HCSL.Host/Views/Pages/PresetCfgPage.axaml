@@ -6,7 +6,7 @@
     <WrapPanel HorizontalAlignment="Right" ItemSpacing="{arc:ArcDesignTokenResource Space2}">
       <arc:Button Content="刷新" Variant="Secondary" Click="Refresh"/>
     </WrapPanel>
-    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" ActionInvoked="Exec" SelectAllRequested="SelectAll" Cleared="ClearSelection">
+    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" Classes="selection-actions" ActionInvoked="Exec" SelectAllRequested="SelectAll" Cleared="ClearSelection">
       <arc:TreeTable x:Name="CfgTree" Caption="CFG 文件" IsSelectable="True"/>
     </arc:SelectionToolbar>
   </Grid>

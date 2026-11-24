@@ -395,6 +395,20 @@
     <Setter Property="Width" Value="{arc:ArcDesignTokenResource Space1}"/>
     <Setter Property="Height" Value="{arc:ArcDesignTokenResource Space1}"/>
   </Style>
+  <Style Selector=".selection-actions arc|Button:not(:disabled)">
+    <Setter Property="Foreground" Value="{arc:ArcDesignTokenResource Foreground}"/>
+  </Style>
+  <Style Selector=".selection-actions arc|Button:not(:disabled), .selection-actions arc|Button:disabled">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
+  <Style Selector=".selection-actions arc|Button:disabled">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector=".selection-actions arc|Button /template/ Border#PART_Frame">
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+  </Style>
   <!-- Both footer buttons take the same Arc size, so their heights line up and neither is sized ad hoc. -->
   <Style Selector="StackPanel.dialog-actions arc|Button">
     <Setter Property="Size" Value="Small"/>
