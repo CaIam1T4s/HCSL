@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace HCSL.Contracts;
 
-public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin, ContentStatus, FrameworkCatalog, FrameworkProgress, MapCatalog, MapPoolLibrary }
+public enum RequestKind { Hello, Status, StartProbe, Cancel, SubmitInput, Recover, InstallOrUpdate, ValidateContent, Instances, Server, ServerConsole, PresetCfg, MapPool, Plugin, PluginImport, PluginImportProbe, FrameworkCheck, FrameworkInstall, PluginCfg, Baseline, Admin, ContentStatus, FrameworkCatalog, FrameworkProgress, MapCatalog, MapPoolLibrary, CfgBatch }
 public enum ProbeStage
 {
     Idle, Preparing, DownloadingTool, Starting, SelfUpdating, Ready, Authenticating,

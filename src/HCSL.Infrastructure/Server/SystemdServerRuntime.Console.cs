@@ -90,11 +90,38 @@ public sealed partial class SystemdServerRuntime
         if (!consoleSessions.TryGetValue(command.RunId, out var session) || session.Stop.IsCancellationRequested)
             return Result(ConsoleDelivery.Rejected, "HCSL-CONSOLE-STALE");
         if (!await session.Admission.WaitAsync(0, ct)) return Result(ConsoleDelivery.Rejected, "HCSL-CONSOLE-BUSY");
+        try { return await WriteConsoleAsync(command, query, session, enforceRate: true, ct); }
+        finally { session.Admission.Release(); }
+    }
+
+    public async Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths, CancellationToken ct = default)
+    {
+        if (!consoleSessions.TryGetValue(runId, out var session) || session.Stop.IsCancellationRequested)
+            throw new ServerException("HCSL-CONSOLE-STALE", "Server session changed.");
+        if (!await session.Admission.WaitAsync(0, ct))
+            throw new ServerException("HCSL-CONSOLE-BUSY", "Console is busy.");
         try
         {
+            var receipts = new List<ServerConsoleReceipt>();
+            foreach (var path in paths)
+            {
+                var command = new ServerConsoleCommand(runId, Guid.NewGuid(), "exec " + PresetCfgRules.Path(path, requireCfgFile: true));
+                var receipt = await WriteConsoleAsync(command, ServerConsoleRules.ValidateConfirmed(command), session, receipts.Count == 0, ct);
+                receipts.Add(receipt);
+                if (receipt.Delivery != ConsoleDelivery.Written) break;
+            }
+            return [.. receipts];
+        }
+        finally { session.Admission.Release(); }
+    }
+
+    private static async Task<ServerConsoleReceipt> WriteConsoleAsync(ServerConsoleCommand command, string query,
+        ConsoleSession session, bool enforceRate, CancellationToken ct)
+    {
+            ServerConsoleReceipt Result(ConsoleDelivery delivery, string code) => new(command.RunId, command.CommandId, delivery, code);
             if (session.History.TryGetValue(command.CommandId, out var previous))
                 return session.Queries[command.CommandId] == query ? previous : Result(ConsoleDelivery.Rejected, "HCSL-CONSOLE-ID");
-            if (session.LastSend != 0 && Stopwatch.GetElapsedTime(session.LastSend) < TimeSpan.FromMilliseconds(250))
+            if (enforceRate && session.LastSend != 0 && Stopwatch.GetElapsedTime(session.LastSend) < TimeSpan.FromMilliseconds(250))
                 return Result(ConsoleDelivery.Rejected, "HCSL-CONSOLE-RATE");
             session.LastSend = Stopwatch.GetTimestamp();
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -124,7 +151,5 @@ public sealed partial class SystemdServerRuntime
             if (session.History.Count >= 64) { var oldest = session.History.Keys.First(); session.History.Remove(oldest); session.Queries.Remove(oldest); }
             session.History[command.CommandId] = receipt; session.Queries[command.CommandId] = query;
             return receipt;
-        }
-        finally { session.Admission.Release(); }
     }
 }

@@ -117,6 +117,12 @@ public partial class PresetCfgPage : UserControl
         if (executing || selected.Length == 0 || Scope() is not { } scope || Owner is not { } owner) return;
         var files = selected;
         var written = 0;
+        var submitted = false;
+        if (files.Length > 32)
+        {
+            owner.ShowInstanceNotification("一次最多执行 32 个 CFG 文件", kind: ToastKind.Warning);
+            return;
+        }
         var (servers, instance, preset) = scope;
         if (!servers.CanExecCfg(instance.Id, preset.Id) || servers.Server.RunId is not { } run)
         {
@@ -156,19 +162,20 @@ public partial class PresetCfgPage : UserControl
                 });
             if (await Dialog.ShowAsync(this, "按顺序执行 CFG", content, null,
                 new DialogAction("取消", false), new DialogAction("执行", true, ButtonVariant.Primary)) is not true) return;
-            foreach (var file in order.ToArray())
+            var batch = order.Select(file => new CfgBatchFile(file.Id, hashes[file.Id])).ToArray();
+            submitted = true;
+            var receipts = await servers.DeliverCfgBatchAsync(new(run, instance.Id, preset.Id, batch));
+            written = receipts.TakeWhile(r => r.RunId == run && r.Delivery == ConsoleDelivery.Written).Count();
+            if (written != batch.Length)
             {
-                // The runtime admits one console write per 250 ms. Pace the queue without retrying uncertain writes.
-                if (written > 0) await Task.Delay(300);
-                if (servers.Server.RunId != run) throw new IOException("服务器运行会话已改变。");
-                var receipt = await servers.DeliverCfgAsync(instance.Id, preset.Id, run, file.Id, hashes[file.Id]);
-                if (!receipt.Written) throw new IOException($"{file.Id}：{receipt.Message}");
-                written++;
+                owner.ShowInstanceNotification($"CFG 投递已停止（确认写入 {written}/{batch.Length} 条）",
+                    receipts.ElementAtOrDefault(written)?.Code ?? "未收到完整回执。");
+                return;
             }
             owner.ShowInstanceNotification($"已写入 {written} 条 CFG 命令", "写入不代表执行成功，请以服务器日志为准。", ToastKind.Info);
         }
         catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
-        { owner.ShowInstanceNotification($"CFG 投递已停止（已写入 {written}/{files.Length} 条）", ex.Message); }
+        { owner.ShowInstanceNotification(submitted ? "CFG 批量请求未完成，请查看服务器日志" : "无法准备 CFG 批量请求", ex.Message); }
         finally { executing = false; UpdateActions(); }
     }
 }

@@ -9,6 +9,7 @@ namespace HCSL.Daemon.Workers;
 public sealed class ServerOperations : IAsyncDisposable
 {
     private readonly IServerRuntimeService service;
+    private WorkspaceRequest? runWorkspace;
     private readonly object sync = new();
 
     /// <param name="sessionMarker">Library session record; a leftover one means the previous daemon died
@@ -96,7 +97,7 @@ public sealed class ServerOperations : IAsyncDisposable
         if (options.StartTimeoutSeconds is < 1 or > 300) throw new ServerException("HCSL-SERVER-OPTIONS", "Startup timeout must be 1..300 seconds.");
         lock (sync)
         {
-            Admit(options.InstanceId); var current = runId!.Value; var token = cancellation!.Token;
+            Admit(options.InstanceId); runWorkspace = workspace; var current = runId!.Value; var token = cancellation!.Token;
             pending = Task.Run(async () =>
             {
                 try
@@ -239,6 +240,39 @@ public sealed class ServerOperations : IAsyncDisposable
         try { after = await service.QueryPlayersAsync(current.Value, ct); }
         catch (Exception e) when (e is ServerException or IOException or OperationCanceledException) { }
         return new(true, "HCSL-KICK-WRITTEN", command.UserId, target.SteamId64, console, target, after);
+    }
+
+    public async Task<ServerConsoleReceipt[]> SendCfgBatchAsync(CfgBatchCommand command, CancellationToken ct)
+    {
+        var snapshot = Snapshot();
+        var workspace = runWorkspace;
+        if (workspace is null || snapshot.RunId != command.RunId || snapshot.InstanceId != command.InstanceId ||
+            snapshot.Preset?.Id != command.PresetId || snapshot.State != ServerState.Running || !snapshot.Active)
+            throw new ServerException("HCSL-CFG-RUN", "Running target does not match.");
+        if (command.Files is not { Length: >= 1 and <= 32 })
+            throw new ServerException("HCSL-CFG-LIMIT", "Choose 1–32 CFG files.");
+        var store = new HCSL.Infrastructure.Storage.LocalPresetCfgStore();
+        var paths = new List<string>();
+        foreach (var file in command.Files)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (file is not { Path.Length: > 0, Hash.Length: > 0 })
+                throw new ServerException("HCSL-CFG-REQUEST", "CFG path and hash are required.");
+            var path = PresetCfgRules.Path(file.Path, requireCfgFile: true);
+            var saved = store.Execute(workspace, new(PresetCfgAction.Read, command.InstanceId, command.PresetId, Name: path));
+            if (saved.Hash is null || saved.Hash != file.Hash)
+                throw new ServerException("HCSL-CFG-CONFLICT", $"File changed: {path}");
+            paths.Add(path);
+        }
+        CancellationToken runToken;
+        lock (sync)
+        {
+            if (runId != command.RunId || !active || state != ServerState.Running || closing || cancellation?.IsCancellationRequested != false)
+                throw new ServerException("HCSL-CFG-RUN", "Running target changed.");
+            runToken = cancellation.Token;
+        }
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct, runToken);
+        return await service.SendCfgBatchAsync(command.RunId, [.. paths], stop.Token);
     }
 
     public Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)

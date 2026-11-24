@@ -90,6 +90,15 @@ public sealed class InstanceClient(IDaemonClient client)
         return JsonSerializer.Deserialize<T>(response.PluginCfgResultJson ?? "null") ?? throw new IOException("Missing plugin cfg result.");
     }
 
+    public async Task<ServerConsoleReceipt[]> DeliverCfgBatchAsync(CfgBatchCommand command, CancellationToken ct = default)
+    {
+        var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.CfgBatch,
+            PresetCfgJson: JsonSerializer.Serialize(command)), TimeSpan.FromSeconds(15), ct);
+        if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
+        return JsonSerializer.Deserialize<ServerConsoleReceipt[]>(response.ConsoleReceiptJson ?? "null")
+            ?? throw new IOException("Missing CFG batch receipt; delivery unknown.");
+    }
+
     public async Task<PresetCfgResult> CfgAsync(PresetCfgCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);

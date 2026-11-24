@@ -122,6 +122,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                     : request.Kind == RequestKind.Admin ? await AdminAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Kick ? await KickAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.Players ? await PlayersAsync(request, deadline.Token)
+                    : request.Kind == RequestKind.CfgBatch ? await CfgBatchAsync(request, deadline.Token)
                     : request.Kind == RequestKind.ServerConsole ? await ConsoleAsync(request, deadline.Token)
                     : request.Kind == RequestKind.Server && DeserializeServerAction(request) == ServerAction.PlanDeployment ? await PlanDeploymentAsync(request, deadline.Token)
                     : request.Kind == RequestKind.MapCatalog && request.Version == LocalProtocol.Version
@@ -331,6 +332,16 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var roster = await servers.PlayersAsync(command.InstanceId, ct);
         var snapshot = servers.Snapshot(hint: command.InstanceId == Guid.Empty ? null : command.InstanceId) with { PlayerRoster = roster };
         return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+    }
+
+    private async Task<LocalResponse> CfgBatchAsync(LocalRequest request, CancellationToken ct)
+    {
+        if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
+        if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
+        var command = JsonSerializer.Deserialize<CfgBatchCommand>(request.PresetCfgJson ?? "null")
+            ?? throw new ServerException("HCSL-CFG-REQUEST", "CFG batch required.");
+        var receipts = await servers.SendCfgBatchAsync(command, ct);
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipts));
     }
 
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)

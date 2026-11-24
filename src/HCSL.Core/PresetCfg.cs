@@ -10,6 +10,9 @@ public sealed record PresetCfgCommand(PresetCfgAction Action, Guid InstanceId, G
 {
     public override string ToString() => $"PresetCfgCommand {{ {Action}, {InstanceId}, {PresetId}, content omitted }}";
 }
+public sealed record CfgBatchFile(string Path, string Hash);
+public sealed record CfgBatchCommand(Guid RunId, Guid InstanceId, Guid PresetId, CfgBatchFile[] Files);
+
 public sealed record PresetCfgFile(string Name, long Bytes, PresetCfgKind Kind = PresetCfgKind.File, string? RelativePath = null)
 {
     public override string ToString() => (Kind == PresetCfgKind.Directory ? "[dir] " : "") + (RelativePath ?? Name) + (Kind == PresetCfgKind.Directory ? "" : " · " + Bytes + " B");
