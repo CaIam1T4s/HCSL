@@ -10,7 +10,7 @@
             <Grid>
               <arc:Button Variant="Ghost" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                           Click="OpenFramework" AutomationProperties.Name="{Binding Name}"/>
-              <Grid IsHitTestVisible="False" Margin="{arc:ArcDesignTokenResource Space3}"
+              <Grid IsHitTestVisible="False" Margin="{DynamicResource ConsolePageInset}"
                     ColumnDefinitions="Auto,2*,3*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
                 <lucide:LucideIcon Kind="Layers" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
