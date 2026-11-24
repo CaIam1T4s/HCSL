@@ -148,22 +148,17 @@ public partial class PresetCfgPage : UserControl
     {
         var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
+        actions.Classes.Add("dialog-actions");
         Add("取消", false, ButtonVariant.Secondary);
         Add("执行", true, ButtonVariant.Primary);
         return actions;
 
         void Add(string label, bool result, ButtonVariant variant)
         {
-            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76,
-                BorderThickness = new Avalonia.Thickness(0) };
-            if (variant == ButtonVariant.Primary)
-            {
-                ArcTokens.Bind(button, TKCode.Arc.Button.BackgroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.Accent);
-                ArcTokens.Bind(button, TKCode.Arc.Button.ForegroundProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.AccentForeground);
-            }
+            var button = new TKCode.Arc.Button { Content = label, Variant = variant, MinWidth = 76 };
+            if (variant == ButtonVariant.Primary) button.Classes.Add("dialog-primary");
             Dialog.SetResult(button, result);
-            ArcTokens.Bind(button, HeightProperty, TKCode.Arc.DesignTokens.ArcDesignTokenKind.ControlSizeMD);
-            actions.Children.Add(new HCSL.UI.Shared.Controls.ElevatedSurface(button));
+            actions.Children.Add(button);
         }
     }
 
