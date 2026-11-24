@@ -78,9 +78,13 @@ public partial class InstancePresetsPage : UserControl
         var editable = !operating && m.CanMutate;
         var preset = BrowsedPreset;
         CreateButton.IsEnabled = editable;
+        PresetActions.IsVisible = preset is not null;
+        PresetActionsTitle.Text = preset is null ? null : $"已选中：{preset.Name}";
         ManageButton.IsEnabled = preset is not null;
         CopyButton.IsEnabled = EditButton.IsEnabled = editable && preset is not null;
-        SelectButton.IsEnabled = editable && preset is not null && preset.Id != m.Selected?.Entry.Definition?.SelectedPresetId;
+        var canSelect = preset is not null && preset.Id != m.Selected?.Entry.Definition?.SelectedPresetId;
+        SelectButton.IsVisible = canSelect;
+        SelectButton.IsEnabled = editable && canSelect;
         DeleteButton.IsEnabled = editable && preset is not null && m.Selected?.Entry.Presets.Length > 1
             && preset.Id != m.Selected.Entry.Definition?.SelectedPresetId;
         var connected = !operating && !m.Busy && m.Server.Connected;
