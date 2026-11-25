@@ -3,6 +3,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Controls.Primitives;
 using Avalonia.Threading;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -39,25 +40,57 @@ public partial class PresetPluginsPage : UserControl
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
         Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
-        AddColumn("框架", 150, row => row.Framework);
-        AddColumn("状态", 100, row => row.State);
+        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(56), IsSortable = false,
+            CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
+        Plugins.AddHandler(InputElement.PointerPressedEvent, BlockUnavailableToggle, RoutingStrategies.Tunnel);
+        Plugins.AddHandler(InputElement.KeyDownEvent, BlockUnavailableKey, RoutingStrategies.Tunnel);
         Plugins.SelectionChanged += SelectionChanged;
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
-            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; }
+            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; PluginProperties.IsOpen = false; }
         };
         DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
     }
 
-    private void AddColumn(string header, double width, Func<Row, string> text) => Plugins.Columns.Add(new DataTableColumn
-    {
-        Header = header, Width = new GridLength(width), IsSortable = false,
-        CellTemplate = new FuncDataTemplate<Row>((row, _) => row is null ? null :
-            new TextBlock { Text = text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis })
-    });
+    private static Control? RowControl(object? source) => (source as Avalonia.Visual)?.GetSelfAndVisualAncestors()
+        .OfType<Control>().FirstOrDefault(control => control.GetType().Name == "TableRow");
 
-    private static Control? NameCell(Row? row)
+    // Arc 1.1 has no per-row checkbox enable predicate. Gate input before its row handler.
+    private static Row? RowItem(Control? control) => control?.GetType().GetProperty("Item")?.GetValue(control) as Row;
+    private static bool CannotEnable(Row? row) => row is { Enabled: false } && (!row.Available || !row.Compatible);
+
+    private void BlockUnavailableToggle(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is Avalonia.Visual visual && visual.GetSelfAndVisualAncestors().OfType<Control>()
+            .Any(control => control.Classes.Contains("plugin-info"))) return;
+        if (CannotEnable(RowItem(RowControl(e.Source)))) e.Handled = true;
+    }
+
+    private void BlockUnavailableKey(object? sender, KeyEventArgs e)
+    {
+        if ((e.Key is Key.Space or Key.Enter) && e.Source is Control control &&
+            !control.Classes.Contains("plugin-info") && CannotEnable(RowItem(RowControl(control)))) e.Handled = true;
+    }
+
+    private Control? InfoCell(Row? row)
+    {
+        if (row is null) return null;
+        var button = new TKCode.Arc.Button { Variant = ButtonVariant.Ghost, Size = ControlSize.Small,
+            Content = new LucideIcon { Kind = LucideIconKind.Info } };
+        button.Classes.Add("plugin-info");
+        Avalonia.Automation.AutomationProperties.SetName(button, "插件属性：" + row.Name);
+        button.Click += (_, _) =>
+        {
+            PropertyName.Text = row.Name;
+            PropertyVersion.Text = row.Version;
+            PropertyFramework.Text = row.Framework;
+            PluginProperties.ShowAt(button);
+        };
+        return button;
+    }
+
+    private Control? NameCell(Row? row)
     {
         if (row is null) return null;
         var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
@@ -72,7 +105,9 @@ public partial class PresetPluginsPage : UserControl
         Control? band = null;
         AdornerLayer? layer = null;
         var tint = new Border { IsHitTestVisible = false, Opacity = 0.16 };
-        ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Warning);
+        ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Danger);
+        void SyncTint(object? sender, EventArgs e) => tint.IsVisible = IsEffectivelyVisible && ReferenceEquals(RowItem(band), row)
+            && (Plugins.ItemsSource?.OfType<Row>().Contains(row) ?? false);
         details.AttachedToVisualTree += (_, _) =>
         {
             band = details.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
@@ -82,9 +117,12 @@ public partial class PresetPluginsPage : UserControl
             layer = adorners;
             AdornerLayer.SetAdornedElement(tint, band);
             layer.Children.Add(tint);
+            Plugins.LayoutUpdated += SyncTint;
+            SyncTint(null, EventArgs.Empty);
         };
         details.DetachedFromVisualTree += (_, _) =>
         {
+            Plugins.LayoutUpdated -= SyncTint;
             layer?.Children.Remove(tint);
             AdornerLayer.SetAdornedElement(tint, null);
             layer = null;
@@ -156,6 +194,7 @@ public partial class PresetPluginsPage : UserControl
                 frameworks.Contains(row.Framework) || row.FrameworkId == "none" && frameworks.Contains("无框架")) &&
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        PluginProperties.IsOpen = false;
         var ticket = ++filterGeneration;
         projecting = true;
         Plugins.ItemsSource = visible;
