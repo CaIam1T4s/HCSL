@@ -67,6 +67,8 @@ public sealed partial class ServerLogWindow : ArcWindow
         this.model = model;
         this.owner = owner;
         InitializeComponent();
+        // HCSL draws its own title bar; the X11 server must not add a second one.
+        WindowDecorations = Avalonia.Controls.WindowDecorations.None;
         owner.PromptVisibilityChanged += PromptChanged;
         owner.Closed += OwnerClosed;
         var grid = new Grid { Margin = new Thickness(16), RowDefinitions = RowDefinitions.Parse("Auto,*,Auto") };
