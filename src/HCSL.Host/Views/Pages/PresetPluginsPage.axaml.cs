@@ -102,6 +102,7 @@ public partial class PresetPluginsPage : UserControl
         var button = new TKCode.Arc.Button { Variant = ButtonVariant.Ghost, Size = ControlSize.Small,
             Content = new LucideIcon { Kind = LucideIconKind.Info } };
         button.Classes.Add("plugin-info");
+        button.PointerEntered += (_, _) => CloseTip();
         void UpdateName() => Avalonia.Automation.AutomationProperties.SetName(button,
             button.DataContext is Row item ? "插件属性：" + item.Name : "插件属性");
         button.DataContextChanged += (_, _) => UpdateName();
@@ -204,7 +205,8 @@ public partial class PresetPluginsPage : UserControl
 
         async void HoverRow(object? sender, PointerEventArgs e)
         {
-            if (band is null || !Incompatible(details.DataContext as Row)) return;
+            if (band is null || !Incompatible(details.DataContext as Row) ||
+                band.GetVisualDescendants().OfType<Control>().Any(control => control.IsPointerOver && control.Classes.Contains("plugin-info"))) return;
             var position = e.GetPosition(TipLayer);
             var anchorRow = band;
             var item = RowItem(anchorRow);
@@ -303,7 +305,7 @@ public partial class PresetPluginsPage : UserControl
 
         void Add(string title, LucideIconKind icon, bool selected, Action select)
         {
-            var item = new GlassMenuItem { Content = selected ? title + "（当前）" : title, Icon = Lucide.Geometry(icon) };
+            var item = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(selected ? LucideIconKind.Check : icon) };
             item.Click += (_, _) => { menu.Close(); select(); ApplyFilter(); };
             menu.Items.Add(item);
         }

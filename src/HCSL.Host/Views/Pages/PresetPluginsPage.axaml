@@ -18,7 +18,13 @@
       <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
     <Canvas Grid.Row="1" x:Name="TipLayer" IsHitTestVisible="False">
-      <Border x:Name="TipAnchor" Width="1" Height="1" arc:Tooltip.Tip="不兼容" arc:Tooltip.Side="Bottom"/>
+      <Border x:Name="TipAnchor" Width="1" Height="1" arc:Tooltip.Tip="不兼容" arc:Tooltip.Side="Bottom">
+        <Border.Styles>
+          <Style Selector="arc|ArcPopup">
+            <Setter Property="PlacementConstraintAdjustment" Value="SlideX,SlideY"/>
+          </Style>
+        </Border.Styles>
+      </Border>
     </Canvas>
     <arc:Popover x:Name="PluginProperties" Grid.Row="1" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>
