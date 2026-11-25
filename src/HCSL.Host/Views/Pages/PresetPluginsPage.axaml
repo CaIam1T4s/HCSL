@@ -16,12 +16,6 @@
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
     <arc:Table Grid.Row="1" x:Name="Plugins" Caption="预设插件" IsSelectable="True"
-               EmptyMessage="暂无插件" LoadingMessage="正在读取插件">
-      <arc:Table.Styles>
-        <Style Selector=":is(Panel).plugin-incompatible">
-          <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}"/>
-        </Style>
-      </arc:Table.Styles>
-    </arc:Table>
+               EmptyMessage="暂无插件" LoadingMessage="正在读取插件"/>
   </Grid>
 </UserControl>

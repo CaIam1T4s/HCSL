@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Controls.Primitives;
+using Avalonia.Threading;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using HCSL.Core;
@@ -7,6 +9,7 @@ using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
 using TKCode.Arc.Icons.Lucide;
+using TKCode.Arc.DesignTokens;
 
 namespace HCSL.Host.Views.Pages;
 
@@ -15,10 +18,10 @@ public partial class PresetPluginsPage : UserControl
     private sealed record Row(string Id, string Name, string Version, string FrameworkId, string Framework,
         bool Enabled, bool Available, bool Compatible)
     {
-        public string State => !Available ? "包不可用" : !Compatible ? "不兼容" : Enabled ? "已启用" : "未启用";
+        public string State => !Available ? "包不可用" : !Compatible ? "" : Enabled ? "已启用" : "未启用";
     }
 
-    private int generation;
+    private int generation, filterGeneration;
     private Row[] rows = [];
     private PluginResult? snapshot;
     private bool editing, projecting;
@@ -60,13 +63,26 @@ public partial class PresetPluginsPage : UserControl
         if (row is null) return null;
         var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
         if (row.Compatible || !row.Available) return label;
-        Panel? band = null;
+        Control? band = null;
+        AdornerLayer? layer = null;
+        var tint = new Border { IsHitTestVisible = false, Opacity = 0.16 };
+        ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Accent);
+        Tooltip.SetTip(label, "与当前预设框架不兼容");
         label.AttachedToVisualTree += (_, _) =>
         {
-            band = label.GetVisualAncestors().OfType<Panel>().FirstOrDefault(p => p.GetType().Name == "TableRow");
-            band?.Classes.Add("plugin-incompatible");
+            band = label.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
+            if (band is null || AdornerLayer.GetAdornerLayer(band) is not { } adorners) return;
+            layer = adorners;
+            AdornerLayer.SetAdornedElement(tint, band);
+            layer.Children.Add(tint);
         };
-        label.DetachedFromVisualTree += (_, _) => { band?.Classes.Remove("plugin-incompatible"); band = null; };
+        label.DetachedFromVisualTree += (_, _) =>
+        {
+            layer?.Children.Remove(tint);
+            AdornerLayer.SetAdornedElement(tint, null);
+            layer = null;
+            band = null;
+        };
         return label;
     }
 
@@ -132,13 +148,21 @@ public partial class PresetPluginsPage : UserControl
                 frameworks.Contains(row.Framework) || row.FrameworkId == "none" && frameworks.Contains("无框架")) &&
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        var ticket = ++filterGeneration;
         projecting = true;
-        try
+        Plugins.ItemsSource = visible;
+        // Arc 1.1 retains the old realized row indices until its next layout pass.
+        Dispatcher.UIThread.Post(() =>
         {
-            Plugins.ItemsSource = visible;
-            Plugins.SelectedItems = visible.Where(r => r.Enabled).ToList();
-        }
-        finally { projecting = false; }
+            if (ticket != filterGeneration) return;
+            try
+            {
+                if (!IsVisible || !Plugins.IsAttachedToVisualTree()) return;
+                Plugins.UpdateLayout();
+                Plugins.SelectedItems = visible.Where(r => r.Enabled).ToList();
+            }
+            finally { projecting = false; }
+        }, DispatcherPriority.Loaded);
     }
 
     private async void SelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
