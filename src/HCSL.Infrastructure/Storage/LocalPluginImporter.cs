@@ -195,7 +195,7 @@ public sealed class LocalPluginImporter : IPluginImporter
             {
                 var smx = AnalyzeSmx(command.SourcePath, null, null, null, warnings);
                 return new(command.SourcePath, "file", smx.Id, smx.Name, smx.Version,
-                    smx.MetaPlugin, smx.Files.Count, smx.Files.Sum(f => f.Bytes), [.. warnings]);
+                    smx.MetaPlugin, smx.Files.Count, smx.Files.Sum(f => f.Bytes), [.. warnings], Framework: "source2mod");
             }
             var (root, archive, hint) = ResolveSource(command.SourcePath, IsArchive(command.SourcePath) ? command.SourcePath : null, out cleanup);
             var analysis = Analyze(root, hint, null, null, null, skipped, warnings, allowUnknown: true);
