@@ -23,7 +23,7 @@
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
     <Grid Grid.Row="1" ClipToBounds="True">
-      <arc:Table x:Name="Plugins" Caption="预设插件" IsSelectable="True"
+      <arc:Table x:Name="Plugins" Caption="预设插件" IsSelectable="False"
                  EmptyMessage="暂无插件" LoadingMessage="正在读取插件"/>
       <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>

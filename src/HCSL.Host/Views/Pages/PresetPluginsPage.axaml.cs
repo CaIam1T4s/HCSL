@@ -2,9 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
-using Avalonia.Threading;
 using Avalonia.Interactivity;
-using Avalonia.Input;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -23,10 +21,10 @@ public partial class PresetPluginsPage : UserControl
         public string State => !Available ? "包不可用" : !Compatible ? "" : Enabled ? "已启用" : "未启用";
     }
 
-    private int generation, filterGeneration;
+    private int generation;
     private Row[] rows = [];
     private PluginResult? snapshot;
-    private bool editing, projecting;
+    private bool editing;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public PresetPluginsPage()
@@ -39,14 +37,13 @@ public partial class PresetPluginsPage : UserControl
         foreach (var framework in FrameworkRules.Known)
             frameworkFilter.Options.Add(new FilterOption { Value = framework.Id, Label = framework.DisplayName });
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
+        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(44), IsSortable = false,
+            CellTemplate = new FuncDataTemplate<Row>((row, _) => EnableCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = true,
             SortValueSelector = item => ((Row)item).Name,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(56), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
-        Plugins.AddHandler(InputElement.PointerPressedEvent, BlockUnavailableToggle, RoutingStrategies.Tunnel);
-        Plugins.AddHandler(InputElement.KeyDownEvent, BlockUnavailableKey, RoutingStrategies.Tunnel);
-        Plugins.SelectionChanged += SelectionChanged;
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
@@ -58,7 +55,7 @@ public partial class PresetPluginsPage : UserControl
     private static Control? RowControl(object? source) => (source as Avalonia.Visual)?.GetSelfAndVisualAncestors()
         .OfType<Control>().FirstOrDefault(control => control.GetType().Name == "TableRow");
 
-    // Arc 1.1 has no per-row checkbox enable predicate. Gate input before its row handler.
+    // Arc reuses row containers; read the current item when handling a cell action.
     private static readonly System.Reflection.PropertyInfo? TableRowItem = typeof(Table).Assembly
         .GetType("TKCode.Arc.TableRow")?.GetProperty("Item",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly,
@@ -69,17 +66,33 @@ public partial class PresetPluginsPage : UserControl
             ? TableRowItem.GetValue(control) as Row : null;
     private static bool CannotEnable(Row? row) => row is { Enabled: false } && (!row.Available || !row.Compatible);
 
-    private void BlockUnavailableToggle(object? sender, PointerPressedEventArgs e)
+    private Control? EnableCell(Row? row)
     {
-        if (e.Source is Avalonia.Visual visual && visual.GetSelfAndVisualAncestors().OfType<Control>()
-            .Any(control => control.Classes.Contains("plugin-info"))) return;
-        if (CannotEnable(RowItem(RowControl(e.Source)))) e.Handled = true;
-    }
-
-    private void BlockUnavailableKey(object? sender, KeyEventArgs e)
-    {
-        if ((e.Key is Key.Space or Key.Enter) && e.Source is Control control &&
-            !control.Classes.Contains("plugin-info") && CannotEnable(RowItem(RowControl(control)))) e.Handled = true;
+        if (row is null) return null;
+        var checkbox = new TKCode.Arc.Checkbox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var projecting = false;
+        void Project()
+        {
+            projecting = true;
+            try
+            {
+                var item = checkbox.DataContext as Row;
+                checkbox.IsEnabled = item is not null && !CannotEnable(item) && Scope()?.Model.CanEditPlugins == true;
+                checkbox.IsChecked = item?.Enabled == true;
+                Avalonia.Automation.AutomationProperties.SetName(checkbox, "启用 " + item?.Name);
+            }
+            finally { projecting = false; }
+        }
+        checkbox.DataContextChanged += (_, _) => Project();
+        checkbox.CheckedStateChanged += async (_, _) =>
+        {
+            if (projecting || checkbox.DataContext is not Row item || checkbox.IsChecked == item.Enabled) return;
+            if (ReferenceEquals(RowItem(RowControl(checkbox)), item)) await SaveEnabledAsync(item, checkbox.IsChecked == true);
+            if (ReferenceEquals(checkbox.DataContext, item) && rows.Contains(item)) Project();
+        };
+        Project();
+        return checkbox;
     }
 
     private Control? InfoCell(Row? row)
@@ -244,66 +257,34 @@ public partial class PresetPluginsPage : UserControl
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         PluginProperties.IsOpen = false;
-        var ticket = ++filterGeneration;
-        projecting = true;
         Plugins.ItemsSource = visible;
-        // Arc 1.1 retains the old realized row indices until its next layout pass.
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (ticket != filterGeneration) return;
-            try
-            {
-                if (!IsVisible || !Plugins.IsAttachedToVisualTree()) return;
-                Plugins.UpdateLayout();
-                Plugins.SelectedItems = visible.Where(r => r.Enabled).ToList();
-            }
-            finally { projecting = false; }
-        }, DispatcherPriority.Loaded);
     }
 
-    private async void SelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
+    private async Task SaveEnabledAsync(Row row, bool enabled)
     {
-        if (projecting || editing || snapshot is not { } current || Scope() is not { } scope) return;
-        var checkedRows = e.SelectedItems.OfType<Row>().ToHashSet();
-        var visible = (Plugins.ItemsSource?.OfType<Row>() ?? []).ToArray();
-        var added = visible.Where(r => !r.Enabled && checkedRows.Contains(r)).ToArray();
-        var removed = visible.Where(r => r.Enabled && !checkedRows.Contains(r)).ToArray();
-        if (added.Length == 0 && removed.Length == 0) return;
-        if (!scope.Model.CanEditPlugins || added.Any(r => !r.Available || !r.Compatible) ||
-            added.GroupBy(r => r.Id).Any(group => group.Count() > 1))
+        if (editing || snapshot is not { } current || Scope() is not { } scope) return;
+        if (!scope.Model.CanEditPlugins || enabled && (!row.Available || !row.Compatible))
         {
-            ApplyFilter();
-            Owner?.ShowInstanceNotification("无法启用所选插件", "请确认预设可修改、框架兼容，且每个插件只选择一个版本。", ToastKind.Warning);
+            Owner?.ShowInstanceNotification("无法保存插件", "请确认预设可修改且插件与框架兼容。");
             return;
         }
         var next = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToList();
-        foreach (var row in removed)
-        {
-            var index = next.FindIndex(p => p.Id == row.Id);
-            if (index >= 0) next[index] = next[index] with { Enabled = false };
-        }
-        foreach (var row in added)
-        {
-            var index = next.FindIndex(p => p.Id == row.Id);
-            var choice = new PluginSelection(row.Id, row.Version, true);
-            if (index < 0) next.Add(choice); else next[index] = choice;
-        }
+        var index = next.FindIndex(p => p.Id == row.Id);
+        var choice = new PluginSelection(row.Id, row.Version, enabled);
+        if (index < 0) next.Add(choice); else next[index] = choice;
         var ticket = generation;
         editing = true;
-        Plugins.IsEnabled = false;
         try
         {
             var saved = await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
-                scope.Instance.Revision, current.Hash, [.. next]));
+                scope.Instance.Revision, current.Hash, [.. next], PackageMetadataOnly: true));
             if (ticket == generation) Render(saved);
-            Owner?.ShowInstanceNotification("预设插件已保存", "下次部署生效。", ToastKind.Success);
         }
         catch (IOException ex)
         {
-            if (ticket == generation) ApplyFilter();
             Owner?.ShowInstanceNotification("无法保存插件", ex.Message);
         }
-        finally { editing = false; Plugins.IsEnabled = true; }
+        finally { editing = false; }
     }
 
     private async void Manage(object? sender, RoutedEventArgs e)

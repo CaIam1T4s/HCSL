@@ -147,7 +147,7 @@ public sealed class LocalPluginStore : IPluginStore
             var metadata = FrameworkMetadata(packagesRoot, manifest);
             return Result(manifest, hash, metadata, [], metadata.Length);
         }
-        var (available, rejected) = Catalog(packagesRoot, metadataOnly: c.Action == PluginAction.List && c.PackageMetadataOnly);
+        var (available, rejected) = Catalog(packagesRoot, metadataOnly: c.PackageMetadataOnly);
         var ordered = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
         var listed = ordered.Length > PluginRules.MaxListedPackages ? ordered[..PluginRules.MaxListedPackages] : ordered;
         if (c.Action == PluginAction.List) return Result(manifest, hash, listed, rejected, ordered.Length);
@@ -161,6 +161,12 @@ public sealed class LocalPluginStore : IPluginStore
         FrameworkRules.ValidateSelections(next.Where(p => p.Enabled).Select(p =>
         {
             var package = ordered.First(a => a.Id == p.Id && a.Version == p.Version);
+            // A lightweight editor need not hash unrelated library packages before saving.
+            if (c.PackageMetadataOnly)
+            {
+                var verified = LoadPackage(packagesRoot, p.Id, p.Version);
+                return new FrameworkRules.SelectedFramework(p.Id, verified.Framework, verified.FrameworkPayload);
+            }
             return new FrameworkRules.SelectedFramework(p.Id, package.Framework, package.FrameworkPayload);
         }));
         var current = File.Exists(file) ? Hash(file) : null;
