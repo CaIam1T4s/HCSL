@@ -7,6 +7,97 @@ namespace HCSL.Host.Views;
 
 public partial class MainWindow
 {
+    internal async Task<PluginImportResult?> ImportPluginToLibraryAsync(HostServerController model,
+        InstanceDefinition instance, PresetDefinition preset)
+    {
+        while (true)
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选择插件包",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("插件包") { Patterns = ["*.zip", "*.tar.gz", "*.tgz", "*.tar", "*.smx"] }]
+            });
+            if (files.Count == 0) return null;
+            var path = files[0].TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                if (await ChooseAsync("无法读取插件包", "请选择本地文件。", "取消", "更换文件") == 1) continue;
+                return null;
+            }
+
+            PluginImportPreview preview;
+            try { preview = await model.ProbePluginImportAsync(path); }
+            catch (Exception ex) when (ex is IOException or InstanceException)
+            {
+                if (await ChooseAsync("无法读取插件包", ex.Message, "取消", "更换文件") == 1) continue;
+                return null;
+            }
+
+            var body = new StackPanel { Spacing = 8 };
+            body.Children.Add(new TextBlock { Text = "导入插件", FontSize = 20 });
+            body.Children.Add(new TextBlock { Text = Path.GetFileName(path), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var id = Metadata("ID", preview.Id);
+            var name = Metadata("名称", preview.Name);
+            var version = Metadata("版本", preview.Version);
+            Select? framework = null;
+            if (preview.TargetRoot is not null && preview.ManagedFramework is ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous)
+            {
+                body.Children.Add(new TextBlock { Text = "无法识别所需框架，请选择：" });
+                framework = new Select { ItemsSource = new[] { "请选择框架", "SwiftlyS2", "ModSharp" }, SelectedIndex = 0 };
+                body.Children.Add(framework);
+            }
+            else
+            {
+                body.Children.Add(new TextBlock { Text = "框架：" + (preview.Framework is { } required ? PluginPresentation.FrameworkLabel(required) : "未识别") });
+            }
+            body.Children.Add(new TextBlock { Text = "插件库由所有预设共享。导入不会启用插件或修改当前预设。",
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            if (preview.Warnings.Length > 0)
+                body.Children.Add(new TextBlock { Text = string.Join("\n", preview.Warnings), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var feedback = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            body.Children.Add(feedback);
+            while (true)
+            {
+                var choice = await ShowOverlayAsync(body, ["取消", "更换文件", "导入到插件库"]);
+                if (choice == 1) break;
+                if (choice != 2) return null;
+                var frameworkId = framework is null ? preview.Framework : framework.SelectedIndex switch { 1 => "swiftlys2", 2 => "modsharp", _ => null };
+                if (framework is not null && frameworkId is null || new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace))
+                {
+                    feedback.Text = "请补全插件信息并选择所需框架。";
+                    continue;
+                }
+                try
+                {
+                    var archive = preview.Kind == "archive" ? path : null;
+                    var imported = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id,
+                        archive is null ? path : "", id(), name(), version(), preview.MetaPlugin, false, false,
+                        instance.Revision, archive, CfgIntoPreset: false, Framework: frameworkId));
+                    ShowInstanceNotification("已导入插件", $"{imported.Id} {imported.Version} 已加入插件库，未启用。");
+                    return imported;
+                }
+                catch (Exception ex) when (ex is IOException or InstanceException)
+                {
+                    feedback.Text = "导入失败：" + ex.Message;
+                }
+            }
+
+            Func<string> Metadata(string label, string value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    body.Children.Add(new TextBlock { Text = $"{label}：{value}", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                    return () => value;
+                }
+                body.Children.Add(new TextBlock { Text = label });
+                var input = new Input();
+                body.Children.Add(input);
+                return () => (input.Text ?? "").Trim();
+            }
+        }
+    }
+
     public async Task EditPluginsAsync(HostServerController model, InstanceDefinition instance, PresetDefinition preset,
         string[]? targets = null, bool? enabled = null)
     {
