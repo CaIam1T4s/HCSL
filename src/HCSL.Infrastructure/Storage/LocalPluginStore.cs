@@ -82,7 +82,7 @@ public sealed class LocalPluginStore : IPluginStore
         return new([], [], 0, "");
     }
 
-    internal static Package LoadPackage(string packagesRoot, string id, string version)
+    internal static Package LoadPackage(string packagesRoot, string id, string version, bool metadataOnly = false)
     {
         PluginRules.Id(id); PluginRules.Version(version);
         var root = SafePath(Path.Combine(packagesRoot, id, version));
@@ -113,6 +113,12 @@ public sealed class LocalPluginStore : IPluginStore
             signature.AppendData(Encoding.UTF8.GetBytes($"{relative}\0{info.Length}\0{info.LastWriteTimeUtc.Ticks}\n"));
             files.Add(new(relative, file, "", info.Length));
         }
+        if (metadataOnly)
+        {
+            var paths = files.Select(f => f.RelativePath).ToArray();
+            var kind = FrameworkRules.Resolve(paths);
+            return new Package(id, manifest.Name, version, source, files.ToArray(), "", bytes, kind, FrameworkRules.IsFrameworkPayload(kind, paths));
+        }
         var cacheKey = root;
         var stamp = Convert.ToHexString(signature.GetHashAndReset());
         if (Cache.TryGetValue(cacheKey, out var cached) && cached.Signature == stamp) return cached.Package;
@@ -141,7 +147,7 @@ public sealed class LocalPluginStore : IPluginStore
             var metadata = FrameworkMetadata(packagesRoot, manifest);
             return Result(manifest, hash, metadata, [], metadata.Length);
         }
-        var (available, rejected) = Catalog(packagesRoot);
+        var (available, rejected) = Catalog(packagesRoot, metadataOnly: c.Action == PluginAction.List && c.PackageMetadataOnly);
         var ordered = available.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version, StringComparer.Ordinal).ToArray();
         var listed = ordered.Length > PluginRules.MaxListedPackages ? ordered[..PluginRules.MaxListedPackages] : ordered;
         if (c.Action == PluginAction.List) return Result(manifest, hash, listed, rejected, ordered.Length);
@@ -225,7 +231,7 @@ public sealed class LocalPluginStore : IPluginStore
         return [.. result];
     }
 
-    private static (PluginPackageInfo[] Available, PluginPackageRejection[] Rejected) Catalog(string packagesRoot)
+    private static (PluginPackageInfo[] Available, PluginPackageRejection[] Rejected) Catalog(string packagesRoot, bool metadataOnly)
     {
         SafePath(packagesRoot);
         if (!Directory.Exists(packagesRoot)) return ([], []);
@@ -246,7 +252,7 @@ public sealed class LocalPluginStore : IPluginStore
                 var version = Path.GetFileName(versionDir);
                 try
                 {
-                    var package = LoadPackage(packagesRoot, id, version);
+                    var package = LoadPackage(packagesRoot, id, version, metadataOnly);
                     result.Add(new(package.Id, package.Name, package.Version, package.Hash, package.Files.Length, package.Bytes, package.Framework, package.FrameworkPayload, FrameworkRules.CategoryFor(package.Framework, package.FrameworkPayload)));
                 }
                 catch (InstanceException e) { rejected.Add(new(id, version, e.Code)); }

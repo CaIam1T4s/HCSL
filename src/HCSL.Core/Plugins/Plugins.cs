@@ -11,7 +11,7 @@ public enum PluginAction { List, Save, RemovePackage }
 /// <summary>Plugin manifest editing. ExpectedHash protects against concurrent external edits.</summary>
 public sealed record PluginCommand(PluginAction Action, Guid InstanceId, Guid PresetId,
     long InstanceRevision = 0, string? ExpectedHash = null, PluginSelection[]? Plugins = null,
-    string? RemoveId = null, string? RemoveVersion = null, bool FrameworkOverviewOnly = false)
+    string? RemoveId = null, string? RemoveVersion = null, bool FrameworkOverviewOnly = false, bool PackageMetadataOnly = false)
 {
     public override string ToString() => $"PluginCommand {Action} {InstanceId}/{PresetId}";
 }

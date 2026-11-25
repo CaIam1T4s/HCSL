@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
@@ -11,12 +12,16 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class PresetPluginsPage : UserControl
 {
-    private sealed record Row(string Key, string Name, string Version = "", string State = "",
-        bool Enabled = false, bool CanEnable = false, string[]? Versions = null, Row[]? Children = null);
+    private sealed record Row(string Id, string Name, string Version, string FrameworkId, string Framework,
+        bool Enabled, bool Available, bool Compatible)
+    {
+        public string State => !Available ? "包不可用" : !Compatible ? "不兼容" : Enabled ? "已启用" : "未启用";
+    }
+
     private int generation;
     private Row[] rows = [];
     private PluginResult? snapshot;
-    private bool editing;
+    private bool editing, projecting;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public PresetPluginsPage()
@@ -24,16 +29,17 @@ public partial class PresetPluginsPage : UserControl
         InitializeComponent();
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
-        TreeTableHeaderAlignment.Attach(Plugins);
-        Plugins.KeySelector = row => ((Row)row).Key;
-        Plugins.ChildrenSelector = row => ((Row)row).Children;
-        Plugins.RowLabelSelector = row => ((Row)row).Name;
-        Plugins.Columns.Add(TreeTableColumn.Create<Row>("插件", row => row.Name));
-        Plugins.Columns.Add(new TreeTableColumn { Header = "版本", Width = new GridLength(160), IsSortable = false,
-            CellTemplate = new FuncDataTemplate<Row>((row, _) => VersionCell(row)) });
-        Plugins.Columns.Add(new TreeTableColumn { Header = "启用", Width = new GridLength(72), IsSortable = false,
-            CellTemplate = new FuncDataTemplate<Row>((row, _) => EnabledCell(row)) });
-        Plugins.Columns.Add(new TreeTableColumn { Header = "状态", Width = new GridLength(156), ValueSelector = row => ((Row)row).State });
+        var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
+        frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
+        foreach (var framework in FrameworkRules.Known)
+            frameworkFilter.Options.Add(new FilterOption { Value = framework.Id, Label = framework.DisplayName });
+        Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
+        Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
+            CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
+        AddColumn("版本", 140, row => row.Version);
+        AddColumn("框架", 150, row => row.Framework);
+        AddColumn("状态", 100, row => row.State);
+        Plugins.SelectionChanged += SelectionChanged;
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
@@ -42,31 +48,26 @@ public partial class PresetPluginsPage : UserControl
         DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
     }
 
-    private Control? VersionCell(Row? row)
+    private void AddColumn(string header, double width, Func<Row, string> text) => Plugins.Columns.Add(new DataTableColumn
     {
-        if (row is not { Versions: { Length: > 0 } versions })
-            return row is { Children: null } ? new TextBlock { Text = row.Version } : null;
-        var picker = new Select { ItemsSource = versions, SelectedIndex = Array.IndexOf(versions, row.Version),
-            IsEnabled = versions.Length > 1 && Scope()?.Model.CanEditPlugins == true };
-        picker.SelectionChanged += async (_, _) =>
-        {
-            if (picker.SelectedItem is string version && version != row.Version)
-                await SaveAsync(row, version, row.Enabled);
-        };
-        return picker;
-    }
+        Header = header, Width = new GridLength(width), IsSortable = false,
+        CellTemplate = new FuncDataTemplate<Row>((row, _) => row is null ? null :
+            new TextBlock { Text = text(row), TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis })
+    });
 
-    private Control? EnabledCell(Row? row)
+    private static Control? NameCell(Row? row)
     {
-        if (row is not { Children: null }) return null;
-        var check = new TKCode.Arc.Checkbox { IsChecked = row.Enabled,
-            IsEnabled = (row.Enabled || row.CanEnable) && Scope()?.Model.CanEditPlugins == true };
-        Avalonia.Automation.AutomationProperties.SetName(check, "在当前预设启用 " + row.Name);
-        check.CheckedStateChanged += async (_, _) =>
+        if (row is null) return null;
+        var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
+        if (row.Compatible || !row.Available) return label;
+        Panel? band = null;
+        label.AttachedToVisualTree += (_, _) =>
         {
-            if ((check.IsChecked == true) != row.Enabled) await SaveAsync(row, row.Version, check.IsChecked == true);
+            band = label.GetVisualAncestors().OfType<Panel>().FirstOrDefault(p => p.GetType().Name == "TableRow");
+            band?.Classes.Add("plugin-incompatible");
         };
-        return check;
+        label.DetachedFromVisualTree += (_, _) => { band?.Classes.Remove("plugin-incompatible"); band = null; };
+        return label;
     }
 
     private (HostServerController Model, InstanceDefinition Instance, PresetDefinition Preset)? Scope()
@@ -91,9 +92,8 @@ public partial class PresetPluginsPage : UserControl
         bool Current() => ticket == generation && Scope()?.Preset.Id == scope.Preset.Id;
         try
         {
-            var result = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id));
+            var result = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id, PackageMetadataOnly: true));
             if (!Current()) return;
-            snapshot = result;
             Render(result);
             ManageButton.IsEnabled = scope.Model.Server.Connected && !editing;
         }
@@ -103,31 +103,20 @@ public partial class PresetPluginsPage : UserControl
     private static bool IsPlugin(PluginPackageInfo package) => FrameworkRules.Find(package.Id) is null &&
         !package.FrameworkPayload && package.Category != PluginCategory.Framework;
 
-    private static bool HasFramework(PluginResult result, PluginPackageInfo package) => package.Framework is not { } required ||
-        result.Selected.Any(s => s.Id == required && s.Enabled && s.Available);
-
     private void Render(PluginResult result)
     {
-        var packages = result.Available.Where(IsPlugin).ToLookup(p => p.Id);
-        var referenced = result.Selected.Where(s => FrameworkRules.Find(s.Id) is null &&
-            !result.Available.Any(p => p.Id == s.Id && p.Version == s.Version && !IsPlugin(p))).ToDictionary(s => s.Id);
-        rows = packages.Select(p => p.Key).Concat(referenced.Keys).Distinct(StringComparer.Ordinal)
-            .Select(id =>
-            {
-                referenced.TryGetValue(id, out var selection);
-                var variants = packages[id].OrderByDescending(p => p.Version, StringComparer.OrdinalIgnoreCase).ToArray();
-                var version = selection?.Version ?? variants.FirstOrDefault()?.Version ?? "-";
-                var chosen = variants.FirstOrDefault(p => p.Version == version);
-                var fallback = chosen ?? variants.FirstOrDefault();
-                var canEnable = chosen is not null && HasFramework(result, chosen);
-                var state = chosen is null ? "包不可用" : !canEnable ? "需要 " + (FrameworkRules.Find(chosen.Framework!)?.DisplayName ?? chosen.Framework)
-                    : selection?.Enabled == true ? "已启用" : "未启用";
-                return (Category: fallback?.Category ?? PluginCategory.Other, Item: new Row(id,
-                    chosen?.Name ?? selection?.Name ?? fallback?.Name ?? id, version, state, selection?.Enabled == true,
-                    canEnable, variants.Select(p => p.Version).Append(version).Distinct().ToArray()));
-            }).OrderBy(x => x.Item.Name, StringComparer.CurrentCultureIgnoreCase).GroupBy(x => x.Category)
-            .Select(group => new Row("category:" + group.Key, PluginPresentation.CategoryLabel(group.Key),
-                Children: group.Select(x => x.Item).ToArray())).ToArray();
+        snapshot = result;
+        var selected = result.Selected.ToDictionary(s => (s.Id, s.Version));
+        var available = result.Available.Select(p => (p.Id, p.Version)).ToHashSet();
+        rows = result.Available.Where(IsPlugin).Select(p =>
+        {
+            var compatible = p.Framework is null || result.Selected.Any(s => s.Id == p.Framework && s.Enabled && s.Available);
+            return new Row(p.Id, p.Name, p.Version, p.Framework ?? "none", FrameworkRules.Find(p.Framework ?? "")?.DisplayName ?? p.Framework ?? "-",
+                selected.TryGetValue((p.Id, p.Version), out var s) && s.Enabled, true, compatible);
+        }).Concat(result.Selected.Where(s => FrameworkRules.Find(s.Id) is null && !available.Contains((s.Id, s.Version)))
+            .Select(s => new Row(s.Id, s.Name ?? s.Id, s.Version, "none", "-", s.Enabled, false, false)))
+            .OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(r => r.Id, StringComparer.Ordinal)
+            .ThenByDescending(r => r.Version, StringComparer.OrdinalIgnoreCase).ToArray();
         ApplyFilter();
     }
 
@@ -137,44 +126,64 @@ public partial class PresetPluginsPage : UserControl
     {
         if (Plugins is null || Filters is null) return;
         var query = (Filters.SearchText ?? "").Trim();
-        bool Match(string value) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
-        var visible = rows.Select(group => Match(group.Name) ? group : group with
-            { Children = group.Children!.Where(row => Match(row.Name) || Match(row.Key)).ToArray() })
-            .Where(group => group.Children!.Length > 0).ToArray();
-        Plugins.ItemsSource = visible;
-        Plugins.ExpandedKeys = visible.Select(row => (object)row.Key).ToArray();
+        var frameworks = (Filters.ActiveFilters ?? []).Where(chip => chip.Id == "framework")
+            .SelectMany(chip => new[] { chip.Value, chip.Label }).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var visible = rows.Where(row => (frameworks.Count == 0 || frameworks.Contains(row.FrameworkId) ||
+                frameworks.Contains(row.Framework) || row.FrameworkId == "none" && frameworks.Contains("无框架")) &&
+            (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        projecting = true;
+        try
+        {
+            Plugins.ItemsSource = visible;
+            Plugins.SelectedItems = visible.Where(r => r.Enabled).ToList();
+        }
+        finally { projecting = false; }
     }
 
-    private async Task SaveAsync(Row row, string version, bool enabled)
+    private async void SelectionChanged(object? sender, DataTableSelectionChangedEventArgs e)
     {
-        if (editing || snapshot is not { } current || Scope() is not { } scope) return;
-        var package = current.Available.FirstOrDefault(p => p.Id == row.Key && p.Version == version && IsPlugin(p));
-        if (!scope.Model.CanEditPlugins || (enabled && (package is null || !HasFramework(current, package))) ||
-            (version != row.Version && package is null))
+        if (projecting || editing || snapshot is not { } current || Scope() is not { } scope) return;
+        var checkedRows = e.SelectedItems.OfType<Row>().ToHashSet();
+        var visible = (Plugins.ItemsSource?.OfType<Row>() ?? []).ToArray();
+        var added = visible.Where(r => !r.Enabled && checkedRows.Contains(r)).ToArray();
+        var removed = visible.Where(r => r.Enabled && !checkedRows.Contains(r)).ToArray();
+        if (added.Length == 0 && removed.Length == 0) return;
+        if (!scope.Model.CanEditPlugins || added.Any(r => !r.Available || !r.Compatible) ||
+            added.GroupBy(r => r.Id).Any(group => group.Count() > 1))
         {
-            Owner?.ShowInstanceNotification("无法修改插件", "请确认预设可修改，且选定版本及所需框架可用。");
-            Render(current);
+            ApplyFilter();
+            Owner?.ShowInstanceNotification("无法启用所选插件", "请确认预设可修改、框架兼容，且每个插件只选择一个版本。", ToastKind.Warning);
             return;
         }
         var next = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToList();
-        var index = next.FindIndex(p => p.Id == row.Key);
-        var choice = new PluginSelection(row.Key, version, enabled);
-        if (index < 0) next.Add(choice); else next[index] = choice;
+        foreach (var row in removed)
+        {
+            var index = next.FindIndex(p => p.Id == row.Id);
+            if (index >= 0) next[index] = next[index] with { Enabled = false };
+        }
+        foreach (var row in added)
+        {
+            var index = next.FindIndex(p => p.Id == row.Id);
+            var choice = new PluginSelection(row.Id, row.Version, true);
+            if (index < 0) next.Add(choice); else next[index] = choice;
+        }
+        var ticket = generation;
         editing = true;
-        Plugins.IsEnabled = ManageButton.IsEnabled = false;
+        Plugins.IsEnabled = false;
         try
         {
-            await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
+            var saved = await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
                 scope.Instance.Revision, current.Hash, [.. next]));
+            if (ticket == generation) Render(saved);
             Owner?.ShowInstanceNotification("预设插件已保存", "下次部署生效。", ToastKind.Success);
         }
-        catch (IOException ex) { Owner?.ShowInstanceNotification("无法保存插件", ex.Message); }
-        finally
+        catch (IOException ex)
         {
-            editing = false;
-            Plugins.IsEnabled = true;
-            if (IsVisible) await LoadAsync();
+            if (ticket == generation) ApplyFilter();
+            Owner?.ShowInstanceNotification("无法保存插件", ex.Message);
         }
+        finally { editing = false; Plugins.IsEnabled = true; }
     }
 
     private async void Manage(object? sender, RoutedEventArgs e)

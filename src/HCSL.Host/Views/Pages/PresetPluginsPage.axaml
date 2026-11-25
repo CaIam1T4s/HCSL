@@ -4,14 +4,24 @@
              x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
   <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
     <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
-                       Label="插件筛选" FiltersChanged="FilterPlugins">
+                       Label="插件筛选" EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选" FiltersChanged="FilterPlugins">
       <arc:FilterToolbar.Actions>
         <arc:ExpandingButtonGroup Label="插件列表操作">
           <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
           <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
         </arc:ExpandingButtonGroup>
       </arc:FilterToolbar.Actions>
+      <arc:FilterToolbar.Fields>
+        <arc:FilterField Id="framework" Label="框架"/>
+      </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
-    <arc:TreeTable Grid.Row="1" x:Name="Plugins" Caption="预设插件" IsSelectable="False"/>
+    <arc:Table Grid.Row="1" x:Name="Plugins" Caption="预设插件" IsSelectable="True"
+               EmptyMessage="暂无插件" LoadingMessage="正在读取插件">
+      <arc:Table.Styles>
+        <Style Selector=":is(Panel).plugin-incompatible">
+          <Setter Property="Background" Value="{arc:ArcDesignTokenResource AccentSubtle}"/>
+        </Style>
+      </arc:Table.Styles>
+    </arc:Table>
   </Grid>
 </UserControl>
