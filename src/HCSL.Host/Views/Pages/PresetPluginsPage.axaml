@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
-             xmlns:primitives="using:Avalonia.Controls.Primitives"
              x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
   <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
     <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
@@ -14,12 +13,20 @@
       </arc:FilterToolbar.Actions>
       <arc:FilterToolbar.Fields>
         <arc:FilterField Id="framework" Label="框架"/>
+        <arc:FilterField Id="state" Label="状态">
+          <arc:FilterField.Options>
+            <arc:FilterOption Value="enabled" Label="启用"/>
+            <arc:FilterOption Value="disabled" Label="禁用"/>
+            <arc:FilterOption Value="incompatible" Label="不兼容"/>
+          </arc:FilterField.Options>
+        </arc:FilterField>
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
-    <primitives:VisualLayerManager Grid.Row="1" ClipToBounds="True">
+    <Grid Grid.Row="1" ClipToBounds="True">
       <arc:Table x:Name="Plugins" Caption="预设插件" IsSelectable="True"
                  EmptyMessage="暂无插件" LoadingMessage="正在读取插件"/>
-    </primitives:VisualLayerManager>
+      <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
+    </Grid>
     <arc:Popover x:Name="PluginProperties" Grid.Row="1" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>
         <Style Selector="arc|PopoverSurface">

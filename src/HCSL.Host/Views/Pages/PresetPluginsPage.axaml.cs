@@ -1,6 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
-using Avalonia.Controls.Primitives;
 using Avalonia.Threading;
 using Avalonia.Interactivity;
 using Avalonia.Input;
@@ -38,7 +39,8 @@ public partial class PresetPluginsPage : UserControl
         foreach (var framework in FrameworkRules.Known)
             frameworkFilter.Options.Add(new FilterOption { Value = framework.Id, Label = framework.DisplayName });
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
-        Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
+        Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = true,
+            SortValueSelector = item => ((Row)item).Name,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(56), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
@@ -114,15 +116,29 @@ public partial class PresetPluginsPage : UserControl
         details.Children.Add(frameworkBadge);
         details.Children.Add(versionBadge);
         Control? band = null;
-        AdornerLayer? layer = null;
-        var tint = new Border { IsHitTestVisible = false, Opacity = 0.16 };
+        ScrollViewer? scroll = null;
+        ScrollContentPresenter? viewport = null;
+        var tint = new Border { IsHitTestVisible = false, IsVisible = false, Opacity = 0.16 };
         ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Danger);
         bool Incompatible(Row? item) => item is { Compatible: false, Available: true };
         void SyncTint(object? sender, EventArgs e)
         {
             var item = details.DataContext as Row;
-            tint.IsVisible = IsEffectivelyVisible && Incompatible(item) && ReferenceEquals(RowItem(band), item)
-                && (Plugins.ItemsSource?.OfType<Row>().Any(visible => ReferenceEquals(visible, item)) ?? false);
+            if (!IsEffectivelyVisible || !Incompatible(item) || band is null || !ReferenceEquals(RowItem(band), item) ||
+                !(Plugins.ItemsSource?.OfType<Row>().Any(visible => ReferenceEquals(visible, item)) ?? false) ||
+                band.TranslatePoint(default, TintLayer) is not { } origin ||
+                viewport?.TranslatePoint(default, TintLayer) is not { } viewportOrigin)
+            {
+                tint.IsVisible = false;
+                return;
+            }
+            var bounds = new Avalonia.Rect(origin, band.Bounds.Size).Intersect(new Avalonia.Rect(viewportOrigin, viewport.Bounds.Size));
+            tint.IsVisible = bounds.Width > 0 && bounds.Height > 0;
+            if (!tint.IsVisible) return;
+            Canvas.SetLeft(tint, bounds.X);
+            Canvas.SetTop(tint, bounds.Y);
+            tint.Width = bounds.Width;
+            tint.Height = bounds.Height;
         }
         void UpdateCell()
         {
@@ -131,7 +147,7 @@ public partial class PresetPluginsPage : UserControl
             frameworkBadge.Content = item?.Framework;
             frameworkBadge.IsVisible = Incompatible(item);
             versionBadge.Content = item?.Version;
-            if (band is not null) Tooltip.SetTip(band, Incompatible(item) ? "与当前预设框架不兼容：需要 " + item!.Framework : null);
+            if (band is not null) Tooltip.SetTip(band, Incompatible(item) ? "不兼容" : null);
             SyncTint(null, EventArgs.Empty);
         }
         details.DataContextChanged += (_, _) => UpdateCell();
@@ -140,19 +156,20 @@ public partial class PresetPluginsPage : UserControl
             band = details.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
             if (band is null) return;
             UpdateCell();
-            if (AdornerLayer.GetAdornerLayer(band) is not { } adorners) return;
-            layer = adorners;
-            AdornerLayer.SetAdornedElement(tint, band);
-            layer.Children.Add(tint);
+            scroll = band.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
+            viewport = band.GetVisualAncestors().OfType<ScrollContentPresenter>().FirstOrDefault();
+            TintLayer.Children.Add(tint);
+            if (scroll is not null) scroll.ScrollChanged += SyncTint;
             Plugins.LayoutUpdated += SyncTint;
             SyncTint(null, EventArgs.Empty);
         };
         details.DetachedFromVisualTree += (_, _) =>
         {
             Plugins.LayoutUpdated -= SyncTint;
-            layer?.Children.Remove(tint);
-            AdornerLayer.SetAdornedElement(tint, null);
-            layer = null;
+            if (scroll is not null) scroll.ScrollChanged -= SyncTint;
+            TintLayer.Children.Remove(tint);
+            scroll = null;
+            viewport = null;
             if (band is not null) Tooltip.SetTip(band, null);
             band = null;
         };
@@ -215,9 +232,14 @@ public partial class PresetPluginsPage : UserControl
     {
         if (Plugins is null || Filters is null) return;
         var query = (Filters.SearchText ?? "").Trim();
-        var frameworks = (Filters.ActiveFilters ?? []).Where(chip => chip.Id == "framework")
+        var chips = Filters.ActiveFilters ?? [];
+        var states = chips.Where(chip => chip.Id == "state").SelectMany(chip => new[] { chip.Value, chip.Label }).ToHashSet();
+        bool MatchState(Row row) => states.Count == 0 ||
+            (!row.Compatible && row.Available && (states.Contains("incompatible") || states.Contains("不兼容"))) ||
+            (row.Enabled ? states.Contains("enabled") || states.Contains("启用") : states.Contains("disabled") || states.Contains("禁用"));
+        var frameworks = chips.Where(chip => chip.Id == "framework")
             .SelectMany(chip => new[] { chip.Value, chip.Label }).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var visible = rows.Where(row => (frameworks.Count == 0 || frameworks.Contains(row.FrameworkId) ||
+        var visible = rows.Where(row => MatchState(row) && (frameworks.Count == 0 || frameworks.Contains(row.FrameworkId) ||
                 frameworks.Contains(row.Framework) || row.FrameworkId == "none" && frameworks.Contains("无框架")) &&
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
