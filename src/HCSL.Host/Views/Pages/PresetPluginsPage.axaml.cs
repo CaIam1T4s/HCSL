@@ -39,7 +39,6 @@ public partial class PresetPluginsPage : UserControl
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
         Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
-        AddColumn("版本", 140, row => row.Version);
         AddColumn("框架", 150, row => row.Framework);
         AddColumn("状态", 100, row => row.State);
         Plugins.SelectionChanged += SelectionChanged;
@@ -61,29 +60,38 @@ public partial class PresetPluginsPage : UserControl
     private static Control? NameCell(Row? row)
     {
         if (row is null) return null;
-        var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis };
-        if (row.Compatible || !row.Available) return label;
+        var label = new TextBlock { Text = row.Name, TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var details = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        details.Children.Add(label);
+        if (!row.Compatible && row.Available)
+            details.Children.Add(new Badge { Content = row.Framework, Size = BadgeSize.Small, Tone = BadgeTone.Danger });
+        details.Children.Add(new Badge { Content = row.Version, Size = BadgeSize.Small, Tone = BadgeTone.Info });
+        if (row.Compatible || !row.Available) return details;
         Control? band = null;
         AdornerLayer? layer = null;
         var tint = new Border { IsHitTestVisible = false, Opacity = 0.16 };
-        ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Accent);
-        Tooltip.SetTip(label, "与当前预设框架不兼容");
-        label.AttachedToVisualTree += (_, _) =>
+        ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Warning);
+        details.AttachedToVisualTree += (_, _) =>
         {
-            band = label.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
-            if (band is null || AdornerLayer.GetAdornerLayer(band) is not { } adorners) return;
+            band = details.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
+            if (band is null) return;
+            Tooltip.SetTip(band, "与当前预设框架不兼容：需要 " + row.Framework);
+            if (AdornerLayer.GetAdornerLayer(band) is not { } adorners) return;
             layer = adorners;
             AdornerLayer.SetAdornedElement(tint, band);
             layer.Children.Add(tint);
         };
-        label.DetachedFromVisualTree += (_, _) =>
+        details.DetachedFromVisualTree += (_, _) =>
         {
             layer?.Children.Remove(tint);
             AdornerLayer.SetAdornedElement(tint, null);
             layer = null;
+            if (band is not null) Tooltip.SetTip(band, null);
             band = null;
         };
-        return label;
+        return details;
     }
 
     private (HostServerController Model, InstanceDefinition Instance, PresetDefinition Preset)? Scope()
