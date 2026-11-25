@@ -3,14 +3,9 @@
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
   <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
-    <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
+    <arc:FilterToolbar VerticalAlignment="Top" x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
                        Label="插件筛选" EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选" FiltersChanged="FilterPlugins">
-      <arc:FilterToolbar.Actions>
-        <arc:ExpandingButtonGroup Label="插件列表操作">
-          <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
-          <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
-        </arc:ExpandingButtonGroup>
-      </arc:FilterToolbar.Actions>
       <arc:FilterToolbar.Fields>
         <arc:FilterField Id="framework" Label="框架"/>
         <arc:FilterField Id="state" Label="状态">
@@ -22,6 +17,12 @@
         </arc:FilterField>
       </arc:FilterToolbar.Fields>
     </arc:FilterToolbar>
+      <arc:ExpandingButtonGroup Grid.Column="1" VerticalAlignment="Top" Label="插件列表操作">
+        <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
+        <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
+        <arc:ExpandingButtonGroupItem x:Name="SortButton" Label="名称升序" Click="ToggleNameSort"/>
+      </arc:ExpandingButtonGroup>
+    </Grid>
     <Grid Grid.Row="1" ClipToBounds="True">
       <arc:Table x:Name="Plugins" Caption="预设插件" IsSelectable="False"
                  EmptyMessage="暂无插件" LoadingMessage="正在读取插件"/>

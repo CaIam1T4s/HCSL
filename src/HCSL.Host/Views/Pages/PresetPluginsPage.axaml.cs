@@ -24,7 +24,7 @@ public partial class PresetPluginsPage : UserControl
     private int generation;
     private Row[] rows = [];
     private PluginResult? snapshot;
-    private bool editing;
+    private bool editing, descending;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public PresetPluginsPage()
@@ -32,15 +32,20 @@ public partial class PresetPluginsPage : UserControl
         InitializeComponent();
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
+        SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowUp);
+        // Arc 1.1 does not expose a header visibility switch. Zero both layout modes for this list only.
+        foreach (var name in new[] { "HeaderHeightProperty", "CompactHeaderHeightProperty" })
+            if (typeof(Table).GetField(name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+                    ?.GetValue(null) is StyledProperty<double> height)
+                Plugins.SetValue(height, 0);
         var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
         frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
         foreach (var framework in FrameworkRules.Known)
             frameworkFilter.Options.Add(new FilterOption { Value = framework.Id, Label = framework.DisplayName });
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
-        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(44), IsSortable = false,
+        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(64), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => EnableCell(row)) });
-        Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = true,
-            SortValueSelector = item => ((Row)item).Name,
+        Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(56), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
@@ -69,7 +74,7 @@ public partial class PresetPluginsPage : UserControl
     private Control? EnableCell(Row? row)
     {
         if (row is null) return null;
-        var checkbox = new TKCode.Arc.Checkbox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        var checkbox = new TKCode.Arc.Checkbox { Padding = new Thickness(0), HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         var projecting = false;
         void Project()
@@ -239,6 +244,14 @@ public partial class PresetPluginsPage : UserControl
         ApplyFilter();
     }
 
+    private void ToggleNameSort(object? sender, RoutedEventArgs e)
+    {
+        descending = !descending;
+        SortButton.Label = descending ? "名称降序" : "名称升序";
+        SortButton.Icon = Lucide.Geometry(descending ? LucideIconKind.ArrowDown : LucideIconKind.ArrowUp);
+        ApplyFilter();
+    }
+
     private void FilterPlugins(object? sender, FilterToolbarFiltersChangedEventArgs e) => ApplyFilter();
 
     private void ApplyFilter()
@@ -257,7 +270,9 @@ public partial class PresetPluginsPage : UserControl
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         PluginProperties.IsOpen = false;
-        Plugins.ItemsSource = visible;
+        Plugins.ItemsSource = descending
+            ? visible.OrderByDescending(row => row.Name, StringComparer.CurrentCultureIgnoreCase).ToArray()
+            : visible;
     }
 
     private async Task SaveEnabledAsync(Row row, bool enabled)
