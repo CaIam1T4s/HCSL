@@ -62,7 +62,9 @@ public partial class MainWindow : ArcWindow
     {
         if (DataContext is not ShellViewModel shell || shell.DownloadsBlocked) return Task.CompletedTask;
         shell.OpenPresetFrameworkCatalog();
-        return Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId), presetVersion);
+        return shell.IsPresetFrameworkCatalog
+            ? Downloads.OpenFrameworkCatalogAsync(frameworkId, (instanceId, presetId), presetVersion)
+            : Task.CompletedTask;
     }
 
     public void OpenDownloadSettings()

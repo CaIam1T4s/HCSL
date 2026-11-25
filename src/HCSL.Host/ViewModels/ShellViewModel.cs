@@ -91,6 +91,7 @@ public sealed class ShellViewModel : ObservableObject
             if (ReferenceEquals(SelectedPresetSection, value)) return;
             SelectedPresetSection.IsSelected = false;
             _selectedPresetSection = value;
+            presetFrameworkCatalogOpen = false;
             value.IsSelected = true;
             Notify(nameof(SelectedPresetSection));
             NotifyPresetSections();
@@ -99,7 +100,9 @@ public sealed class ShellViewModel : ObservableObject
 
     public bool IsPresetOverview => IsPresetScope && SelectedPresetSection.Id == "overview";
     public bool IsPresetCfg => IsPresetScope && SelectedPresetSection.Id == "cfg";
-    public bool IsPresetContent => IsPresetScope && SelectedPresetSection.Id == "content";
+    public bool IsPresetContent => IsPresetScope && SelectedPresetSection.Id == "content" && !presetFrameworkCatalogOpen;
+    public bool IsPresetFrameworkCatalog => IsPresetScope && SelectedPresetSection.Id == "content" && presetFrameworkCatalogOpen;
+    public bool IsDownloadWorkspace => IsDownloads || IsPresetFrameworkCatalog;
     public bool IsPresetPlugins => IsPresetScope && SelectedPresetSection.Id == "plugins";
     public bool IsPresetAdmins => IsPresetScope && SelectedPresetSection.Id == "admins";
 
@@ -137,6 +140,8 @@ public sealed class ShellViewModel : ObservableObject
         Notify(nameof(IsPresetOverview));
         Notify(nameof(IsPresetCfg));
         Notify(nameof(IsPresetContent));
+        Notify(nameof(IsPresetFrameworkCatalog));
+        Notify(nameof(IsDownloadWorkspace));
         Notify(nameof(IsPresetPlugins));
         Notify(nameof(IsPresetAdmins));
     }
@@ -287,17 +292,19 @@ public sealed class ShellViewModel : ObservableObject
     }
 
     private readonly IThemeService _themeService;
-    internal void OpenPresetFrameworkCatalog() => SelectedPage = Pages.First(page => page.Id == "downloads");
+    private bool presetFrameworkCatalogOpen;
 
-    internal void ReturnToPresetFrameworks(Guid instanceId, Guid presetId)
+    internal void OpenPresetFrameworkCatalog()
     {
-        if (Servers.Selected?.Entry is not { } entry || entry.Id != instanceId ||
-            !entry.Presets.Any(preset => preset.Id == presetId)) return;
-        managedPresetId = presetId;
-        SelectPresetSection("content");
-        SelectedPage = Pages.First(page => page.Id == "instance");
-        Notify(nameof(ManagedPresetId));
-        Notify(nameof(ManagedPresetName));
+        if (!IsPresetContent) return;
+        presetFrameworkCatalogOpen = true;
+        NotifyPresetSections();
+    }
+
+    internal void ReturnToPresetFrameworks()
+    {
+        presetFrameworkCatalogOpen = false;
+        NotifyPresetSections();
     }
 
     public NavigationItem SelectedPage
@@ -308,6 +315,7 @@ public sealed class ShellViewModel : ObservableObject
             if (_selectedPage == value) return;
             _selectedPage.IsSelected = false;
             _selectedPage = value;
+            presetFrameworkCatalogOpen = false;
             _selectedPage.IsSelected = true;
             Notify(); Notify(nameof(IsHome)); Notify(nameof(IsSettings)); Notify(nameof(IsInstance)); Notify(nameof(IsInstances)); Notify(nameof(IsDownloads));
             Notify(nameof(IsInstanceOverview)); Notify(nameof(IsInstancePresets));

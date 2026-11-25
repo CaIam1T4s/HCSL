@@ -419,7 +419,11 @@ public partial class DownloadsPage
             return;
         }
         await servers.PluginsAsync(new(PluginAction.Save, entry.Id, preset.Id, definition.Revision, current.Hash, choice.Selections));
-        if (catalogPresetTarget == target && catalogId == id) catalogPresetVersion = version;
+        if (catalogPresetTarget == target && catalogId == id)
+        {
+            catalogPresetVersion = version;
+            RenderCatalog();
+        }
         Owner?.ShowInstanceNotification("已加入当前预设",
             definition.Name + " · " + preset.Name + "，重新部署后生效", ToastKind.Info);
     }

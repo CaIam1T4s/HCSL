@@ -32,6 +32,11 @@ public partial class DownloadsPage
 
     private void InitializeFrameworkCatalog()
     {
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == IsVisibleProperty && !IsVisible && catalogPresetTarget is not null)
+                ResetFrameworkCatalog();
+        };
         VersionScroll.ScrollChanged += (_, e) =>
         {
             // Extent-only changes matter too: appended rows move the bottom without moving the offset,
@@ -114,7 +119,14 @@ public partial class DownloadsPage
     }
     private void CloseFrameworkCatalog(object? sender, RoutedEventArgs e)
     {
-        var sourcePreset = catalogPresetTarget;
+        var fromPreset = catalogPresetTarget is not null;
+        ResetFrameworkCatalog();
+        if (fromPreset) subscribed?.ReturnToPresetFrameworks();
+        else _ = RefreshFrameworkRowsAsync();
+    }
+
+    private void ResetFrameworkCatalog()
+    {
         catalogGeneration++;
         catalogId = null;
         catalogPresetTarget = null;
@@ -125,10 +137,7 @@ public partial class DownloadsPage
         FrameworkCatalogPanel.IsVisible = false;
         ResourceList.IsVisible = true;
         DownloadsHeading.Text = "下载中心";
-        if (sourcePreset is { } source && subscribed is { } shell)
-            shell.ReturnToPresetFrameworks(source.Instance, source.Preset);
-        else
-            _ = RefreshFrameworkRowsAsync();
+
     }
     private async Task LoadCatalogAsync(FrameworkCatalogCommand command, int generation)
     {
@@ -159,11 +168,9 @@ public partial class DownloadsPage
             // instead of leaving a permanent line under the heading.
             if (result.Error is not null)
             {
-                Owner?.ShowInstanceNotification("无法获取版本目录", "已保留本地缓存，可稍后重试", ToastKind.Warning);
+                Owner?.ShowInstanceNotification("无法获取版本目录", shownVersions.Count > 0 ? "已保留本地缓存，可稍后重试" : "请稍后重试", ToastKind.Warning);
             }
-            else if (!firstLoad)
-                Owner?.ShowInstanceNotification(result.FromCache ? "已显示本地缓存" : "版本目录已更新", null,
-                    result.FromCache ? ToastKind.Info : ToastKind.Success);
+
             CatalogEmpty.IsVisible = !firstLoad && shownVersions.Count == 0;
             if (anchor is not null)
             {
@@ -234,16 +241,23 @@ public partial class DownloadsPage
                 });
             badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版", Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info, Size = BadgeSize.Small });
             Grid.SetColumn(badges, 1); row.Children.Add(badges);
+            var current = catalogPresetTarget is not null && release.Version == catalogPresetVersion;
+            var canReuse = catalogPresetTarget is not null && catalogPresetVersion is not null && downloadedVersions.Contains(release.Version);
+            if (current) badges.Children.Add(new Badge { Content = "当前使用", Tone = BadgeTone.Info, Size = BadgeSize.Small });
             var install = new ArcButton
             {
                 Variant = ButtonVariant.Ghost, Size = ControlSize.Small, IsPressScaleEnabled = false,
                 VerticalAlignment = VerticalAlignment.Center,
-                Content = new LucideIcon { Kind = LucideIconKind.ArrowDownToLine, Size = 16 }
+                IsEnabled = !current,
+                Content = new LucideIcon { Kind = current ? LucideIconKind.Check :
+                    canReuse ? LucideIconKind.ArrowRight : LucideIconKind.ArrowDownToLine, Size = 16 }
             };
-            install.SetValue(AutomationProperties.NameProperty, "安装 " + release.Version);
+            var action = catalogPresetTarget is null ? "安装" : current ? "当前使用" :
+                canReuse ? "切换到" : catalogPresetVersion is null ? "安装" : "下载并切换到";
+            install.SetValue(AutomationProperties.NameProperty, action + " " + release.Version);
             var target = release;
             install.Click += async (_, _) => await ChooseReleaseAsync(target);
-            if (catalogPresetTarget is not null)
+            if (catalogPresetTarget is not null && !current)
             {
                 textPanel.IsHitTestVisible = badges.IsHitTestVisible = false;
                 var hit = new ArcButton { Variant = ButtonVariant.Ghost, CornerRadius = new CornerRadius(0),

@@ -112,7 +112,7 @@
             <pages:InstanceAdminsPage x:Name="PresetAdmins" IsVisible="{Binding IsPresetAdmins}"/>
           </Grid>
           <pages:InstancesPage IsVisible="{Binding IsInstances}"/>
-          <pages:DownloadsPage x:Name="Downloads" IsVisible="{Binding IsDownloads}"/>
+          <pages:DownloadsPage x:Name="Downloads" IsVisible="{Binding IsDownloadWorkspace}"/>
           <pages:SettingsPage x:Name="SettingsPageView" IsVisible="{Binding IsSettings}"/>
           </Grid>
           </Border>
