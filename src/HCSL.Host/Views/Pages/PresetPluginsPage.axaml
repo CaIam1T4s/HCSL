@@ -2,30 +2,29 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
              x:Class="HCSL.Host.Views.Pages.PresetPluginsPage">
-  <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
-    <arc:FilterToolbar VerticalAlignment="Top" x:Name="Filters" IsSearchVisible="True" SearchPlaceholder="搜索插件名称或 ID"
-                       Label="插件筛选" EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选" FiltersChanged="FilterPlugins">
-      <arc:FilterToolbar.Fields>
-        <arc:FilterField Id="framework" Label="框架"/>
-        <arc:FilterField Id="state" Label="状态">
-          <arc:FilterField.Options>
-            <arc:FilterOption Value="enabled" Label="启用"/>
-            <arc:FilterOption Value="disabled" Label="禁用"/>
-            <arc:FilterOption Value="incompatible" Label="不兼容"/>
-          </arc:FilterField.Options>
-        </arc:FilterField>
-      </arc:FilterToolbar.Fields>
-    </arc:FilterToolbar>
-    <arc:ExpandingButtonGroup Grid.Row="1" HorizontalAlignment="Right" Label="插件列表操作">
-      <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
-      <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
-    </arc:ExpandingButtonGroup>
-    <Grid Grid.Row="2" ClipToBounds="True">
+  <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{arc:ArcDesignTokenResource Space3}">
+      <arc:SearchField x:Name="Search" Label="搜索插件" IsLabelVisible="False" Placeholder="搜索插件名称或 ID"
+                       HorizontalAlignment="Left" VerticalAlignment="Center" MaxWidth="240" TextChanged="SearchChanged"/>
+      <arc:ExpandingButtonGroup Grid.Column="1" VerticalAlignment="Center" Label="插件列表操作">
+        <arc:ExpandingButtonGroupItem x:Name="ViewButton" Label="查看" Click="OpenViewMenu"/>
+        <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
+        <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
+      </arc:ExpandingButtonGroup>
+    </Grid>
+    <Grid Grid.Row="1" ClipToBounds="True">
       <arc:Table x:Name="Plugins" Caption="预设插件" IsSelectable="False"
                  EmptyMessage="暂无插件" LoadingMessage="正在读取插件"/>
       <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
-    <arc:Popover x:Name="PluginProperties" Grid.Row="2" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
+    <Canvas Grid.Row="1" x:Name="TipLayer" IsHitTestVisible="False">
+      <Border x:Name="TipAnchor" Width="1" Height="1"/>
+    </Canvas>
+    <arc:Popover Grid.Row="1" x:Name="IncompatibleTip" Placement="Bottom" Alignment="Start" Offset="8"
+                 TriggerMode="Manual" IsHitTestVisible="False">
+      <TextBlock Text="不兼容"/>
+    </arc:Popover>
+    <arc:Popover x:Name="PluginProperties" Grid.Row="1" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>
         <Style Selector="arc|PopoverSurface">
           <Setter Property="Background" Value="Transparent"/>

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -25,6 +26,10 @@ public partial class PresetPluginsPage : UserControl
     private Row[] rows = [];
     private PluginResult? snapshot;
     private bool editing;
+    private string? frameworkFilter, stateFilter;
+    private GlassMenu? viewMenu;
+    private int tipGeneration;
+    private Control? tipRow;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public PresetPluginsPage()
@@ -32,10 +37,7 @@ public partial class PresetPluginsPage : UserControl
         InitializeComponent();
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
-        var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
-        frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
-        foreach (var framework in FrameworkRules.Known)
-            frameworkFilter.Options.Add(new FilterOption { Value = framework.Id, Label = framework.DisplayName });
+        ViewButton.Icon = Lucide.Geometry(LucideIconKind.Eye);
         Plugins.RowKeySelector = item => ((Row)item).Id + "/" + ((Row)item).Version;
         Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(64), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => EnableCell(row)) });
@@ -46,7 +48,7 @@ public partial class PresetPluginsPage : UserControl
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
-            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; PluginProperties.IsOpen = false; }
+            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; PluginProperties.IsOpen = false; CloseTip(); viewMenu?.Close(); }
         };
         DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
     }
@@ -159,7 +161,7 @@ public partial class PresetPluginsPage : UserControl
             frameworkBadge.Content = item?.Framework;
             frameworkBadge.IsVisible = Incompatible(item);
             versionBadge.Content = item?.Version;
-            if (band is not null) Tooltip.SetTip(band, Incompatible(item) ? "不兼容" : null);
+            if (band is not null && ReferenceEquals(tipRow, band)) CloseTip();
             SyncTint(null, EventArgs.Empty);
         }
         details.DataContextChanged += (_, _) => UpdateCell();
@@ -171,21 +173,49 @@ public partial class PresetPluginsPage : UserControl
             scroll = band.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
             viewport = band.GetVisualAncestors().OfType<ScrollContentPresenter>().FirstOrDefault();
             TintLayer.Children.Add(tint);
-            if (scroll is not null) scroll.ScrollChanged += SyncTint;
+            band.PointerEntered += HoverRow;
+            band.PointerExited += LeaveRow;
+            if (scroll is not null) scroll.ScrollChanged += ScrollRow;
             Plugins.LayoutUpdated += SyncTint;
             SyncTint(null, EventArgs.Empty);
         };
         details.DetachedFromVisualTree += (_, _) =>
         {
             Plugins.LayoutUpdated -= SyncTint;
-            if (scroll is not null) scroll.ScrollChanged -= SyncTint;
+            if (scroll is not null) scroll.ScrollChanged -= ScrollRow;
+            if (band is not null)
+            {
+                band.PointerEntered -= HoverRow;
+                band.PointerExited -= LeaveRow;
+                if (ReferenceEquals(tipRow, band)) CloseTip();
+            }
             TintLayer.Children.Remove(tint);
             scroll = null;
             viewport = null;
-            if (band is not null) Tooltip.SetTip(band, null);
             band = null;
         };
         return details;
+
+        async void HoverRow(object? sender, PointerEventArgs e)
+        {
+            if (band is null || !Incompatible(details.DataContext as Row)) return;
+            var position = e.GetPosition(TipLayer);
+            var anchorRow = band;
+            var item = RowItem(anchorRow);
+            CloseTip();
+            tipRow = anchorRow;
+            var ticket = tipGeneration;
+            await Task.Delay(500);
+            if (ticket != tipGeneration || !IsEffectivelyVisible || !anchorRow.IsPointerOver ||
+                !ReferenceEquals(RowItem(anchorRow), item)) return;
+            Canvas.SetLeft(TipAnchor, position.X);
+            Canvas.SetTop(TipAnchor, position.Y);
+            TipLayer.UpdateLayout();
+            IncompatibleTip.ShowAt(TipAnchor);
+        }
+
+        void LeaveRow(object? sender, PointerEventArgs e) { if (ReferenceEquals(tipRow, band)) CloseTip(); }
+        void ScrollRow(object? sender, ScrollChangedEventArgs e) { SyncTint(sender, e); if (ReferenceEquals(tipRow, band)) CloseTip(); }
     }
 
     private (HostServerController Model, InstanceDefinition Instance, PresetDefinition Preset)? Scope()
@@ -238,23 +268,56 @@ public partial class PresetPluginsPage : UserControl
         ApplyFilter();
     }
 
-    private void FilterPlugins(object? sender, FilterToolbarFiltersChangedEventArgs e) => ApplyFilter();
+    private void CloseTip()
+    {
+        tipGeneration++;
+        tipRow = null;
+        IncompatibleTip.IsOpen = false;
+    }
+
+    private void SearchChanged(object? sender, TextChangedEventArgs e) => ApplyFilter();
+
+    private void OpenViewMenu(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control anchor) return;
+        CloseTip();
+        viewMenu?.Close();
+        var menu = viewMenu = new GlassMenu();
+        Avalonia.Automation.AutomationProperties.SetName(menu, "插件查看选项");
+        Add("全部状态", stateFilter is null, () => stateFilter = null);
+        Add("启用", stateFilter == "enabled", () => stateFilter = "enabled");
+        Add("禁用", stateFilter == "disabled", () => stateFilter = "disabled");
+        Add("不兼容", stateFilter == "incompatible", () => stateFilter = "incompatible");
+        menu.Items.Add(new GlassMenuSeparator());
+        Add("全部框架", frameworkFilter is null, () => frameworkFilter = null);
+        Add("无框架", frameworkFilter == "none", () => frameworkFilter = "none");
+        foreach (var framework in FrameworkRules.Known)
+            Add(framework.DisplayName, frameworkFilter == framework.Id, () => frameworkFilter = framework.Id);
+        menu.Open(anchor);
+
+        void Add(string title, bool selected, Action select)
+        {
+            var item = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(selected ? LucideIconKind.Check : LucideIconKind.List) };
+            item.Click += (_, _) => { menu.Close(); select(); ApplyFilter(); };
+            menu.Items.Add(item);
+        }
+    }
 
     private void ApplyFilter()
     {
-        if (Plugins is null || Filters is null) return;
-        var query = (Filters.SearchText ?? "").Trim();
-        var chips = Filters.ActiveFilters ?? [];
-        var states = chips.Where(chip => chip.Id == "state").SelectMany(chip => new[] { chip.Value, chip.Label }).ToHashSet();
-        bool MatchState(Row row) => states.Count == 0 ||
-            (!row.Compatible && row.Available && (states.Contains("incompatible") || states.Contains("不兼容"))) ||
-            (row.Enabled ? states.Contains("enabled") || states.Contains("启用") : states.Contains("disabled") || states.Contains("禁用"));
-        var frameworks = chips.Where(chip => chip.Id == "framework")
-            .SelectMany(chip => new[] { chip.Value, chip.Label }).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var visible = rows.Where(row => MatchState(row) && (frameworks.Count == 0 || frameworks.Contains(row.FrameworkId) ||
-                frameworks.Contains(row.Framework) || row.FrameworkId == "none" && frameworks.Contains("无框架")) &&
+        if (Plugins is null || Search is null) return;
+        var query = (Search.Text ?? "").Trim();
+        bool MatchState(Row row) => stateFilter switch
+        {
+            "enabled" => row.Enabled,
+            "disabled" => !row.Enabled,
+            "incompatible" => !row.Compatible && row.Available,
+            _ => true
+        };
+        var visible = rows.Where(row => MatchState(row) && (frameworkFilter is null || row.FrameworkId == frameworkFilter) &&
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        CloseTip();
         PluginProperties.IsOpen = false;
         Plugins.ItemsSource = visible;
     }
