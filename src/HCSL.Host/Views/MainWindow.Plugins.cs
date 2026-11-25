@@ -35,7 +35,6 @@ public partial class MainWindow
             }
 
             var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(new TextBlock { Text = "导入插件", FontSize = 20 });
             body.Children.Add(new TextBlock { Text = Path.GetFileName(path), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             var id = Metadata("ID", preview.Id);
             var name = Metadata("名称", preview.Name);
@@ -49,19 +48,45 @@ public partial class MainWindow
             }
             else
             {
-                body.Children.Add(new TextBlock { Text = "框架：" + (preview.Framework is { } required ? PluginPresentation.FrameworkLabel(required) : "未识别") });
+                var required = preview.Framework ?? (preview.Kind == "file" && path.EndsWith(".smx", StringComparison.OrdinalIgnoreCase) ? "source2mod" : null);
+                var dependency = required is null ? null : FrameworkRules.Find(required)?.Requires;
+                var description = required is null ? "未识别" : PluginPresentation.FrameworkLabel(required);
+                if (dependency is not null) description += "、" + PluginPresentation.FrameworkLabel(dependency);
+                body.Children.Add(new TextBlock { Text = "所需框架：" + description, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             }
             body.Children.Add(new TextBlock { Text = "插件库由所有预设共享。导入不会启用插件或修改当前预设。",
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-            if (preview.Warnings.Length > 0)
-                body.Children.Add(new TextBlock { Text = string.Join("\n", preview.Warnings), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var warnings = preview.Warnings.Where(w => !w.StartsWith("This is a Source2Mod sub-plugin;", StringComparison.Ordinal)).ToArray();
+            if (warnings.Length > 0)
+                body.Children.Add(new TextBlock { Text = string.Join("\n", warnings), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             var feedback = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
             body.Children.Add(feedback);
             while (true)
             {
-                var choice = await ShowOverlayAsync(body, ["取消", "更换文件", "导入到插件库"]);
-                if (choice == 1) break;
-                if (choice != 2) return null;
+                var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
+                actions.Classes.Add("dialog-actions");
+                AddAction("取消", 0, false);
+                AddAction("更换文件", 1, false);
+                AddAction("导入到插件库", 2, true);
+                var dialog = new Dialog
+                {
+                    Title = "导入插件",
+                    Content = new ScrollViewer { Content = body, MaxHeight = 360 },
+                    Actions = actions
+                };
+                var choice = await dialog.ShowAsync(this);
+                ((ScrollViewer)dialog.Content).Content = null;
+                if (choice is 1) break;
+                if (choice is not 2) return null;
+
+                void AddAction(string label, int result, bool primary)
+                {
+                    var button = new TKCode.Arc.Button { Content = label, Variant = primary ? ButtonVariant.Primary : ButtonVariant.Secondary };
+                    if (primary) button.Classes.Add("dialog-primary");
+                    Dialog.SetResult(button, result);
+                    actions.Children.Add(button);
+                }
                 var frameworkId = framework is null ? preview.Framework : framework.SelectedIndex switch { 1 => "swiftlys2", 2 => "modsharp", _ => null };
                 if (framework is not null && frameworkId is null || new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace))
                 {
