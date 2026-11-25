@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -10,10 +11,11 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class PresetPluginsPage : UserControl
 {
-    private sealed record Row(string Key, string Name, string Version = "", string State = "", Row[]? Children = null);
+    private sealed record Row(string Key, string Name, string Version = "", string State = "",
+        bool Enabled = false, bool CanEnable = false, string[]? Versions = null, Row[]? Children = null);
     private int generation;
     private Row[] rows = [];
-    private string[] selectedPlugins = [];
+    private PluginResult? snapshot;
     private bool editing;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
@@ -23,27 +25,48 @@ public partial class PresetPluginsPage : UserControl
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
         TreeTableHeaderAlignment.Attach(Plugins);
-        Selection.Labels = new SelectionToolbarLabels { Count = count => $"已选 {count}", Clear = "清除选择", Toolbar = "插件操作" };
-        Selection.Actions.Add(new SelectionToolbarAction { Key = "manage", Label = "编辑所选插件", IsEnabled = false });
-        Selection.Actions.Add(new SelectionToolbarAction { Key = "enable", Label = "启用所选", IsEnabled = false });
-        Selection.Actions.Add(new SelectionToolbarAction { Key = "disable", Label = "停用所选", IsEnabled = false });
-        Plugins.SelectionChanged += (_, e) =>
-        {
-            selectedPlugins = e.SelectedItems.OfType<Row>().Where(row => row.Children is null).Select(row => row.Key).ToArray();
-            UpdateSelection();
-        };
         Plugins.KeySelector = row => ((Row)row).Key;
         Plugins.ChildrenSelector = row => ((Row)row).Children;
         Plugins.RowLabelSelector = row => ((Row)row).Name;
         Plugins.Columns.Add(TreeTableColumn.Create<Row>("插件", row => row.Name));
-        Plugins.Columns.Add(new TreeTableColumn { Header = "版本", Width = new GridLength(120), ValueSelector = row => ((Row)row).Version });
-        Plugins.Columns.Add(new TreeTableColumn { Header = "状态", Width = new GridLength(112), ValueSelector = row => ((Row)row).State });
+        Plugins.Columns.Add(new TreeTableColumn { Header = "版本", Width = new GridLength(160), IsSortable = false,
+            CellTemplate = new FuncDataTemplate<Row>((row, _) => VersionCell(row)) });
+        Plugins.Columns.Add(new TreeTableColumn { Header = "启用", Width = new GridLength(72), IsSortable = false,
+            CellTemplate = new FuncDataTemplate<Row>((row, _) => EnabledCell(row)) });
+        Plugins.Columns.Add(new TreeTableColumn { Header = "状态", Width = new GridLength(156), ValueSelector = row => ((Row)row).State });
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
-            if (IsVisible) _ = LoadAsync(); else generation++;
+            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; }
         };
         DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
+    }
+
+    private Control? VersionCell(Row? row)
+    {
+        if (row is not { Versions: { Length: > 0 } versions })
+            return row is { Children: null } ? new TextBlock { Text = row.Version } : null;
+        var picker = new Select { ItemsSource = versions, SelectedIndex = Array.IndexOf(versions, row.Version),
+            IsEnabled = versions.Length > 1 && Scope()?.Model.CanEditPlugins == true };
+        picker.SelectionChanged += async (_, _) =>
+        {
+            if (picker.SelectedItem is string version && version != row.Version)
+                await SaveAsync(row, version, row.Enabled);
+        };
+        return picker;
+    }
+
+    private Control? EnabledCell(Row? row)
+    {
+        if (row is not { Children: null }) return null;
+        var check = new TKCode.Arc.Checkbox { IsChecked = row.Enabled,
+            IsEnabled = (row.Enabled || row.CanEnable) && Scope()?.Model.CanEditPlugins == true };
+        Avalonia.Automation.AutomationProperties.SetName(check, "在当前预设启用 " + row.Name);
+        check.CheckedStateChanged += async (_, _) =>
+        {
+            if ((check.IsChecked == true) != row.Enabled) await SaveAsync(row, row.Version, check.IsChecked == true);
+        };
+        return check;
     }
 
     private (HostServerController Model, InstanceDefinition Instance, PresetDefinition Preset)? Scope()
@@ -55,15 +78,14 @@ public partial class PresetPluginsPage : UserControl
         return null;
     }
 
-    private async void Refresh(object? sender, RoutedEventArgs e) => await LoadAsync();
+    private async void Refresh(object? sender, RoutedEventArgs e) { if (!editing) await LoadAsync(); }
 
     private async Task LoadAsync()
     {
         var ticket = ++generation;
         ManageButton.IsEnabled = false;
+        snapshot = null;
         rows = [];
-        Plugins.SelectedKeys = [];
-        selectedPlugins = [];
         ApplyFilter();
         if (Scope() is not { } scope) return;
         bool Current() => ticket == generation && Scope()?.Preset.Id == scope.Preset.Id;
@@ -71,17 +93,42 @@ public partial class PresetPluginsPage : UserControl
         {
             var result = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id));
             if (!Current()) return;
-            var packages = result.Available.ToLookup(p => (p.Id, p.Version));
-            rows = result.Selected.Select(s => (Selection: s, Package: packages[(s.Id, s.Version)].FirstOrDefault()))
-                .Where(x => FrameworkRules.Find(x.Selection.Id) is null && x.Package is not { FrameworkPayload: true } and not { Category: PluginCategory.Framework })
-                .GroupBy(x => x.Package?.Category ?? PluginCategory.Other)
-                .Select(group => new Row("category:" + group.Key, PluginPresentation.CategoryLabel(group.Key), Children:
-                    group.Select(x => new Row(x.Selection.Id, x.Selection.Name ?? x.Selection.Id, x.Selection.Version,
-                        !x.Selection.Available ? "包不可用" : x.Selection.Enabled ? "已启用" : "已禁用")).ToArray())).ToArray();
-            ApplyFilter();
+            snapshot = result;
+            Render(result);
             ManageButton.IsEnabled = scope.Model.Server.Connected && !editing;
         }
         catch (IOException ex) { if (Current()) Owner?.ShowInstanceNotification("无法读取插件", ex.Message); }
+    }
+
+    private static bool IsPlugin(PluginPackageInfo package) => FrameworkRules.Find(package.Id) is null &&
+        !package.FrameworkPayload && package.Category != PluginCategory.Framework;
+
+    private static bool HasFramework(PluginResult result, PluginPackageInfo package) => package.Framework is not { } required ||
+        result.Selected.Any(s => s.Id == required && s.Enabled && s.Available);
+
+    private void Render(PluginResult result)
+    {
+        var packages = result.Available.Where(IsPlugin).ToLookup(p => p.Id);
+        var referenced = result.Selected.Where(s => FrameworkRules.Find(s.Id) is null &&
+            !result.Available.Any(p => p.Id == s.Id && p.Version == s.Version && !IsPlugin(p))).ToDictionary(s => s.Id);
+        rows = packages.Select(p => p.Key).Concat(referenced.Keys).Distinct(StringComparer.Ordinal)
+            .Select(id =>
+            {
+                referenced.TryGetValue(id, out var selection);
+                var variants = packages[id].OrderByDescending(p => p.Version, StringComparer.OrdinalIgnoreCase).ToArray();
+                var version = selection?.Version ?? variants.FirstOrDefault()?.Version ?? "-";
+                var chosen = variants.FirstOrDefault(p => p.Version == version);
+                var fallback = chosen ?? variants.FirstOrDefault();
+                var canEnable = chosen is not null && HasFramework(result, chosen);
+                var state = chosen is null ? "包不可用" : !canEnable ? "需要 " + (FrameworkRules.Find(chosen.Framework!)?.DisplayName ?? chosen.Framework)
+                    : selection?.Enabled == true ? "已启用" : "未启用";
+                return (Category: fallback?.Category ?? PluginCategory.Other, Item: new Row(id,
+                    chosen?.Name ?? selection?.Name ?? fallback?.Name ?? id, version, state, selection?.Enabled == true,
+                    canEnable, variants.Select(p => p.Version).Append(version).Distinct().ToArray()));
+            }).OrderBy(x => x.Item.Name, StringComparer.CurrentCultureIgnoreCase).GroupBy(x => x.Category)
+            .Select(group => new Row("category:" + group.Key, PluginPresentation.CategoryLabel(group.Key),
+                Children: group.Select(x => x.Item).ToArray())).ToArray();
+        ApplyFilter();
     }
 
     private void FilterPlugins(object? sender, FilterToolbarFiltersChangedEventArgs e) => ApplyFilter();
@@ -94,42 +141,48 @@ public partial class PresetPluginsPage : UserControl
         var visible = rows.Select(group => Match(group.Name) ? group : group with
             { Children = group.Children!.Where(row => Match(row.Name) || Match(row.Key)).ToArray() })
             .Where(group => group.Children!.Length > 0).ToArray();
-        var visibleIds = visible.SelectMany(group => group.Children!).Select(row => row.Key).ToHashSet();
-        var selected = selectedPlugins.Where(visibleIds.Contains).Cast<object>().ToArray();
         Plugins.ItemsSource = visible;
-        Plugins.SelectedKeys = selected;
         Plugins.ExpandedKeys = visible.Select(row => (object)row.Key).ToArray();
-        UpdateSelection();
     }
 
-    private void SelectAll(object? sender, RoutedEventArgs e) => Plugins.SelectedKeys =
-        (Plugins.ItemsSource?.Cast<Row>() ?? []).SelectMany(group => group.Children!).Select(row => (object)row.Key).ToArray();
-
-    private void ClearSelection(object? sender, RoutedEventArgs e) => Plugins.SelectedKeys = [];
-
-    private void UpdateSelection()
+    private async Task SaveAsync(Row row, string version, bool enabled)
     {
-        Selection.SelectedCount = selectedPlugins.Length;
-        foreach (var action in Selection.Actions)
-            action.IsEnabled = !editing && (action.Key == "manage" ? selectedPlugins.Length == 1 :
-                selectedPlugins.Length > 0 && Scope()?.Model.CanEditPlugins == true);
+        if (editing || snapshot is not { } current || Scope() is not { } scope) return;
+        var package = current.Available.FirstOrDefault(p => p.Id == row.Key && p.Version == version && IsPlugin(p));
+        if (!scope.Model.CanEditPlugins || (enabled && (package is null || !HasFramework(current, package))) ||
+            (version != row.Version && package is null))
+        {
+            Owner?.ShowInstanceNotification("无法修改插件", "请确认预设可修改，且选定版本及所需框架可用。");
+            Render(current);
+            return;
+        }
+        var next = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToList();
+        var index = next.FindIndex(p => p.Id == row.Key);
+        var choice = new PluginSelection(row.Key, version, enabled);
+        if (index < 0) next.Add(choice); else next[index] = choice;
+        editing = true;
+        Plugins.IsEnabled = ManageButton.IsEnabled = false;
+        try
+        {
+            await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
+                scope.Instance.Revision, current.Hash, [.. next]));
+            Owner?.ShowInstanceNotification("预设插件已保存", "下次部署生效。", ToastKind.Success);
+        }
+        catch (IOException ex) { Owner?.ShowInstanceNotification("无法保存插件", ex.Message); }
+        finally
+        {
+            editing = false;
+            Plugins.IsEnabled = true;
+            if (IsVisible) await LoadAsync();
+        }
     }
 
-    private async void Manage(object? sender, RoutedEventArgs e) => await OpenEditorAsync();
-
-    private async void EditSelection(object? sender, SelectionToolbarActionEventArgs e)
-    {
-        if (selectedPlugins.Length == 0) return;
-        await OpenEditorAsync(selectedPlugins, e.Action.Key switch { "enable" => true, "disable" => false, _ => null });
-    }
-
-    private async Task OpenEditorAsync(string[]? targets = null, bool? enabled = null)
+    private async void Manage(object? sender, RoutedEventArgs e)
     {
         if (editing || Scope() is not { } scope || Owner is not { } owner) return;
         editing = true;
         ManageButton.IsEnabled = false;
-        UpdateSelection();
-        try { await owner.EditPluginsAsync(scope.Model, scope.Instance, scope.Preset, targets, enabled); }
+        try { await owner.EditPluginsAsync(scope.Model, scope.Instance, scope.Preset); }
         finally { editing = false; if (IsVisible) await LoadAsync(); }
     }
 }

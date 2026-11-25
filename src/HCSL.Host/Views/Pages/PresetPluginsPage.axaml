@@ -8,12 +8,10 @@
       <arc:FilterToolbar.Actions>
         <arc:ExpandingButtonGroup Label="插件列表操作">
           <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
-          <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="添加／导入" IsEnabled="False" Click="Manage"/>
+          <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
         </arc:ExpandingButtonGroup>
       </arc:FilterToolbar.Actions>
     </arc:FilterToolbar>
-    <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" Classes="selection-actions" ActionInvoked="EditSelection" Cleared="ClearSelection" SelectAllRequested="SelectAll">
-      <arc:TreeTable x:Name="Plugins" Caption="预设插件" IsSelectable="True"/>
-    </arc:SelectionToolbar>
+    <arc:TreeTable Grid.Row="1" x:Name="Plugins" Caption="预设插件" IsSelectable="False"/>
   </Grid>
 </UserControl>
