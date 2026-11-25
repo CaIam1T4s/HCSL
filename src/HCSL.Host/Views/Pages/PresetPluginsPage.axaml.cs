@@ -33,11 +33,6 @@ public partial class PresetPluginsPage : UserControl
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
         SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowUp);
-        // Arc 1.1 does not expose a header visibility switch. Zero both layout modes for this list only.
-        foreach (var name in new[] { "HeaderHeightProperty", "CompactHeaderHeightProperty" })
-            if (typeof(Table).GetField(name, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
-                    ?.GetValue(null) is StyledProperty<double> height)
-                Plugins.SetValue(height, 0);
         var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
         frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
         foreach (var framework in FrameworkRules.Known)
