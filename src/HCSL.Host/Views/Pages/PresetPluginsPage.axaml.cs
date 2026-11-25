@@ -3,7 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
-using Avalonia.Styling;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -33,7 +32,6 @@ public partial class PresetPluginsPage : UserControl
         InitializeComponent();
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
-        HideTableHeader();
         var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
         frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
         foreach (var framework in FrameworkRules.Known)
@@ -238,21 +236,6 @@ public partial class PresetPluginsPage : UserControl
             .OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(r => r.Id, StringComparer.Ordinal)
             .ThenByDescending(r => r.Version, StringComparer.OrdinalIgnoreCase).ToArray();
         ApplyFilter();
-    }
-
-    private void HideTableHeader()
-    {
-        // Arc 1.1 subtracts one DIP for the header divider during Arrange; never give it zero height.
-        const System.Reflection.BindingFlags fields = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
-        if (typeof(Table).Assembly.GetType("TKCode.Arc.TableHeaderRow") is not { } header ||
-            typeof(Table).GetField("HeaderHeightProperty", fields)?.GetValue(null) is not StyledProperty<double> regular ||
-            typeof(Table).GetField("CompactHeaderHeightProperty", fields)?.GetValue(null) is not StyledProperty<double> compact) return;
-        Plugins.Styles.Add(new Style(selector => selector.OfType(header))
-        {
-            Setters = { new Setter(IsVisibleProperty, false) }
-        });
-        Plugins.SetValue(regular, 1d);
-        Plugins.SetValue(compact, 1d);
     }
 
     private void FilterPlugins(object? sender, FilterToolbarFiltersChangedEventArgs e) => ApplyFilter();
