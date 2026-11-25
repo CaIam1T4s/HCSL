@@ -72,9 +72,12 @@
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions">
     <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
   </Style>
-  <!-- Tint the template surface, not the action's spring/brush-transition source property. -->
-  <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions arc|ExpandingButtonGroupItem:expanded /template/ Border#PART_Body">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.55}"/>
+  <!-- Expansion reveals the label; it is not a hover state. Tint the template body only on hover. -->
+  <Style Selector="arc|ExpandingButtonGroupItem:expanded:not(:pointerover) /template/ Border#PART_Body">
+    <Setter Property="Background" Value="Transparent"/>
+  </Style>
+  <Style Selector="arc|ExpandingButtonGroupItem:pointerover:not(:unavailable):not(:disabled) /template/ Border#PART_Body">
+    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}"/>
   </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|Popover.launch-configuration arc|PopoverSurface">
     <Setter Property="Background" Value="{DynamicResource FloatingSurfaceBackground}"/>
@@ -274,12 +277,6 @@
   </Style>
   <Style Selector="arc|ExpandingButtonGroup.console-actions:focus-within /template/ Border#PART_Pill">
     <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
-  </Style>
-  <Style Selector="arc|ExpandingButtonGroup.console-actions arc|ExpandingButtonGroupItem:expanded:not(:pointerover) /template/ Border#PART_Body">
-    <Setter Property="Background" Value="Transparent"/>
-  </Style>
-  <Style Selector="arc|ExpandingButtonGroup.console-actions arc|ExpandingButtonGroupItem:pointerover:not(:unavailable) /template/ Border#PART_Body">
-    <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}"/>
   </Style>
   <Style Selector="arc|Select">
     <Setter Property="MinHeight" Value="36"/>

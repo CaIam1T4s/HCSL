@@ -35,9 +35,6 @@
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowRaised}"/>
     </Style>
-    <Style Selector=".instance-list-page arc|ExpandingButtonGroup.instance-actions arc|ExpandingButtonGroupItem:pointerover:not(:unavailable) /template/ Border#PART_Body">
-      <Setter Property="Background" Value="{arc:ArcDesignTokenResource SurfaceMuted}"/>
-    </Style>
     <Style Selector="arc|ExpandingButtonGroup.instance-actions:focus-within /template/ Border#PART_Pill">
       <Setter Property="ui:CenteredShadow.Source" Value="{arc:ArcDesignTokenResource ShadowFloating}"/>
     </Style>
