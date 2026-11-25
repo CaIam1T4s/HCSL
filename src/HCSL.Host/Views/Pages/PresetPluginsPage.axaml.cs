@@ -86,12 +86,16 @@ public partial class PresetPluginsPage : UserControl
         var button = new TKCode.Arc.Button { Variant = ButtonVariant.Ghost, Size = ControlSize.Small,
             Content = new LucideIcon { Kind = LucideIconKind.Info } };
         button.Classes.Add("plugin-info");
-        Avalonia.Automation.AutomationProperties.SetName(button, "插件属性：" + row.Name);
+        void UpdateName() => Avalonia.Automation.AutomationProperties.SetName(button,
+            button.DataContext is Row item ? "插件属性：" + item.Name : "插件属性");
+        button.DataContextChanged += (_, _) => UpdateName();
+        UpdateName();
         button.Click += (_, _) =>
         {
-            PropertyName.Text = row.Name;
-            PropertyVersion.Text = row.Version;
-            PropertyFramework.Text = row.Framework;
+            if (button.DataContext is not Row item || !ReferenceEquals(RowItem(RowControl(button)), item)) return;
+            PropertyName.Text = item.Name;
+            PropertyVersion.Text = item.Version;
+            PropertyFramework.Text = item.Framework;
             PluginProperties.ShowAt(button);
         };
         return button;
@@ -105,21 +109,37 @@ public partial class PresetPluginsPage : UserControl
         var details = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
         details.Children.Add(label);
-        if (!row.Compatible && row.Available)
-            details.Children.Add(new Badge { Content = row.Framework, Size = BadgeSize.Small, Tone = BadgeTone.Danger });
-        details.Children.Add(new Badge { Content = row.Version, Size = BadgeSize.Small, Tone = BadgeTone.Info });
-        if (row.Compatible || !row.Available) return details;
+        var frameworkBadge = new Badge { Size = BadgeSize.Small, Tone = BadgeTone.Danger };
+        var versionBadge = new Badge { Size = BadgeSize.Small, Tone = BadgeTone.Info };
+        details.Children.Add(frameworkBadge);
+        details.Children.Add(versionBadge);
         Control? band = null;
         AdornerLayer? layer = null;
         var tint = new Border { IsHitTestVisible = false, Opacity = 0.16 };
         ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Danger);
-        void SyncTint(object? sender, EventArgs e) => tint.IsVisible = IsEffectivelyVisible && ReferenceEquals(RowItem(band), row)
-            && (Plugins.ItemsSource?.OfType<Row>().Contains(row) ?? false);
+        bool Incompatible(Row? item) => item is { Compatible: false, Available: true };
+        void SyncTint(object? sender, EventArgs e)
+        {
+            var item = details.DataContext as Row;
+            tint.IsVisible = IsEffectivelyVisible && Incompatible(item) && ReferenceEquals(RowItem(band), item)
+                && (Plugins.ItemsSource?.OfType<Row>().Any(visible => ReferenceEquals(visible, item)) ?? false);
+        }
+        void UpdateCell()
+        {
+            var item = details.DataContext as Row;
+            label.Text = item?.Name;
+            frameworkBadge.Content = item?.Framework;
+            frameworkBadge.IsVisible = Incompatible(item);
+            versionBadge.Content = item?.Version;
+            if (band is not null) Tooltip.SetTip(band, Incompatible(item) ? "与当前预设框架不兼容：需要 " + item!.Framework : null);
+            SyncTint(null, EventArgs.Empty);
+        }
+        details.DataContextChanged += (_, _) => UpdateCell();
         details.AttachedToVisualTree += (_, _) =>
         {
             band = details.GetVisualAncestors().OfType<Control>().FirstOrDefault(p => p.GetType().Name == "TableRow");
             if (band is null) return;
-            Tooltip.SetTip(band, "与当前预设框架不兼容：需要 " + row.Framework);
+            UpdateCell();
             if (AdornerLayer.GetAdornerLayer(band) is not { } adorners) return;
             layer = adorners;
             AdornerLayer.SetAdornedElement(tint, band);
