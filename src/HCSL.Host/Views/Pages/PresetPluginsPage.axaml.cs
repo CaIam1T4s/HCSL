@@ -57,7 +57,14 @@ public partial class PresetPluginsPage : UserControl
         .OfType<Control>().FirstOrDefault(control => control.GetType().Name == "TableRow");
 
     // Arc 1.1 has no per-row checkbox enable predicate. Gate input before its row handler.
-    private static Row? RowItem(Control? control) => control?.GetType().GetProperty("Item")?.GetValue(control) as Row;
+    private static readonly System.Reflection.PropertyInfo? TableRowItem = typeof(Table).Assembly
+        .GetType("TKCode.Arc.TableRow")?.GetProperty("Item",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly,
+            binder: null, returnType: typeof(object), types: Type.EmptyTypes, modifiers: null);
+
+    private static Row? RowItem(Control? control) =>
+        control is not null && TableRowItem?.DeclaringType?.IsInstanceOfType(control) == true
+            ? TableRowItem.GetValue(control) as Row : null;
     private static bool CannotEnable(Row? row) => row is { Enabled: false } && (!row.Available || !row.Compatible);
 
     private void BlockUnavailableToggle(object? sender, PointerPressedEventArgs e)
