@@ -18,7 +18,7 @@
       <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
     <Canvas Grid.Row="1" x:Name="TipLayer" IsHitTestVisible="False">
-      <Border x:Name="TipAnchor" Width="1" Height="1" arc:Tooltip.Tip="不兼容" arc:Tooltip.Side="Bottom">
+      <Border x:Name="TipAnchor" Width="1" Height="1" arc:Tooltip.Tip="不兼容" arc:Tooltip.Side="Top">
         <Border.Styles>
           <Style Selector="arc|ArcPopup">
             <Setter Property="PlacementConstraintAdjustment" Value="SlideX,SlideY"/>

@@ -29,6 +29,7 @@ public partial class PresetPluginsPage : UserControl
     private string? frameworkFilter, stateFilter;
     private GlassMenu? viewMenu;
     private int tipGeneration;
+    private Avalonia.Threading.DispatcherTimer? tipTimer;
     private Control? tipRow;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
@@ -179,6 +180,7 @@ public partial class PresetPluginsPage : UserControl
             rowShift = band.RenderTransform as Avalonia.Media.TranslateTransform;
             if (rowShift is not null) rowShift.PropertyChanged += ShiftChanged;
             band.PointerEntered += HoverRow;
+            band.PointerMoved += HoverRow;
             band.PointerExited += LeaveRow;
             if (scroll is not null) scroll.ScrollChanged += ScrollRow;
             Plugins.LayoutUpdated += SyncTint;
@@ -191,6 +193,7 @@ public partial class PresetPluginsPage : UserControl
             if (band is not null)
             {
                 band.PointerEntered -= HoverRow;
+                band.PointerMoved -= HoverRow;
                 band.PointerExited -= LeaveRow;
                 if (ReferenceEquals(tipRow, band)) CloseTip();
             }
@@ -203,7 +206,7 @@ public partial class PresetPluginsPage : UserControl
         };
         return details;
 
-        async void HoverRow(object? sender, PointerEventArgs e)
+        void HoverRow(object? sender, PointerEventArgs e)
         {
             if (band is null || !Incompatible(details.DataContext as Row) ||
                 band.GetVisualDescendants().OfType<Control>().Any(control => control.IsPointerOver && control.Classes.Contains("plugin-info"))) return;
@@ -213,13 +216,19 @@ public partial class PresetPluginsPage : UserControl
             CloseTip();
             tipRow = anchorRow;
             var ticket = tipGeneration;
-            await Task.Delay(500);
-            if (ticket != tipGeneration || !IsEffectivelyVisible || !anchorRow.IsPointerOver ||
-                !ReferenceEquals(RowItem(anchorRow), item)) return;
-            Canvas.SetLeft(TipAnchor, position.X);
-            Canvas.SetTop(TipAnchor, position.Y);
-            TipLayer.UpdateLayout();
-            Tooltip.SetIsOpen(TipAnchor, true);
+            tipTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            var timer = tipTimer;
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (ticket != tipGeneration || !IsEffectivelyVisible || !anchorRow.IsPointerOver ||
+                    !ReferenceEquals(RowItem(anchorRow), item)) return;
+                Canvas.SetLeft(TipAnchor, position.X);
+                Canvas.SetTop(TipAnchor, position.Y);
+                TipLayer.UpdateLayout();
+                Tooltip.SetIsOpen(TipAnchor, true);
+            };
+            timer.Start();
         }
 
         void LeaveRow(object? sender, PointerEventArgs e) { if (ReferenceEquals(tipRow, band)) CloseTip(); }
@@ -279,6 +288,8 @@ public partial class PresetPluginsPage : UserControl
     private void CloseTip()
     {
         tipGeneration++;
+        tipTimer?.Stop();
+        tipTimer = null;
         tipRow = null;
         Tooltip.SetIsOpen(TipAnchor, false);
     }
