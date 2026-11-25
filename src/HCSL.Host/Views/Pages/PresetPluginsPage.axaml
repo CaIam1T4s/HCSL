@@ -18,12 +18,8 @@
       <Canvas x:Name="TintLayer" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
     <Canvas Grid.Row="1" x:Name="TipLayer" IsHitTestVisible="False">
-      <Border x:Name="TipAnchor" Width="1" Height="1"/>
+      <Border x:Name="TipAnchor" Width="1" Height="1" arc:Tooltip.Tip="不兼容" arc:Tooltip.Side="Bottom"/>
     </Canvas>
-    <arc:Popover Grid.Row="1" x:Name="IncompatibleTip" Placement="Bottom" Alignment="Start" Offset="8"
-                 TriggerMode="Manual" IsHitTestVisible="False">
-      <TextBlock Text="不兼容"/>
-    </arc:Popover>
     <arc:Popover x:Name="PluginProperties" Grid.Row="1" Placement="Bottom" Alignment="Start" Offset="0" TriggerMode="Manual">
       <arc:Popover.Styles>
         <Style Selector="arc|PopoverSurface">

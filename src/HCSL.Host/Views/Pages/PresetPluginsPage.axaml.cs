@@ -132,6 +132,8 @@ public partial class PresetPluginsPage : UserControl
         Control? band = null;
         ScrollViewer? scroll = null;
         ScrollContentPresenter? viewport = null;
+        Avalonia.Media.TranslateTransform? rowShift = null;
+        void ShiftChanged(object? sender, AvaloniaPropertyChangedEventArgs e) => SyncTint(sender, EventArgs.Empty);
         var tint = new Border { IsHitTestVisible = false, IsVisible = false, Opacity = 0.16 };
         ArcTokens.Bind(tint, Border.BackgroundProperty, ArcDesignTokenKind.Danger);
         bool Incompatible(Row? item) => item is { Compatible: false, Available: true };
@@ -173,6 +175,8 @@ public partial class PresetPluginsPage : UserControl
             scroll = band.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
             viewport = band.GetVisualAncestors().OfType<ScrollContentPresenter>().FirstOrDefault();
             TintLayer.Children.Add(tint);
+            rowShift = band.RenderTransform as Avalonia.Media.TranslateTransform;
+            if (rowShift is not null) rowShift.PropertyChanged += ShiftChanged;
             band.PointerEntered += HoverRow;
             band.PointerExited += LeaveRow;
             if (scroll is not null) scroll.ScrollChanged += ScrollRow;
@@ -189,6 +193,8 @@ public partial class PresetPluginsPage : UserControl
                 band.PointerExited -= LeaveRow;
                 if (ReferenceEquals(tipRow, band)) CloseTip();
             }
+            if (rowShift is not null) rowShift.PropertyChanged -= ShiftChanged;
+            rowShift = null;
             TintLayer.Children.Remove(tint);
             scroll = null;
             viewport = null;
@@ -211,7 +217,7 @@ public partial class PresetPluginsPage : UserControl
             Canvas.SetLeft(TipAnchor, position.X);
             Canvas.SetTop(TipAnchor, position.Y);
             TipLayer.UpdateLayout();
-            IncompatibleTip.ShowAt(TipAnchor);
+            Tooltip.SetIsOpen(TipAnchor, true);
         }
 
         void LeaveRow(object? sender, PointerEventArgs e) { if (ReferenceEquals(tipRow, band)) CloseTip(); }
@@ -272,7 +278,7 @@ public partial class PresetPluginsPage : UserControl
     {
         tipGeneration++;
         tipRow = null;
-        IncompatibleTip.IsOpen = false;
+        Tooltip.SetIsOpen(TipAnchor, false);
     }
 
     private void SearchChanged(object? sender, TextChangedEventArgs e) => ApplyFilter();
@@ -284,20 +290,20 @@ public partial class PresetPluginsPage : UserControl
         viewMenu?.Close();
         var menu = viewMenu = new GlassMenu();
         Avalonia.Automation.AutomationProperties.SetName(menu, "插件查看选项");
-        Add("全部状态", stateFilter is null, () => stateFilter = null);
-        Add("启用", stateFilter == "enabled", () => stateFilter = "enabled");
-        Add("禁用", stateFilter == "disabled", () => stateFilter = "disabled");
-        Add("不兼容", stateFilter == "incompatible", () => stateFilter = "incompatible");
+        Add("全部状态", LucideIconKind.List, stateFilter is null, () => stateFilter = null);
+        Add("启用", LucideIconKind.CircleCheckBig, stateFilter == "enabled", () => stateFilter = "enabled");
+        Add("禁用", LucideIconKind.CircleMinus, stateFilter == "disabled", () => stateFilter = "disabled");
+        Add("不兼容", LucideIconKind.TriangleAlert, stateFilter == "incompatible", () => stateFilter = "incompatible");
         menu.Items.Add(new GlassMenuSeparator());
-        Add("全部框架", frameworkFilter is null, () => frameworkFilter = null);
-        Add("无框架", frameworkFilter == "none", () => frameworkFilter = "none");
+        Add("全部框架", LucideIconKind.Layers, frameworkFilter is null, () => frameworkFilter = null);
+        Add("无框架", LucideIconKind.Layers, frameworkFilter == "none", () => frameworkFilter = "none");
         foreach (var framework in FrameworkRules.Known)
-            Add(framework.DisplayName, frameworkFilter == framework.Id, () => frameworkFilter = framework.Id);
+            Add(framework.DisplayName, LucideIconKind.Layers, frameworkFilter == framework.Id, () => frameworkFilter = framework.Id);
         menu.Open(anchor);
 
-        void Add(string title, bool selected, Action select)
+        void Add(string title, LucideIconKind icon, bool selected, Action select)
         {
-            var item = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(selected ? LucideIconKind.Check : LucideIconKind.List) };
+            var item = new GlassMenuItem { Content = selected ? title + "（当前）" : title, Icon = Lucide.Geometry(icon) };
             item.Click += (_, _) => { menu.Close(); select(); ApplyFilter(); };
             menu.Items.Add(item);
         }
@@ -319,7 +325,10 @@ public partial class PresetPluginsPage : UserControl
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         CloseTip();
         PluginProperties.IsOpen = false;
+        // Clear old geometry before Arc starts animating outgoing virtual rows.
+        foreach (var tint in TintLayer.Children) tint.IsVisible = false;
         Plugins.ItemsSource = visible;
+        Plugins.InvalidateMeasure();
     }
 
     private async Task SaveEnabledAsync(Row row, bool enabled)
