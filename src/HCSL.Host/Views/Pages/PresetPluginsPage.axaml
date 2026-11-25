@@ -9,7 +9,7 @@
       <arc:ExpandingButtonGroup Grid.Column="1" VerticalAlignment="Center" Label="插件列表操作">
         <arc:ExpandingButtonGroupItem x:Name="ViewButton" Label="查看" Click="OpenViewMenu"/>
         <arc:ExpandingButtonGroupItem x:Name="RefreshButton" Label="刷新" Click="Refresh"/>
-        <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入与高级管理" IsEnabled="False" Click="Manage"/>
+        <arc:ExpandingButtonGroupItem x:Name="ManageButton" Label="导入" IsEnabled="False" Click="Manage"/>
       </arc:ExpandingButtonGroup>
     </Grid>
     <Grid Grid.Row="1" ClipToBounds="True">
