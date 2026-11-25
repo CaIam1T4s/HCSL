@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Templates;
 using Avalonia.Interactivity;
+using Avalonia.Styling;
 using Avalonia.VisualTree;
 using HCSL.Core;
 using HCSL.Frontend;
@@ -24,7 +25,7 @@ public partial class PresetPluginsPage : UserControl
     private int generation;
     private Row[] rows = [];
     private PluginResult? snapshot;
-    private bool editing, descending;
+    private bool editing;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
 
     public PresetPluginsPage()
@@ -32,7 +33,7 @@ public partial class PresetPluginsPage : UserControl
         InitializeComponent();
         RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RotateCw);
         ManageButton.Icon = Lucide.Geometry(LucideIconKind.Plus);
-        SortButton.Icon = Lucide.Geometry(LucideIconKind.ArrowUp);
+        HideTableHeader();
         var frameworkFilter = Filters.Fields.First(field => field.Id == "framework");
         frameworkFilter.Options.Add(new FilterOption { Value = "none", Label = "无框架" });
         foreach (var framework in FrameworkRules.Known)
@@ -239,12 +240,19 @@ public partial class PresetPluginsPage : UserControl
         ApplyFilter();
     }
 
-    private void ToggleNameSort(object? sender, RoutedEventArgs e)
+    private void HideTableHeader()
     {
-        descending = !descending;
-        SortButton.Label = descending ? "名称降序" : "名称升序";
-        SortButton.Icon = Lucide.Geometry(descending ? LucideIconKind.ArrowDown : LucideIconKind.ArrowUp);
-        ApplyFilter();
+        // Arc 1.1 subtracts one DIP for the header divider during Arrange; never give it zero height.
+        const System.Reflection.BindingFlags fields = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+        if (typeof(Table).Assembly.GetType("TKCode.Arc.TableHeaderRow") is not { } header ||
+            typeof(Table).GetField("HeaderHeightProperty", fields)?.GetValue(null) is not StyledProperty<double> regular ||
+            typeof(Table).GetField("CompactHeaderHeightProperty", fields)?.GetValue(null) is not StyledProperty<double> compact) return;
+        Plugins.Styles.Add(new Style(selector => selector.OfType(header))
+        {
+            Setters = { new Setter(IsVisibleProperty, false) }
+        });
+        Plugins.SetValue(regular, 1d);
+        Plugins.SetValue(compact, 1d);
     }
 
     private void FilterPlugins(object? sender, FilterToolbarFiltersChangedEventArgs e) => ApplyFilter();
@@ -265,9 +273,7 @@ public partial class PresetPluginsPage : UserControl
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         PluginProperties.IsOpen = false;
-        Plugins.ItemsSource = descending
-            ? visible.OrderByDescending(row => row.Name, StringComparer.CurrentCultureIgnoreCase).ToArray()
-            : visible;
+        Plugins.ItemsSource = visible;
     }
 
     private async Task SaveEnabledAsync(Row row, bool enabled)
