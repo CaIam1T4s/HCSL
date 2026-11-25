@@ -155,11 +155,15 @@ public sealed partial class HostServerController : INotifyPropertyChanged, IDisp
     public bool CanDownloadResources => !DownloadsInProgress && !Busy && Server.Connected && !Server.ConnectionUnknown &&
         !Server.Active && !Server.Busy && Server.State != ServerState.RecoveryRequired;
 
-    public Task<bool> StartAsync(bool allowLowMemory = false)
+    public Task<bool>? PendingPluginSelectionSave { get; set; }
+
+    public async Task<bool> StartAsync(bool allowLowMemory = false)
     {
-        if (DownloadsInProgress || Busy || Selected?.Entry.Definition is null || !Server.CanStart) return Task.FromResult(false);
+        var target = Selected;
+        if (PendingPluginSelectionSave is { } pending && !await pending) return false;
+        if (DownloadsInProgress || Busy || !ReferenceEquals(target, Selected) || Selected?.Entry.Definition is null || !Server.CanStart) return false;
         Server.Attach(Selected.Entry.Id);
-        return Server.StartAsync(autoDeploy: true, allowLowMemory: allowLowMemory);
+        return await Server.StartAsync(autoDeploy: true, allowLowMemory: allowLowMemory);
     }
     /// <summary>Read-only deployment preview for the confirmation dialog (never writes).</summary>
     public async Task<DeploymentPlan?> DeployPreviewAsync(Guid instanceId, Guid presetId)

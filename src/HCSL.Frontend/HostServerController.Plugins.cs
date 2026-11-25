@@ -7,7 +7,8 @@ public sealed partial class HostServerController
     private PresetPluginClient Plugins => plugins ??= new(instances, Server);
 
     /// <summary>Editing is allowed only where the framework-free client allows it; no duplicated gate.</summary>
-    public bool CanEditPlugins => !Busy && Plugins.CanWrite;
+    public bool CanEditPlugins => !Busy && CanWritePluginSelections;
+    public bool CanWritePluginSelections => Plugins.CanWrite;
 
     /// <summary>Read-only probe used by the import form; never writes the library.</summary>
     public async Task<PluginImportPreview> ProbePluginImportAsync(string sourcePath)

@@ -26,6 +26,12 @@ public partial class PresetPluginsPage : UserControl
     private Row[] rows = [];
     private PluginResult? snapshot;
     private bool editing;
+    private List<PluginSelection>? draft;
+    private (Guid Instance, Guid Preset)? draftScope;
+    private event Action? SelectionChanged;
+
+    private bool Enabled(Row row) => draft is null ? row.Enabled :
+        draft.Any(p => p.Id == row.Id && p.Version == row.Version && p.Enabled);
     private string? frameworkFilter, stateFilter;
     private GlassMenu? viewMenu;
     private int tipGeneration;
@@ -66,7 +72,6 @@ public partial class PresetPluginsPage : UserControl
     private static Row? RowItem(Control? control) =>
         control is not null && TableRowItem?.DeclaringType?.IsInstanceOfType(control) == true
             ? TableRowItem.GetValue(control) as Row : null;
-    private static bool CannotEnable(Row? row) => row is { Enabled: false } && (!row.Available || !row.Compatible);
 
     private Control? EnableCell(Row? row)
     {
@@ -80,16 +85,19 @@ public partial class PresetPluginsPage : UserControl
             try
             {
                 var item = checkbox.DataContext as Row;
-                checkbox.IsEnabled = item is not null && !CannotEnable(item) && Scope()?.Model.CanEditPlugins == true;
-                checkbox.IsChecked = item?.Enabled == true;
+                checkbox.IsEnabled = item is not null && (Enabled(item) || item.Available && item.Compatible) &&
+                    Scope() is { } scope && (scope.Model.CanEditPlugins || scope.Model.CanWritePluginSelections && draftScope == (scope.Instance.Id, scope.Preset.Id));
+                checkbox.IsChecked = item is not null && Enabled(item);
                 Avalonia.Automation.AutomationProperties.SetName(checkbox, "启用 " + item?.Name);
             }
             finally { projecting = false; }
         }
         checkbox.DataContextChanged += (_, _) => Project();
+        checkbox.AttachedToVisualTree += (_, _) => { SelectionChanged += Project; Project(); };
+        checkbox.DetachedFromVisualTree += (_, _) => SelectionChanged -= Project;
         checkbox.CheckedStateChanged += async (_, _) =>
         {
-            if (projecting || checkbox.DataContext is not Row item || checkbox.IsChecked == item.Enabled) return;
+            if (projecting || checkbox.DataContext is not Row item || checkbox.IsChecked == Enabled(item)) return;
             if (ReferenceEquals(RowItem(RowControl(checkbox)), item)) await SaveEnabledAsync(item, checkbox.IsChecked == true);
             if (ReferenceEquals(checkbox.DataContext, item) && rows.Contains(item)) Project();
         };
@@ -255,6 +263,8 @@ public partial class PresetPluginsPage : UserControl
         ApplyFilter();
         if (Scope() is not { } scope) return;
         bool Current() => ticket == generation && Scope()?.Preset.Id == scope.Preset.Id;
+        if (scope.Model.PendingPluginSelectionSave is { } pending) await pending;
+        if (!Current()) return;
         try
         {
             var result = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id, PackageMetadataOnly: true));
@@ -270,6 +280,7 @@ public partial class PresetPluginsPage : UserControl
 
     private void Render(PluginResult result)
     {
+        draft = null;
         snapshot = result;
         var selected = result.Selected.ToDictionary(s => (s.Id, s.Version));
         var available = result.Available.Select(p => (p.Id, p.Version)).ToHashSet();
@@ -328,8 +339,8 @@ public partial class PresetPluginsPage : UserControl
         var query = (Search.Text ?? "").Trim();
         bool MatchState(Row row) => stateFilter switch
         {
-            "enabled" => row.Enabled,
-            "disabled" => !row.Enabled,
+            "enabled" => Enabled(row),
+            "disabled" => !Enabled(row),
             "incompatible" => !row.Compatible && row.Available,
             _ => true
         };
@@ -346,29 +357,55 @@ public partial class PresetPluginsPage : UserControl
 
     private async Task SaveEnabledAsync(Row row, bool enabled)
     {
-        if (editing || snapshot is not { } current || Scope() is not { } scope) return;
-        if (!scope.Model.CanEditPlugins || enabled && (!row.Available || !row.Compatible))
+        if (snapshot is not { } current || Scope() is not { } scope) return;
+        var key = (scope.Instance.Id, scope.Preset.Id);
+        if ((editing || scope.Model.PendingPluginSelectionSave is not null) && draftScope != key) return;
+        if (!scope.Model.CanWritePluginSelections || (!scope.Model.CanEditPlugins && draftScope != key) || enabled && (!row.Available || !row.Compatible))
         {
             Owner?.ShowInstanceNotification("无法保存插件", "请确认预设可修改且插件与框架兼容。");
             return;
         }
-        var next = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToList();
+        var next = draft ??= current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToList();
         var index = next.FindIndex(p => p.Id == row.Id);
         var choice = new PluginSelection(row.Id, row.Version, enabled);
         if (index < 0) next.Add(choice); else next[index] = choice;
+        SelectionChanged?.Invoke();
+        if (stateFilter is "enabled" or "disabled") ApplyFilter();
+        if (editing) return;
+
         var ticket = generation;
         editing = true;
+        draftScope = key;
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        scope.Model.PendingPluginSelectionSave = completion.Task;
+        var success = false;
         try
         {
-            var saved = await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
-                scope.Instance.Revision, current.Hash, [.. next], PackageMetadataOnly: true));
-            if (ticket == generation) Render(saved);
+            PluginSelection[] written;
+            do
+            {
+                written = [.. next];
+                current = await scope.Model.PluginsAsync(new(PluginAction.Save, key.Item1, key.Item2,
+                    scope.Instance.Revision, current.Hash, written, PackageMetadataOnly: true));
+            } while (!next.SequenceEqual(written));
+            success = true;
         }
         catch (IOException ex)
         {
             Owner?.ShowInstanceNotification("无法保存插件", ex.Message);
         }
-        finally { editing = false; }
+        finally
+        {
+            draftScope = null;
+            editing = false;
+            if (ticket == generation && success) snapshot = current;
+            // Keep the confirmed projection until the next explicit reload.
+            draft = ticket == generation && success ? next : null;
+            scope.Model.PendingPluginSelectionSave = null;
+            completion.TrySetResult(success);
+            SelectionChanged?.Invoke();
+            if (!success && ticket == generation && IsVisible) await LoadAsync();
+        }
     }
 
     private async void Manage(object? sender, RoutedEventArgs e)
