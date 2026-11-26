@@ -50,7 +50,7 @@ public partial class PresetPluginsPage : UserControl
             CellTemplate = new FuncDataTemplate<Row>((row, _) => EnableCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
-        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(88), IsSortable = false,
+        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(104), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
         PropertyChanged += (_, e) =>
         {
@@ -136,7 +136,8 @@ public partial class PresetPluginsPage : UserControl
         };
         location.DataContextChanged += (_, _) => location.IsEnabled = location.DataContext is Row { Available: true };
         return new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { location, button } };
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Thickness(0, 0, 12, 0),
+            Children = { location, button } };
     }
 
     private async Task OpenLocationAsync(Row? row = null)
