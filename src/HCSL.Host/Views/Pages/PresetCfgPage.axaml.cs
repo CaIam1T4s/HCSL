@@ -16,7 +16,7 @@ namespace HCSL.Host.Views.Pages;
 public partial class PresetCfgPage : UserControl
 {
     private sealed record Node(PresetCfgFile File, string Path, Node[]? Children);
-    internal (HostServerController Model, Guid Instance, Guid Preset, Guid Run)? ConsoleTarget { get; init; }
+    internal (HostServerController Model, Guid Instance, Guid Preset, Guid? Run)? ConsoleTarget { get; init; }
     internal MainWindow? ConsoleOwner { get; init; }
     private MainWindow? Owner => ConsoleOwner ?? TopLevel.GetTopLevel(this) as MainWindow;
     internal Task LoadForConsoleAsync() => LoadAsync();
@@ -61,7 +61,7 @@ public partial class PresetCfgPage : UserControl
     {
         if (ConsoleTarget is { } target)
         {
-            if (target.Model.Server.RunId == target.Run && target.Model.Instances.FirstOrDefault(i => i.Entry.Id == target.Instance)?.Entry is
+            if (target.Model.Instances.FirstOrDefault(i => i.Entry.Id == target.Instance)?.Entry is
                 { Definition: { } definition } active && active.Presets.FirstOrDefault(p => p.Id == target.Preset) is { } runningPreset)
                 return (target.Model, definition, runningPreset);
             return null;
@@ -96,6 +96,7 @@ public partial class PresetCfgPage : UserControl
         if (ConsoleTarget is null) return;
         var action = Selection.Actions.FirstOrDefault(item => item.Key == "exec");
         var enabled = selected.Length > 0 && !executing && Scope() is { } scope
+            && ConsoleTarget.Value.Run is { } run && scope.Servers.Server.RunId == run
             && scope.Servers.CanExecCfg(scope.Instance.Id, scope.Preset.Id);
         if (action is null)
             Selection.Actions.Add(new SelectionToolbarAction { Key = "exec", Label = "执行 exec", IsEnabled = enabled });
@@ -268,7 +269,7 @@ public partial class PresetCfgPage : UserControl
             return;
         }
         var (servers, instance, preset) = scope;
-        if (!servers.CanExecCfg(instance.Id, preset.Id) || servers.Server.RunId is not { } run)
+        if (!servers.CanExecCfg(instance.Id, preset.Id) || ConsoleTarget.Value.Run is not { } run || servers.Server.RunId != run)
         {
             owner.ShowInstanceNotification("无法执行 CFG", "运行中的实例和预设必须与此页面一致。");
             return;

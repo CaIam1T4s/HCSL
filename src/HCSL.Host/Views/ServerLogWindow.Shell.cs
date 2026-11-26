@@ -43,6 +43,7 @@ public sealed partial class ServerLogWindow
         // Arc's sidebar icons are geometry, so this one Lucide glyph is resolved here rather than as a control.
         foreach (var item in navigation.Sections.SelectMany(s => s.Items))
             if (item.Key == "maps") item.Icon = Lucide.Geometry(LucideIconKind.Map);
+            else if (item.Key == "cfg") item.Icon = Lucide.Geometry(LucideIconKind.FileCode);
         consoleHost.Content = console;
         playersHost.Content = BuildPlayersPage();
         mapsPage = new MapsPage();
@@ -108,13 +109,17 @@ public sealed partial class ServerLogWindow
 
     private async Task OpenCfgPageAsync()
     {
-        if (model.Server.RunId is not { } run || model.Server.Snapshot is not
-            { InstanceId: { } instance, Preset.Id: var preset } || !model.Server.Active)
+        (Guid Instance, Guid Preset, Guid? Run) target;
+        if (model.Server.Active && model.Server.Snapshot is { InstanceId: { } instance, Preset.Id: var preset })
+            target = (instance, preset, model.Server.RunId);
+        else if (model.Selected?.Entry.Definition is { } selected)
+            target = (selected.Id, selected.SelectedPresetId, null);
+        else
         {
-            cfgHost.Content = new TextBlock { Text = "服务器启动后可在此执行 CFG。", Margin = new Thickness(20) };
+            cfgHost.Content = new TextBlock { Text = "请先选择实例和预设。", Margin = new Thickness(20) };
             return;
         }
-        var page = new Pages.PresetCfgPage { ConsoleTarget = (model, instance, preset, run), ConsoleOwner = owner };
+        var page = new Pages.PresetCfgPage { ConsoleTarget = (model, target.Instance, target.Preset, target.Run), ConsoleOwner = owner };
         cfgHost.Content = page;
         await page.LoadForConsoleAsync();
     }
