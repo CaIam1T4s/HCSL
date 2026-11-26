@@ -25,6 +25,8 @@ public partial class PresetPluginsPage : UserControl
     private int generation;
     private Row[] rows = [];
     private PluginResult? snapshot;
+    private (HostServerController Model, Guid Instance, Guid Preset)? listedScope;
+    private readonly System.Collections.ObjectModel.ObservableCollection<Row> visibleRows = [];
     private bool editing;
     private List<PluginSelection>? draft;
     private (Guid Instance, Guid Preset)? draftScope;
@@ -55,7 +57,7 @@ public partial class PresetPluginsPage : UserControl
         PropertyChanged += (_, e) =>
         {
             if (e.Property != IsVisibleProperty) return;
-            if (IsVisible) _ = LoadAsync(); else { generation++; snapshot = null; PluginProperties.IsOpen = false; CloseTip(); viewMenu?.Close(); }
+            if (IsVisible) _ = LoadAsync(); else { generation++; PluginProperties.IsOpen = false; CloseTip(); viewMenu?.Close(); }
         };
         DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
     }
@@ -275,18 +277,23 @@ public partial class PresetPluginsPage : UserControl
 
     private async void Refresh(object? sender, RoutedEventArgs e) { if (!editing) await LoadAsync(); }
 
-    private async Task LoadAsync(bool keepRows = false)
+    private async Task LoadAsync()
     {
         var ticket = ++generation;
         ManageButton.IsEnabled = false;
-        if (!keepRows)
+        var scopeValue = Scope();
+        var key = scopeValue is { } s ? (s.Model, s.Instance.Id, s.Preset.Id) : ((HostServerController, Guid, Guid)?)null;
+        if (listedScope != key)
         {
+            listedScope = key;
+            draft = null;
             snapshot = null;
             rows = [];
             ApplyFilter();
         }
-        if (Scope() is not { } scope) return;
-        bool Current() => ticket == generation && Scope()?.Preset.Id == scope.Preset.Id;
+        if (scopeValue is not { } scope) return;
+        bool Current() => ticket == generation && IsVisible && Scope() is { } active &&
+            (active.Model, active.Instance.Id, active.Preset.Id) == key;
         if (scope.Model.PendingPluginSelectionSave is { } pending) await pending;
         if (!Current()) return;
         try
@@ -294,9 +301,9 @@ public partial class PresetPluginsPage : UserControl
             var result = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id, PackageMetadataOnly: true));
             if (!Current()) return;
             Render(result);
-            ManageButton.IsEnabled = scope.Model.Server.Connected && !editing;
         }
         catch (IOException ex) { if (Current()) Owner?.ShowInstanceNotification("无法读取插件", ex.Message); }
+        finally { if (Current()) ManageButton.IsEnabled = scope.Model.Server.Connected && !editing; }
     }
 
     private static bool IsPlugin(PluginPackageInfo package) => FrameworkRules.Find(package.Id) is null &&
@@ -308,6 +315,7 @@ public partial class PresetPluginsPage : UserControl
         snapshot = result;
         var selected = result.Selected.ToDictionary(s => (s.Id, s.Version));
         var available = result.Available.Select(p => (p.Id, p.Version)).ToHashSet();
+        var previous = rows.ToDictionary(row => (row.Id, row.Version));
         rows = result.Available.Where(IsPlugin).Select(p =>
         {
             var compatible = p.Framework is null || result.Selected.Any(s => s.Id == p.Framework && s.Enabled && s.Available);
@@ -316,7 +324,8 @@ public partial class PresetPluginsPage : UserControl
         }).Concat(result.Selected.Where(s => FrameworkRules.Find(s.Id) is null && !available.Contains((s.Id, s.Version)))
             .Select(s => new Row(s.Id, s.Name ?? s.Id, s.Version, "none", "-", s.Enabled, false, false)))
             .OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(r => r.Id, StringComparer.Ordinal)
-            .ThenByDescending(r => r.Version, StringComparer.OrdinalIgnoreCase).ToArray();
+            .ThenByDescending(r => r.Version, StringComparer.OrdinalIgnoreCase)
+            .Select(row => previous.TryGetValue((row.Id, row.Version), out var old) && old == row ? old : row).ToArray();
         ApplyFilter();
     }
 
@@ -375,11 +384,26 @@ public partial class PresetPluginsPage : UserControl
         var visible = rows.Where(row => MatchState(row) && (frameworkFilter is null || row.FrameworkId == frameworkFilter) &&
             (row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              row.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
+        if (ReferenceEquals(Plugins.ItemsSource, visibleRows) && visibleRows.SequenceEqual(visible, ReferenceEqualityComparer.Instance)) return;
         CloseTip();
         PluginProperties.IsOpen = false;
         // Clear old geometry before Arc starts animating outgoing virtual rows.
         foreach (var tint in TintLayer.Children) tint.IsVisible = false;
-        Plugins.ItemsSource = visible;
+        if (ReferenceEquals(Plugins.ItemsSource, visibleRows) && visible.Length == visibleRows.Count + 1)
+        {
+            var index = 0;
+            while (index < visibleRows.Count && ReferenceEquals(visibleRows[index], visible[index])) index++;
+            if (visibleRows.Skip(index).SequenceEqual(visible.Skip(index + 1), ReferenceEqualityComparer.Instance))
+            {
+                visibleRows.Insert(index, visible[index]);
+                Plugins.InvalidateMeasure();
+                return;
+            }
+        }
+        Plugins.ItemsSource = null;
+        visibleRows.Clear();
+        foreach (var row in visible) visibleRows.Add(row);
+        Plugins.ItemsSource = visibleRows;
         Plugins.InvalidateMeasure();
     }
 
@@ -454,7 +478,7 @@ public partial class PresetPluginsPage : UserControl
         {
             editing = false;
             ManageButton.IsEnabled = Scope()?.Model.Server.Connected == true;
-            if (refresh && IsVisible) await LoadAsync(keepRows: true);
+            if (refresh && IsVisible) await LoadAsync();
         }
     }
 }
