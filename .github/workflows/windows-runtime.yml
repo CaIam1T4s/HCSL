@@ -1,6 +1,8 @@
 name: Windows runtime checks
 
 on:
+  push:
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
