@@ -166,12 +166,16 @@ public static class FrameworkTests
         {
             var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
             using (new LocalWorkspaceManager().Acquire(workspace)) { }
-            var archive = BuildCsSharpZip();
+            var windows = OperatingSystem.IsWindows();
+            var platform = windows ? "windows" : "linux";
+            var binaryDir = windows ? "win64" : "linuxsteamrt64";
+            var extension = windows ? "dll" : "so";
+            var archive = BuildCsSharpZip(binaryDir, extension);
             var digest = "sha256:" + Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant();
             var json = Encoding.UTF8.GetBytes($$"""
                 [{"tag_name":"v1.0.379","draft":false,"assets":[
-                  {"name":"counterstrikesharp-linux-1.0.379.zip","browser_download_url":"https://github.com/example/plain.zip","size":{{archive.Length}},"digest":"{{digest}}"},
-                  {"name":"counterstrikesharp-with-runtime-linux-1.0.379.zip","browser_download_url":"https://github.com/example/runtime.zip","size":{{archive.Length}},"digest":"{{digest}}"}
+                  {"name":"counterstrikesharp-{{platform}}-1.0.379.zip","browser_download_url":"https://github.com/example/plain.zip","size":{{archive.Length}},"digest":"{{digest}}"},
+                  {"name":"counterstrikesharp-with-runtime-{{platform}}-1.0.379.zip","browser_download_url":"https://github.com/example/runtime.zip","size":{{archive.Length}},"digest":"{{digest}}"}
                 ]}]
                 """);
             var handler = new FakeHandler(json, archive);
@@ -182,7 +186,7 @@ public static class FrameworkTests
             Check(check.Frameworks.Single(f => f.Id == "source2mod").Installable, "Source2Mod not reported installable.");
             var installed = await manager.InstallAsync(workspace, new("counterstrikesharp"));
             Check(installed.Version == "1.0.379" && installed.DigestVerified, "Install did not verify the digest.");
-            Check(File.Exists(Path.Combine(installed.PackagePath, "files", "csgo", "addons", "counterstrikesharp", "bin", "linuxsteamrt64", "counterstrikesharp.so")),
+            Check(File.Exists(Path.Combine(installed.PackagePath, "files", "csgo", "addons", "counterstrikesharp", "bin", binaryDir, "counterstrikesharp." + extension)),
                 "Framework binary was not imported.");
             Check(File.Exists(Path.Combine(installed.PackagePath, "files", "csgo", "addons", "metamod", "counterstrikesharp.vdf")), "Framework VDF missing.");
             Check(!File.Exists(Path.Combine(installed.PackagePath, "files", "csgo", "gameinfo.gi")), "A sub-plugin package generated a gameinfo overlay.");
@@ -194,7 +198,7 @@ public static class FrameworkTests
             await Reject(bad.InstallAsync(workspace, new("counterstrikesharp")), "HCSL-FRAMEWORK-HASH");
             await Reject(manager.InstallAsync(workspace, new("unknown")), "HCSL-FRAMEWORK-ID");
             Check(FrameworkRules.Find("swiftlys2")?.Installable == true && FrameworkRules.Find("modsharp")?.Installable == true, "New frameworks are not installable.");
-            var s2mTar = BuildSource2ModTarGz();
+            var s2mTar = BuildSource2ModTarGz(binaryDir, extension);
             var s2mDigest = "sha256:" + Convert.ToHexString(SHA256.HashData(s2mTar)).ToLowerInvariant();
             var s2mJson = Encoding.UTF8.GetBytes($$"""
                 [{"tag_name":"v1.0.46","draft":false,"assets":[
@@ -206,10 +210,10 @@ public static class FrameworkTests
             var s2mManager = new FrameworkManager(new S2mHandler(s2mJson, s2mTar));
             var s2mCheck = await s2mManager.CheckAsync(workspace);
             var s2mInfo = s2mCheck.Frameworks.Single(f => f.Id == "source2mod");
-            Check(s2mInfo.Installable && s2mInfo.LatestVersion == "1.0.46" && s2mInfo.LatestAsset == "source2mod_v1.0.46-linux.tar.gz", "Source2Mod check state.");
+            Check(s2mInfo.Installable && s2mInfo.LatestVersion == "1.0.46" && s2mInfo.LatestAsset == $"source2mod_v1.0.46-{platform}.tar.gz", "Source2Mod check state.");
             var s2mInstalled = await s2mManager.InstallAsync(workspace, new("source2mod"));
             Check(s2mInstalled.Version == "1.0.46" && s2mInstalled.DigestVerified, "Source2Mod install did not verify.");
-            Check(File.Exists(Path.Combine(s2mInstalled.PackagePath, "files", "csgo", "addons", "source2mod", "bin", "linuxsteamrt64", "source2mod.so")),
+            Check(File.Exists(Path.Combine(s2mInstalled.PackagePath, "files", "csgo", "addons", "source2mod", "bin", binaryDir, "source2mod." + extension)),
                 "Source2Mod binary was not imported.");
             Check(s2mInstalled.Warnings.Any(w => w.Contains("metamod", StringComparison.OrdinalIgnoreCase)), "Source2Mod dependency warning missing.");
             var offline = await new FrameworkManager(new ThrowingHandler()).CheckAsync(workspace);
@@ -222,12 +226,12 @@ public static class FrameworkTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    private static byte[] BuildCsSharpZip()
+    private static byte[] BuildCsSharpZip(string binaryDir, string extension)
     {
         using var memory = new MemoryStream();
         using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
         {
-            Write(zip, "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so", "binary");
+            Write(zip, $"addons/counterstrikesharp/bin/{binaryDir}/counterstrikesharp.{extension}", "binary");
             Write(zip, "addons/counterstrikesharp/configs/core.example.json", "{}");
             Write(zip, "addons/metamod/counterstrikesharp.vdf", "\"Plugin\"{}");
         }
@@ -242,7 +246,7 @@ public static class FrameworkTests
         stream.Write(bytes);
     }
 
-    private static byte[] BuildSource2ModTarGz()
+    private static byte[] BuildSource2ModTarGz(string binaryDir, string extension)
     {
         using var memory = new MemoryStream();
         using (var gzip = new GZipStream(memory, CompressionMode.Compress, leaveOpen: true))
@@ -253,7 +257,7 @@ public static class FrameworkTests
                 var bytes = Encoding.UTF8.GetBytes(content);
                 writer.WriteEntry(new PaxTarEntry(TarEntryType.RegularFile, name) { DataStream = new MemoryStream(bytes) });
             }
-            Add("addons/source2mod/bin/linuxsteamrt64/source2mod.so", "Source2Mod v1.0.46 @ 0613502");
+            Add($"addons/source2mod/bin/{binaryDir}/source2mod.{extension}", "Source2Mod v1.0.46 @ 0613502");
             Add("addons/metamod/source2mod.vdf", "\"Plugin\"{}");
             Add("addons/source2mod/plugins/README.md", "plugins");
         }
