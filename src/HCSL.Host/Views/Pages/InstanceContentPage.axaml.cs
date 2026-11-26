@@ -2,6 +2,9 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
+using TKCode.Arc;
 using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
@@ -103,7 +106,7 @@ public partial class InstanceContentPage : UserControl
             var selected = current.Selected.FirstOrDefault(p => p.Id == row.Framework.Id && p.Enabled);
             if (selected?.Version != row.PresetVersion || Scope() != scope) return;
             var disabled = new HashSet<string>(StringComparer.Ordinal) { row.Framework.Id };
-            var dependents = new List<string>();
+            var dependents = new List<PluginSelectionInfo>();
             bool changed;
             do
             {
@@ -114,13 +117,12 @@ public partial class InstanceContentPage : UserControl
                         .FirstOrDefault(a => a.Id == entry.Id && a.Version == entry.Version)?.Framework;
                     if (required is not null && disabled.Contains(required) && disabled.Add(entry.Id))
                     {
-                        dependents.Add(entry.Name ?? entry.Id);
+                        dependents.Add(entry);
                         changed = true;
                     }
                 }
             } while (changed);
-            if (dependents.Count > 0 && await owner.ChooseAsync("停用框架",
-                $"停用 {row.Name} 也需要停用：{string.Join("、", dependents)}。不会删除共享插件包。", "取消", "一并停用") != 1) return;
+            if (dependents.Count > 0 && !await ConfirmDisableAsync(row.Name, dependents)) return;
             if (Scope() != scope) return;
             var next = current.Selected.Select(p => new PluginSelection(p.Id, p.Version, p.Enabled && !disabled.Contains(p.Id))).ToArray();
             await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
@@ -129,6 +131,35 @@ public partial class InstanceContentPage : UserControl
         catch (Exception ex) when (ex is IOException or InstanceException)
         { owner.ShowInstanceNotification("无法停用框架", ex.Message); }
         finally { opening = false; loaded = null; await LoadAsync(); }
+    }
+
+    private async Task<bool> ConfirmDisableAsync(string framework, IReadOnlyList<PluginSelectionInfo> dependents)
+    {
+        var table = new Table { Caption = "将一并停用的依赖项", IsSelectable = false,
+            ItemsSource = dependents, Height = Math.Min(260, 52 * (dependents.Count + 1)) };
+        AddColumn("插件 / 框架", new GridLength(1, GridUnitType.Star), item => item.Name ?? item.Id);
+        AddColumn("版本", new GridLength(112), item => item.Version);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        actions.Classes.Add("dialog-actions");
+        AddAction("取消", false);
+        AddAction("一并停用", true);
+        var dialog = new Dialog { Title = "停用框架", Size = ControlSize.Medium,
+            Description = $"停用 {framework} 时，以下依赖项也会在当前预设中停用。共享包不会被删除。",
+            Content = table, Actions = actions };
+        return await dialog.ShowAsync(this) is true;
+
+        void AddColumn(string header, GridLength width, Func<PluginSelectionInfo, string> text) =>
+            table.Columns.Add(new DataTableColumn { Header = header, Width = width, IsSortable = false,
+                CellTemplate = new FuncDataTemplate<PluginSelectionInfo>((item, _) => new TextBlock
+                { Text = item is null ? "" : text(item), VerticalAlignment = VerticalAlignment.Center }) });
+
+        void AddAction(string label, bool primary)
+        {
+            var button = new TKCode.Arc.Button { Content = label, Variant = primary ? ButtonVariant.Primary : ButtonVariant.Secondary };
+            if (primary) button.Classes.Add("dialog-primary");
+            Dialog.SetResult(button, primary);
+            actions.Children.Add(button);
+        }
     }
 
     private async void OpenFramework(object? sender, RoutedEventArgs e)
