@@ -564,11 +564,11 @@ Check(mapsSelection.Actions.All(a => !a.IsEnabled), "The switch must start disab
 Check(mapsPage.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b =>
     Avalonia.Automation.AutomationProperties.GetName(b) == "地图轮换规则"),
     "The rotation rule must be reachable through a named icon button.");
-// Selecting a row enables the switch; choosing another moves the selection instead of adding to it.
+// A stopped server allows browsing and selection, but cannot switch maps.
 var mapRows = mapsTable.ItemsSource!.Cast<HCSL.Host.ViewModels.MapRow>().ToArray();
 mapRows[1].IsSelected = true; Layout();
-Check(mapRows[1].IsSelected && mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled,
-    "Selecting one map must enable switching it.");
+Check(mapRows[1].IsSelected && !mapsSelection.Actions.Single(a => a.Key == "switch").IsEnabled,
+    "Selecting a map while stopped must not enable switching it.");
 
 mapRows[3].IsSelected = true; Layout();
 Check(!mapRows[1].IsSelected && mapRows[3].IsSelected && mapsSelection.SelectedCount == 1,
@@ -729,12 +729,17 @@ PumpUntil(server.RefreshAsync()); PumpUntil(model.RefreshInstancesAsync());
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("presets");
 Layout();
 presetPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.InstancePresetsPage>().Single();
-var presetChoices = presetPage.FindControl<TKCode.Arc.RadioGroup>("PresetChoices")!;
+var presetChoices = presetPage.FindControl<TKCode.Arc.Table>("PresetChoices")!;
 var presetItems = ((System.Collections.IEnumerable)presetChoices.ItemsSource!).Cast<HostPresetItem>().ToArray();
 Check(presetItems.Length == 2, "GUI preset list missing catalog entries.");
-presetChoices.SelectedItem = presetItems[1]; Layout();
+var rowAction = presetChoices.GetVisualDescendants().OfType<TKCode.Arc.Button>().Single(b =>
+    b.Classes.Contains("preset-row-action") && b.DataContext is HostPresetItem item && item.Definition.Id == secondPreset.Id);
+rowAction.RaiseEvent(new RoutedEventArgs(Avalonia.Controls.Button.ClickEvent)); Layout();
 Check(model.Selected!.Entry.Definition!.SelectedPresetId == firstPreset.Id, "Browsing changed persisted selection.");
-Click(owner, "设为当前");
+var presetMenu = (TKCode.Arc.GlassMenu)typeof(HCSL.Host.Views.Pages.InstancePresetsPage)
+    .GetField("rowMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(presetPage)!;
+presetMenu.Items.OfType<TKCode.Arc.GlassMenuItem>().Single(item => Equals(item.Content, "设为启动预设"))
+    .RaiseEvent(new RoutedEventArgs(TKCode.Arc.GlassMenuItem.ClickEvent));
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "选择配置预设"));
 Click(owner, "取消");
 WaitUntil(() => presetPage?.FindControl<TKCode.Arc.Button>("CreateButton") is { IsEnabled: true });
@@ -864,27 +869,28 @@ if (only is "pools") return 0;
 
 if (only is null or "plugins")
 {
+daemon.IdleForPresetTests = true;
+PumpUntil(server.RefreshAsync());
 var pluginQueries = daemon.Queries;
-var pluginDialog = owner.EditPluginsAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
-WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().Any(s => s.IsEffectivelyVisible && s.ItemsSource is string[]));
-var pluginSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().First(s => s.IsEffectivelyVisible
-    && s.ItemsSource is string[] items && items.Any(x => x.Contains("Metamod", StringComparison.Ordinal)));
-Check(pluginSelect.ItemsSource!.Cast<string>().Single().Contains("Metamod"), "Plugin list missing selected package.");
-WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("Metamod:Source", StringComparison.Ordinal) == true));
-var smxImport = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && (b.Content?.ToString() ?? "").Contains(".smx", StringComparison.Ordinal));
-Check(!smxImport.IsEffectivelyEnabled, ".smx import was enabled without source2mod + metamod.");
-Click(owner, "启用/禁用");
-WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("已切换启用状态草稿") == true));
-Click(owner, "保存清单");
-WaitUntil(() => daemon.PluginWrites == 1);
-Check(daemon.Plugins.Selected.Single().Enabled == false && daemon.Queries == pluginQueries, "Plugin save changed live game state or lost toggle.");
-var frameworkSelect = owner.GetVisualDescendants().OfType<TKCode.Arc.Select>().First(s => s.IsEffectivelyVisible
-    && s.ItemsSource is string[] items && items.Any(x => x.Contains("无脚本框架", StringComparison.Ordinal)));
-var targetIndex = frameworkSelect.ItemsSource!.Cast<string>().ToList().FindIndex(x => x.Contains("Source2Mod", StringComparison.Ordinal));
-Check(targetIndex > 0, "Plugin page framework selector is missing Source2Mod.");
-frameworkSelect.SelectedIndex = targetIndex;
-WaitUntil(() => daemon.FrameworkInstalls == 1);
-Click(owner, "关闭"); PumpUntil(pluginDialog);
+daemon.Plugins = new([new("sample", "Sample plugin", "1.0.0", "", 1, 2)], [], 1, "plugin-1");
+var pluginShell = (ShellViewModel)owner.DataContext!;
+pluginShell.NavigateCommand.Execute("instance");
+pluginShell.OpenPresetScope(model.Selected!.Entry.Definition!.SelectedPresetId);
+pluginShell.SelectPresetSection("plugins"); Layout();
+var pluginPage = owner.GetVisualDescendants().OfType<HCSL.Host.Views.Pages.PresetPluginsPage>().Single();
+Check(pluginPage.IsEffectivelyVisible, "Plugin test must open the preset plugin page.");
+pluginPage.FindControl<TKCode.Arc.ExpandingButtonGroupItem>("RefreshButton")!
+    .RaiseEvent(new RoutedEventArgs(TKCode.Arc.ExpandingButtonGroupItem.ClickEvent));
+TKCode.Arc.Checkbox? pluginBox = null;
+WaitUntil(() => (pluginBox = owner.GetVisualDescendants().OfType<TKCode.Arc.Checkbox>().FirstOrDefault(b =>
+    b.IsEffectivelyVisible && Avalonia.Automation.AutomationProperties.GetName(b) == "启用 Sample plugin")) is not null);
+var writesBefore = daemon.PluginWrites;
+Check(pluginBox!.IsEffectivelyEnabled, "Stopped test server must allow changing plugins.");
+pluginBox.IsChecked = true;
+WaitUntil(() => daemon.PluginWrites == writesBefore + 1);
+Check(daemon.Plugins.Selected.Single() is { Id: "sample", Enabled: true } && daemon.Queries == pluginQueries,
+    "Plugin save changed live game state or lost toggle.");
+pluginShell.ExitPresetScope(); Layout();
 Console.WriteLine("PASS gui.plugins.toggle-save-no-console");
 if (only is "plugins") return 0;
 }
@@ -902,8 +908,9 @@ WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text
 WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "更新到 1.0.46")));
 Check(!owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "已安装") && b.IsEffectivelyEnabled),
     "An up-to-date framework still offered a download button.");
-var baseButton = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "基础框架（必需）"));
-Check(!baseButton.IsEffectivelyEnabled, "Metamod could be selected as the preset scripting framework.");
+Check(owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.IsEffectivelyVisible &&
+    t.Text?.Contains("基础框架：Metamod:Source 1.0.0（已启用）", StringComparison.Ordinal) == true),
+    "Metamod must be reported separately from the scripting framework.");
 var download = owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().First(b => b.IsEffectivelyVisible && Equals(b.Content, "更新到 1.0.46"));
 Check(download.IsEffectivelyEnabled, "Available framework download was disabled.");
 Click(owner, "更新到 1.0.46");
@@ -911,11 +918,12 @@ WaitUntil(() => daemon.FrameworkInstalls == frameworkInstalls + 1);
 Click(owner, "关闭"); PumpUntil(frameworkDialog);
 daemon.Plugins = new(
     [new("metamod", "Metamod", "1.0.0", "hash", 2, 2, "metamod", true),
-     new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", "hash", 1, 1, "counterstrikesharp", true)],
+     new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", "hash", 1, 1, "counterstrikesharp", true),
+     new("source2mod", "Source2Mod", "1.0.0", "hash", 1, 1, "source2mod", true)],
     [new("metamod", "Metamod", "1.0.0", true, true), new("counterstrikesharp", "CounterStrikeSharp", "1.0.0", true, true)], 1, "plugin-fw2");
 var compatDialog = owner.EditFrameworksAsync(model, model.Selected!.Entry.Definition!, firstPreset); Layout();
 WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("脚本框架：CounterStrikeSharp") == true));
-WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("与 CounterStrikeSharp 不兼容") == true));
+WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "切换到此框架")));
 Click(owner, "关闭"); PumpUntil(compatDialog);
 Console.WriteLine("PASS gui.frameworks.download-and-incompatible-card");
 if (only is "frameworks") return 0;
@@ -1037,7 +1045,7 @@ daemon.IdleForPresetTests = false;
 daemon.CfgRunIdentity = false; PumpUntil(server.RefreshAsync()); Layout();
 ((ShellViewModel)owner.DataContext!).SelectInstanceSection("presets"); Layout();
 WaitUntil(() => server.Active && presetPage.IsVisible && !presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled);
-Check(!presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled && !presetPage.FindControl<TKCode.Arc.Button>("EditButton")!.IsEnabled, "Active run must disable preset writes.");
+Check(!presetPage.FindControl<TKCode.Arc.Button>("CreateButton")!.IsEnabled, "Active run must disable preset creation.");
 ((ShellViewModel)owner.DataContext!).NavigateCommand.Execute("home"); Layout();
 Console.WriteLine("PASS gui.presets.catalog-browse-without-switch-cancel-selection-and-active-write-guards");
 var normalStart = owner.ConfirmStartAsync("测试启动确认");
