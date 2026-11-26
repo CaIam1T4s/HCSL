@@ -470,7 +470,7 @@ public sealed class LocalPluginImporter : IPluginImporter
     private static string DetectId(List<SourceFile> files, string hint)
     {
         var paths = files.Select(f => f.RelativePath).ToArray();
-        foreach (var id in new[] { "source2mod", "sourcemod", "metamod" })
+        foreach (var id in new[] { "source2mod", "sourcemod", "metamod", "swiftlys2" })
             if (FrameworkRules.IsFrameworkPayload(id, paths)) return id;
         if (paths.Any(p => p.StartsWith("csgo/addons/cs2kz/", StringComparison.OrdinalIgnoreCase)) ||
             hint.StartsWith("cs2kz-", StringComparison.OrdinalIgnoreCase)) return "cs2kz";
@@ -501,6 +501,7 @@ public sealed class LocalPluginImporter : IPluginImporter
     private static string DetectName(string id, List<SourceFile> files, string hint)
     {
         if (id == "cs2kz") return "CS2KZ";
+        if (id == "swiftlys2") return "SwiftlyS2";
         if (id is "source2mod" or "sourcemod" or "metamod")
             return id switch { "source2mod" => "Source2Mod", "sourcemod" => "SourceMod", _ => "Metamod:Source" };
         var plugin = SubPluginName(files, id);

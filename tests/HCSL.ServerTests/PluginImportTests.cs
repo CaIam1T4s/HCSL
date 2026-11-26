@@ -23,6 +23,14 @@ public static class PluginImportTests
         File.WriteAllText(path, content);
     }
 
+    private static void CheckReceipt(PluginImportResult result, string id, string name, string version, string framework, string relativeFile)
+    {
+        Check(result.Package is { FrameworkPayload: false } package && package.Id == id && package.Name == name &&
+            package.Version == version && package.Framework == framework && !result.Enabled,
+            $"Unexpected library-only receipt for {id}: {result.Package}");
+        Check(File.Exists(Path.Combine(result.PackagePath, "files", relativeFile)), $"Missing imported file: {relativeFile}");
+    }
+
     public static void Run()
     {
         var root = Path.Combine(Path.GetTempPath(), "hcsl-import-" + Guid.NewGuid().ToString("N"));
@@ -98,11 +106,28 @@ public static class PluginImportTests
             Check(csgo.Warnings.Any(w => w.Contains("32-bit", StringComparison.Ordinal)), "32-bit binary warning missing.");
 
             // 5b) A CounterStrikeSharp sub-plugin must not claim the framework id.
-            var mz = Path.Combine(root, "matchzy");
+            var mz = Path.Combine(root, "matchzy-0.9.3");
             WriteFile(mz, "addons/counterstrikesharp/plugins/MatchZy/MatchZy.dll", "binary");
             WriteFile(mz, "addons/counterstrikesharp/gamedata/matchzy.json", "{}");
             var mzProbe = importer.Probe(workspace, new(mz));
             Check(mzProbe.Id == "matchzy" && mzProbe.Name == "MatchZy", "CSSharp sub-plugin was detected as the framework: " + mzProbe.Id + "/" + mzProbe.Name);
+            Check(mzProbe.Version == "0.9.3" && mzProbe.Framework == "counterstrikesharp", "CSSharp probe lost its version or framework.");
+            var mzImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, mz, mzProbe.Id, mzProbe.Name, mzProbe.Version));
+            CheckReceipt(mzImport, "matchzy", "MatchZy", "0.9.3", "counterstrikesharp", "csgo/addons/counterstrikesharp/plugins/MatchZy/MatchZy.dll");
+            var kz = Path.Combine(root, "cs2kz-linux-master-upgrade");
+            WriteFile(kz, "addons/metamod/cs2kz.vdf", "\"Plugin\" { \"file\" \"addons/cs2kz/bin/cs2kz\" }");
+            WriteFile(kz, "addons/cs2kz/bin/cs2kz.so", "binary");
+            WriteFile(kz, "cfg/cs2kz.cfg", "// preset config");
+            var kzProbe = importer.Probe(workspace, new(kz));
+            Check(kzProbe.Id == "cs2kz" && kzProbe.Name == "CS2KZ" && kzProbe.Version == "" && kzProbe.Framework == "metamod",
+                $"CS2KZ probe wrong: {kzProbe.Id}/{kzProbe.Name}/{kzProbe.Version}/{kzProbe.Framework}");
+            var kzCommand = new PluginImportCommand(Guid.Empty, Guid.Empty, kz, kzProbe.Id, kzProbe.Name, "0.0.200");
+            var kzImport = importer.Execute(workspace, kzCommand);
+            CheckReceipt(kzImport, "cs2kz", "CS2KZ", "0.0.200", "metamod", "csgo/addons/cs2kz/bin/cs2kz.so");
+            Check(!File.Exists(Path.Combine(kzImport.PackagePath, "files/csgo/cfg/cs2kz.cfg")), "Library-only import copied preset CFG into plugin payload.");
+            Reject("HCSL-PLUGIN-PACKAGE", () => importer.Execute(workspace, kzCommand with { Name = "Overwrite attempt" }));
+            Check(File.ReadAllText(Path.Combine(kzImport.PackagePath, "plugin.json")).Contains("CS2KZ", StringComparison.Ordinal),
+                "Duplicate import changed the existing package manifest.");
             var cssFramework = Path.Combine(root, "css");
             WriteFile(cssFramework, "addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so", "binary");
             WriteFile(cssFramework, "addons/counterstrikesharp/api/CounterStrikeSharp.API.dll", "binary");
@@ -118,6 +143,7 @@ public static class PluginImportTests
                 && swiftlyPluginProbe.Framework == "swiftlys2" && swiftlyPluginProbe.TargetRoot == "csgo/addons/swiftlys2/plugins",
                 "Swiftly plugin probe wrong: " + swiftlyPluginProbe.Id + "/" + swiftlyPluginProbe.Version + "/" + swiftlyPluginProbe.Framework);
             var swiftlyPluginImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, swiftlyPlugin, "hanairdrops2", "HanAirDropS2", "1.0.0"));
+            CheckReceipt(swiftlyPluginImport, "hanairdrops2", "HanAirDropS2", "1.0.0", "swiftlys2", "csgo/addons/swiftlys2/plugins/HanAirDropS2/HanAirDropS2.dll");
             Check(swiftlyPluginImport.CurrentPlatformSupported, "Swiftly managed plugin was treated as unsupported.");
             Check(File.Exists(Path.Combine(swiftlyPluginImport.PackagePath, "files", "csgo", "addons", "swiftlys2", "plugins", "HanAirDropS2", "HanAirDropS2.dll")),
                 "Swiftly plugin was not wrapped under plugins/<Id>/.");
@@ -130,6 +156,7 @@ public static class PluginImportTests
             Check(joinProbe.Id == "joinsound" && joinProbe.Framework == "modsharp" && joinProbe.TargetRoot == "sharp/modules",
                 "ModSharp plugin probe wrong: " + joinProbe.Id + "/" + joinProbe.Framework + "/" + joinProbe.TargetRoot);
             var joinImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, joinSound, "joinsound", "JoinSound", "1.2"));
+            CheckReceipt(joinImport, "joinsound", joinProbe.Name, joinProbe.Version, "modsharp", "sharp/modules/JoinSound/JoinSound.dll");
             Check(joinImport.Framework == "modsharp" && File.Exists(Path.Combine(joinImport.PackagePath, "files", "sharp", "modules", "JoinSound", "JoinSound.dll")),
                 "ModSharp plugin was not wrapped under sharp/modules/<Id>/.");
             var unknownManaged = Path.Combine(root, "unknown-managed");
@@ -171,8 +198,9 @@ public static class PluginImportTests
             var smx = Path.Combine(root, "sp_sample.smx");
             File.WriteAllText(smx, "SourcePawn binary");
             var smxProbe = importer.Probe(workspace, new(smx));
-            Check(smxProbe.Kind == "file" && smxProbe.Id == "sp_sample", ".smx probe did not produce a file package.");
+            Check(smxProbe.Kind == "file" && smxProbe.Id == "sp_sample" && smxProbe.Framework == "source2mod", ".smx probe did not produce a file package.");
             var smxImport = importer.Execute(workspace, new(Guid.Empty, Guid.Empty, smx, "sp_sample", "sp_sample", "1.0.0"));
+            CheckReceipt(smxImport, smxProbe.Id, smxProbe.Name, smxProbe.Version, "source2mod", "csgo/addons/source2mod/plugins/sp_sample.smx");
             Check(smxImport.CurrentPlatformSupported && File.Exists(Path.Combine(smxImport.PackagePath, "files", "csgo", "addons", "source2mod", "plugins", "sp_sample.smx")),
                 ".smx was not stored under source2mod/plugins.");
 

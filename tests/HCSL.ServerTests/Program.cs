@@ -40,6 +40,13 @@ if (only is null or "cfg")
     if (only is "cfg") { Console.WriteLine("PASS only cfg"); return 0; }
 }
 
+if (only is "plugin-import")
+{
+    HCSL.ServerTests.PluginImportTests.Run();
+    Console.WriteLine("PASS only plugin-import");
+    return 0;
+}
+
 if (only is null or "plugins")
 {
     HCSL.ServerTests.PluginTests.Run();

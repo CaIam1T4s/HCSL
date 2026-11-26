@@ -342,7 +342,9 @@ public static class FrameworkRules
             if (paths.Any(p => p.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return definition.Id;
             if (definition.Id == "modsharp" && paths.Any(p => p.StartsWith("sharp/", StringComparison.OrdinalIgnoreCase))) return "modsharp";
         }
-        if (paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase))) return "metamod";
+        if (paths.Any(p => p.StartsWith("csgo/addons/metamod/bin/", StringComparison.OrdinalIgnoreCase) ||
+            (Path.GetDirectoryName(p)?.Replace('\\', '/')?.Equals("csgo/addons/metamod", StringComparison.OrdinalIgnoreCase) == true &&
+             p.EndsWith(".vdf", StringComparison.OrdinalIgnoreCase)))) return "metamod";
         return null;
     }
 
