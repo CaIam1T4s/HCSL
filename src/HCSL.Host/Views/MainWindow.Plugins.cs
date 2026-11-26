@@ -38,7 +38,9 @@ public partial class MainWindow
             Action? MetadataChanged = null;
             var id = Metadata("ID", preview.Id);
             var name = Metadata("名称", preview.Name);
-            var version = Metadata("版本", preview.Version);
+            var version = Metadata("版本", preview.Version, isVersion: true);
+            bool VersionValid() => !string.IsNullOrWhiteSpace(preview.Version) ||
+                System.Text.RegularExpressions.Regex.IsMatch(version(), @"\A[0-9]+(?:\.[0-9]+)+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?(?:\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?\z");
             Select? framework = null;
             if (preview.TargetRoot is not null && preview.ManagedFramework is ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous)
             {
@@ -61,7 +63,7 @@ public partial class MainWindow
                 AddAction("取消", 0, false);
                 var submit = AddAction("导入", 2, true);
                 void UpdateSubmit() => submit.IsEnabled = !new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace)
-                    && (framework is null || framework.SelectedIndex > 0);
+                    && VersionValid() && (framework is null || framework.SelectedIndex > 0);
                 MetadataChanged += UpdateSubmit;
                 if (framework is not null) framework.SelectionChanged += (_, _) => UpdateSubmit();
                 UpdateSubmit();
@@ -106,18 +108,20 @@ public partial class MainWindow
                 }
             }
 
-            Func<string> Metadata(string label, string value)
+            Func<string> Metadata(string label, string value, bool isVersion = false)
             {
                 if (!string.IsNullOrWhiteSpace(value))
                 {
                     AddRow(label, Value(value));
                     return () => value;
                 }
-                var input = new Input { Size = ControlSize.Small, Width = 136,
+                var input = new Input { Size = ControlSize.Small, Width = 136, MaxLength = isVersion ? 64 : 0,
+                    Placeholder = isVersion ? "例如 1.2.3" : null,
                     TextAlignment = Avalonia.Media.TextAlignment.Left, IsVisible = false };
                 Avalonia.Automation.AutomationProperties.SetName(input, label);
                 input.TextChanged += (_, _) => MetadataChanged?.Invoke();
-                var fill = new TKCode.Arc.Button { Content = "填写" + label, Variant = ButtonVariant.Ghost, Size = ControlSize.Small };
+                var fill = new TKCode.Arc.Button { Content = "填写" + label, Variant = ButtonVariant.Secondary, Size = ControlSize.Small };
+                fill.Classes.Add("dialog-secondary");
                 fill.Click += (_, _) =>
                 {
                     fill.IsVisible = false;

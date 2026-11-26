@@ -254,13 +254,16 @@ public partial class PresetPluginsPage : UserControl
 
     private async void Refresh(object? sender, RoutedEventArgs e) { if (!editing) await LoadAsync(); }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool keepRows = false)
     {
         var ticket = ++generation;
         ManageButton.IsEnabled = false;
-        snapshot = null;
-        rows = [];
-        ApplyFilter();
+        if (!keepRows)
+        {
+            snapshot = null;
+            rows = [];
+            ApplyFilter();
+        }
         if (Scope() is not { } scope) return;
         bool Current() => ticket == generation && Scope()?.Preset.Id == scope.Preset.Id;
         if (scope.Model.PendingPluginSelectionSave is { } pending) await pending;
@@ -420,15 +423,13 @@ public partial class PresetPluginsPage : UserControl
             if (imported is not null && Scope()?.Preset.Id == scope.Preset.Id)
             {
                 refresh = true;
-                frameworkFilter = stateFilter = null;
-                Search.Text = imported.Id;
             }
         }
         finally
         {
             editing = false;
             ManageButton.IsEnabled = Scope()?.Model.Server.Connected == true;
-            if (refresh && IsVisible) await LoadAsync();
+            if (refresh && IsVisible) await LoadAsync(keepRows: true);
         }
     }
 }
