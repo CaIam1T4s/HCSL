@@ -47,23 +47,26 @@ public static class PluginTests
             Check(withBroken.Available.Length == 1 && withBroken.Rejected is { Length: 1 } rejected
                 && rejected[0].Id == "broken" && rejected[0].Version == "0.1.0" && rejected[0].Code == "HCSL-PLUGIN-PACKAGE", "Invalid package was not reported.");
             Directory.Delete(Path.Combine(workspace.LibraryRoot, "plugin-packages", "broken"), true);
-            // Legacy managed package imported before deps.json classification: list-time migration moves it once.
+            // Listing is read-only; the explicit save path migrates legacy managed packages.
             var legacyManaged = Path.Combine(workspace.LibraryRoot, "plugin-packages", "joinsound", "1.0.0");
             Directory.CreateDirectory(Path.Combine(legacyManaged, "files", "csgo", "addons", "swiftlys2", "plugins", "JoinSound"));
             File.WriteAllText(Path.Combine(legacyManaged, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"joinsound\",\"Name\":\"JoinSound\",\"Version\":\"1.0.0\"}");
             File.WriteAllText(Path.Combine(legacyManaged, "files", "csgo", "addons", "swiftlys2", "plugins", "JoinSound", "JoinSound.dll"), "managed");
             File.WriteAllText(Path.Combine(legacyManaged, "files", "csgo", "addons", "swiftlys2", "plugins", "JoinSound", "JoinSound.deps.json"),
                 "{\"targets\":{\".NETCoreApp,Version=v9.0\":{\"JoinSound/1.0.0\":{\"dependencies\":{\"ModSharp.Sharp.Shared\":\"2.0.4\"}}}}}");
-            var migrated = store.Execute(workspace, Read());
+            var listed = store.Execute(workspace, Read());
+            Check(listed.Available.Single(a => a.Id == "joinsound").Category == PluginCategory.SwiftlyS2 &&
+                File.Exists(Path.Combine(legacyManaged, "files/csgo/addons/swiftlys2/plugins/JoinSound/JoinSound.dll")),
+                "Read-only list changed or lost the legacy package.");
+            var command = new PluginCommand(PluginAction.Save, d.Id, p.Id, d.Revision, empty.Hash,
+                [new("metamod", "1.2.3", true)]);
+            var saved = store.Execute(workspace, command);
             Check(File.Exists(Path.Combine(legacyManaged, "files", "sharp", "modules", "JoinSound", "JoinSound.dll")),
                 "Legacy managed package was not migrated to its framework directory.");
             Check(!File.Exists(Path.Combine(legacyManaged, "files", "csgo", "addons", "swiftlys2", "plugins", "JoinSound", "JoinSound.dll")),
                 "Legacy managed package stayed in the wrong framework directory.");
-            Check(migrated.Available.Single(a => a.Id == "joinsound").Category == PluginCategory.ModSharp,
+            Check(saved.Available.Single(a => a.Id == "joinsound").Category == PluginCategory.ModSharp,
                 "Migrated package category was not refreshed.");
-            var command = new PluginCommand(PluginAction.Save, d.Id, p.Id, d.Revision, empty.Hash,
-                [new("metamod", "1.2.3", true)]);
-            var saved = store.Execute(workspace, command);
             Check(saved.Selected.Length == 1 && saved.Selected[0].Available && saved.Selected[0].Enabled && saved.Revision == 1, "Save selection.");
             Check(JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(Path.Combine(workspace.DataRoot, "instances", d.Id.ToString("D"), "presets", p.Id.ToString("D"), "plugins.json")))!.Plugins.Length == 1, "Manifest not persisted.");
             Reject(() => store.Execute(workspace, command), "HCSL-PLUGIN-CONFLICT");
