@@ -413,15 +413,22 @@ public partial class PresetPluginsPage : UserControl
         if (editing || Scope() is not { } scope || Owner is not { } owner) return;
         editing = true;
         ManageButton.IsEnabled = false;
+        var refresh = false;
         try
         {
             var imported = await owner.ImportPluginToLibraryAsync(scope.Model, scope.Instance, scope.Preset);
             if (imported is not null && Scope()?.Preset.Id == scope.Preset.Id)
             {
+                refresh = true;
                 frameworkFilter = stateFilter = null;
                 Search.Text = imported.Id;
             }
         }
-        finally { editing = false; if (IsVisible) await LoadAsync(); }
+        finally
+        {
+            editing = false;
+            ManageButton.IsEnabled = Scope()?.Model.Server.Connected == true;
+            if (refresh && IsVisible) await LoadAsync();
+        }
     }
 }

@@ -22,7 +22,7 @@ public partial class MainWindow
             var path = files[0].TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path))
             {
-                if (await ChooseAsync("无法读取插件包", "请选择本地文件。", "取消", "更换文件") == 1) continue;
+                ShowInstanceNotification("无法读取插件包", "请选择本地文件。");
                 return null;
             }
 
@@ -30,21 +30,19 @@ public partial class MainWindow
             try { preview = await model.ProbePluginImportAsync(path); }
             catch (Exception ex) when (ex is IOException or InstanceException)
             {
-                if (await ChooseAsync("无法读取插件包", ex.Message, "取消", "更换文件") == 1) continue;
+                ShowInstanceNotification("无法读取插件包", ex.Message);
                 return null;
             }
 
             var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(new TextBlock { Text = Path.GetFileName(path), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             var id = Metadata("ID", preview.Id);
             var name = Metadata("名称", preview.Name);
             var version = Metadata("版本", preview.Version);
             Select? framework = null;
             if (preview.TargetRoot is not null && preview.ManagedFramework is ManagedPluginFramework.Unknown or ManagedPluginFramework.Ambiguous)
             {
-                body.Children.Add(new TextBlock { Text = "无法识别所需框架，请选择：" });
                 framework = new Select { ItemsSource = new[] { "请选择框架", "SwiftlyS2", "ModSharp" }, SelectedIndex = 0 };
-                body.Children.Add(framework);
+                AddRow("所需框架", framework);
             }
             else
             {
@@ -52,32 +50,28 @@ public partial class MainWindow
                 var dependency = required is null ? null : FrameworkRules.Find(required)?.Requires;
                 var description = required is null ? "未识别" : PluginPresentation.FrameworkLabel(required);
                 if (dependency is not null) description += "、" + PluginPresentation.FrameworkLabel(dependency);
-                body.Children.Add(new TextBlock { Text = "所需框架：" + description, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                AddRow("所需框架", Value(description));
             }
-            body.Children.Add(new TextBlock { Text = "插件库由所有预设共享。导入不会启用插件或修改当前预设。",
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+
             var warnings = preview.Warnings.Where(w => !w.StartsWith("This is a Source2Mod sub-plugin;", StringComparison.Ordinal)).ToArray();
             if (warnings.Length > 0)
                 body.Children.Add(new TextBlock { Text = string.Join("\n", warnings), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-            var feedback = new TextBlock { TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-            body.Children.Add(feedback);
             while (true)
             {
                 var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
                 actions.Classes.Add("dialog-actions");
                 AddAction("取消", 0, false);
-                AddAction("更换文件", 1, false);
-                AddAction("导入到插件库", 2, true);
+                AddAction("导入", 2, true);
                 var dialog = new Dialog
                 {
                     Title = "导入插件",
+                    Description = Path.GetFileName(path),
                     Content = new ScrollViewer { Content = body, MaxHeight = 360 },
                     Actions = actions
                 };
                 var choice = await dialog.ShowAsync(this);
                 ((ScrollViewer)dialog.Content).Content = null;
-                if (choice is 1) break;
                 if (choice is not 2) return null;
 
                 void AddAction(string label, int result, bool primary)
@@ -90,8 +84,8 @@ public partial class MainWindow
                 var frameworkId = framework is null ? preview.Framework : framework.SelectedIndex switch { 1 => "swiftlys2", 2 => "modsharp", _ => null };
                 if (framework is not null && frameworkId is null || new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace))
                 {
-                    feedback.Text = "请补全插件信息并选择所需框架。";
-                    continue;
+                    ShowInstanceNotification("无法导入插件", "请补全插件信息并选择所需框架。");
+                    return null;
                 }
                 try
                 {
@@ -104,7 +98,8 @@ public partial class MainWindow
                 }
                 catch (Exception ex) when (ex is IOException or InstanceException)
                 {
-                    feedback.Text = "导入失败：" + ex.Message;
+                    ShowInstanceNotification("导入失败", ex.Message);
+                    return null;
                 }
             }
 
@@ -112,13 +107,25 @@ public partial class MainWindow
             {
                 if (!string.IsNullOrWhiteSpace(value))
                 {
-                    body.Children.Add(new TextBlock { Text = $"{label}：{value}", TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+                    AddRow(label, Value(value));
                     return () => value;
                 }
-                body.Children.Add(new TextBlock { Text = label });
                 var input = new Input();
-                body.Children.Add(input);
+                AddRow(label, input);
                 return () => (input.Text ?? "").Trim();
+            }
+
+            static TextBlock Value(string value) => new() { Text = value, TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                TextAlignment = Avalonia.Media.TextAlignment.Right };
+
+            void AddRow(string label, Control value)
+            {
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 16 };
+                row.Children.Add(new TextBlock { Text = label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
+                value.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+                Grid.SetColumn(value, 1);
+                row.Children.Add(value);
+                body.Children.Add(row);
             }
         }
     }
