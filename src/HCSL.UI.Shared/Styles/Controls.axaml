@@ -26,8 +26,8 @@
               <controls:BackgroundScene Name="PART_WindowBackdrop"
                   ImageSource="{Binding (controls:WindowBackdrop.ImageSource), RelativeSource={RelativeSource TemplatedParent}}"
                   Strength="{Binding (controls:WindowBackdrop.Strength), RelativeSource={RelativeSource TemplatedParent}}"/>
-              <controls:LShapedFrostedChrome Name="PART_ShellChrome" Source="{Binding #PART_WindowBackdrop}"
-                  TitleBarHeight="{Binding #PART_TitleBarPresenter.Bounds.Height}"
+              <controls:LShapedFrostedChrome Name="PART_ShellChrome" Source="{CompiledBinding #PART_WindowBackdrop}"
+                  TitleBarHeight="{CompiledBinding #PART_TitleBarPresenter.Bounds.Height}"
                   IsTitleBarVisible="{TemplateBinding IsTitleBarVisible}"/>
               <VisualLayerManager Name="PART_VisualLayerManager" EnableOverlayLayer="True">
                 <Grid RowDefinitions="Auto,*">
