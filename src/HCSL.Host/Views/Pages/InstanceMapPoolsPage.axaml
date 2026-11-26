@@ -30,7 +30,13 @@
       <arc:Table x:Name="PoolChoices" Caption="图池列表" IsSelectable="False"
                  EmptyMessage="暂无图池" LoadingMessage="正在读取图池">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="图池名" x:DataType="vm:MapPoolRow" Binding="{CompiledBinding Name}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="图池名" Width="*" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="vm:MapPoolRow">
+                <TextBlock Text="{CompiledBinding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
           <arc:DataTableColumn Header="地图数量" Width="112" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="vm:MapPoolRow">

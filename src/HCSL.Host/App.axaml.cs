@@ -23,28 +23,32 @@ public partial class App : Avalonia.Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var steamCmd = new SteamCmdController(new DaemonClient(), action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper());
+            var smoke = desktop.Args is ["--package-smoke"] ? new PackageTableSmoke() : null;
+            var bootstrapper = new DaemonBootstrapper(smoke?.Pipe);
+            IDaemonClient daemon = smoke is null ? new DaemonClient() : smoke;
+            var steamCmd = new SteamCmdController(daemon, action => Dispatcher.UIThread.Post(action), bootstrapper);
             HCSL.Application.Diagnostics.DiagnosticsLog.Configure(
                 System.IO.Path.Combine(HCSL.Infrastructure.Storage.LocalPaths.Defaults().DataRoot, "logs"), "host.log");
             HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "start pid=" + Environment.ProcessId + " v" + ProductVersion.Current);
-            var daemon = new DaemonClient();
             var baseline = new BaselineController(new BaselineClient(daemon,
                 () => new(steamCmd.SettingsRoot, steamCmd.DataRoot, steamCmd.LibraryRoot)));
             var servers = new HostServerController(
-                new ServerController(daemon, action => Dispatcher.UIThread.Post(action), new DaemonBootstrapper()),
+                new ServerController(daemon, action => Dispatcher.UIThread.Post(action), bootstrapper),
                 new InstanceClient(daemon), new HCSL.Infrastructure.Storage.LocalDirectoryOpener(), daemon);
             desktop.Exit += (_, _) =>
             {
                 HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "exit");
-                servers.Dispose(); steamCmd.Dispose(); baseline.Dispose();
+                servers.Dispose(); steamCmd.Dispose(); baseline.Dispose(); smoke?.Dispose();
             };
             desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers, baseline) };
-            if (desktop.Args is ["--package-smoke"])
+            if (smoke is not null)
                 desktop.MainWindow.Opened += async (_, _) =>
                 {
                     try
                     {
-                        await CheckPackagedDaemonAsync();
+                        await bootstrapper.EnsureRunningAsync();
+                        await CheckPackagedDaemonAsync(smoke);
+                        await smoke.CheckTablesAsync(desktop.MainWindow!, servers);
                         desktop.Shutdown(0);
                     }
                     catch (Exception error)
@@ -60,11 +64,8 @@ public partial class App : Avalonia.Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static async Task CheckPackagedDaemonAsync()
+    private static async Task CheckPackagedDaemonAsync(IDaemonClient client)
     {
-        var pipe = $"hcsl-package-smoke-{Guid.NewGuid():N}";
-        await new DaemonBootstrapper(pipe).EnsureRunningAsync();
-        var client = new DaemonClient(pipe);
         using var steam = new SteamCmdController(client, action => action());
         await steam.ConnectAsync();
         await steam.RefreshContentStatusAsync();

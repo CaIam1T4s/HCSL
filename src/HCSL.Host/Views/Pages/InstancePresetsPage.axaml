@@ -17,8 +17,20 @@
       <arc:Table x:Name="PresetChoices" Caption="预设列表" IsSelectable="False"
                  EmptyMessage="暂无预设" LoadingMessage="正在读取预设">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="预设名" x:DataType="frontend:HostPresetItem" Binding="{CompiledBinding Definition.Name}" Width="*" IsSortable="False"/>
-          <arc:DataTableColumn Header="地图" x:DataType="frontend:HostPresetItem" Binding="{CompiledBinding Definition.Map}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="预设名" Width="*" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="frontend:HostPresetItem">
+                <TextBlock Text="{CompiledBinding Definition.Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
+          <arc:DataTableColumn Header="地图" Width="*" IsSortable="False">
+            <arc:DataTableColumn.CellTemplate>
+              <DataTemplate x:DataType="frontend:HostPresetItem">
+                <TextBlock Text="{CompiledBinding Definition.Map}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </arc:DataTableColumn.CellTemplate>
+          </arc:DataTableColumn>
           <arc:DataTableColumn Header="状态" Width="112" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="frontend:HostPresetItem">
