@@ -102,13 +102,27 @@ public partial class InstanceContentPage : UserControl
             var current = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id, PackageMetadataOnly: true));
             var selected = current.Selected.FirstOrDefault(p => p.Id == row.Framework.Id && p.Enabled);
             if (selected?.Version != row.PresetVersion || Scope() != scope) return;
-            var next = current.Selected.Select(p => new PluginSelection(p.Id, p.Version, p.Enabled && p.Id != row.Framework.Id)).ToArray();
-            // Do not silently disable dependent plugins or frameworks.
-            FrameworkRules.ValidateSelections(next.Where(p => p.Enabled).Select(p =>
+            var disabled = new HashSet<string>(StringComparer.Ordinal) { row.Framework.Id };
+            var dependents = new List<string>();
+            bool changed;
+            do
             {
-                var package = current.Available.FirstOrDefault(a => a.Id == p.Id && a.Version == p.Version);
-                return new FrameworkRules.SelectedFramework(p.Id, package?.Framework, package?.FrameworkPayload ?? false);
-            }));
+                changed = false;
+                foreach (var entry in current.Selected.Where(p => p.Enabled))
+                {
+                    var required = FrameworkRules.Find(entry.Id)?.Requires ?? current.Available
+                        .FirstOrDefault(a => a.Id == entry.Id && a.Version == entry.Version)?.Framework;
+                    if (required is not null && disabled.Contains(required) && disabled.Add(entry.Id))
+                    {
+                        dependents.Add(entry.Name ?? entry.Id);
+                        changed = true;
+                    }
+                }
+            } while (changed);
+            if (dependents.Count > 0 && await owner.ChooseAsync("停用框架",
+                $"停用 {row.Name} 也需要停用：{string.Join("、", dependents)}。不会删除共享插件包。", "取消", "一并停用") != 1) return;
+            if (Scope() != scope) return;
+            var next = current.Selected.Select(p => new PluginSelection(p.Id, p.Version, p.Enabled && !disabled.Contains(p.Id))).ToArray();
             await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
                 scope.Instance.Revision, current.Hash, next, PackageMetadataOnly: true));
         }
