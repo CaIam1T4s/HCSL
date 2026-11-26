@@ -138,9 +138,15 @@ public partial class InstanceContentPage : UserControl
         var table = new Table { Caption = "将一并停用的依赖项", IsSelectable = false,
             ItemsSource = dependents, Height = Math.Clamp(56 + 56 * dependents.Count, 180, 300) };
         // Keep both columns in the same row inside the dialog, below Arc's default compact breakpoint.
-        if (typeof(Table).GetField("CompactBreakpointProperty", System.Reflection.BindingFlags.Static |
-            System.Reflection.BindingFlags.NonPublic)?.GetValue(null) is Avalonia.StyledProperty<double> breakpoint)
-            table.SetValue(breakpoint, 0);
+        SetTableWidthToken("CompactBreakpointProperty");
+        SetTableWidthToken("MinTableWidthProperty");
+
+        void SetTableWidthToken(string field)
+        {
+            if (typeof(Table).GetField(field, System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.NonPublic)?.GetValue(null) is Avalonia.StyledProperty<double> property)
+                table.SetValue(property, 0d);
+        }
         AddColumn("插件 / 框架", new GridLength(1, GridUnitType.Star), item => item.Name ?? item.Id);
         AddColumn("版本", new GridLength(112), item => item.Version, right: true);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
