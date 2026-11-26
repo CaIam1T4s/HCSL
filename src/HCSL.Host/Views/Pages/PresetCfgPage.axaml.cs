@@ -9,6 +9,7 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Host.ViewModels;
 using TKCode.Arc;
+using TKCode.Arc.Icons.Lucide;
 
 namespace HCSL.Host.Views.Pages;
 
@@ -25,14 +26,10 @@ public partial class PresetCfgPage : UserControl
     public PresetCfgPage()
     {
         InitializeComponent();
+        RefreshButton.Icon = Lucide.Geometry(LucideIconKind.RefreshCw);
+        SyncButton.Icon = Lucide.Geometry(LucideIconKind.Download);
         TreeTableHeaderAlignment.Attach(CfgTree);
-        // Arc 1.1 keeps its row type internal. Override only the CFG table's selected row fill;
-        // its checkbox and selection toolbar still show which files are selected.
-        if (typeof(TreeTable).Assembly.GetType("TKCode.Arc.TreeTableRow") is { } rowType)
-            CfgTree.Styles.Add(new Style(selector => selector.OfType(rowType).Class(":selected"))
-            {
-                Setters = { new Setter(Panel.BackgroundProperty, Brushes.Transparent) }
-            });
+        SuppressSelectionFill(CfgTree);
         CfgTree.KeySelector = item => ((Node)item).Path;
         CfgTree.RowLabelSelector = item => ((Node)item).File.Name;
         CfgTree.ChildrenSelector = item => ((Node)item).Children;
@@ -113,37 +110,71 @@ public partial class PresetCfgPage : UserControl
             var result = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id, PackageMetadataOnly: true));
             var enabled = result.Selected.Where(p => p.Enabled && p.Available).Select(p => new PluginSelection(p.Id, p.Version)).ToArray();
             var preview = await model.PreviewPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabled, []);
-            var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(new TextBlock { Text = $"新增 {preview.Import.Length} 个 · 相同 {preview.Identical.Length} 个 · 冲突 {preview.Conflicts.Length} 个" });
-            foreach (var file in preview.Import) body.Children.Add(new TextBlock { Text = file.Path, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-            var conflicts = preview.Conflicts.Select(file => (file.Path, Box: new TKCode.Arc.Checkbox
-                { Content = "覆盖 " + file.Path, IsChecked = false })).ToArray();
-            foreach (var conflict in conflicts) body.Children.Add(conflict.Box);
+            string[] overwrite = [];
+            if (preview.Conflicts.Length != 0)
+            {
+                var chosen = await ChooseCfgOverwritesAsync(preview, model.CanEditPlugins);
+                if (chosen is null) return;
+                overwrite = chosen;
+            }
+            if (!IsVisible || Scope() != scope) return;
+            if (preview.Import.Length == 0 && overwrite.Length == 0 || !model.CanEditPlugins)
+            {
+                owner.ShowInstanceNotification("新增 0 个 CFG", model.CanEditPlugins ? null : "当前预设不可写，未同步。", ToastKind.Info);
+                return;
+            }
+            var latest = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id, PackageMetadataOnly: true));
+            if (latest.Hash != result.Hash) throw new IOException("插件启用列表已变化，请重新预览。");
+            if (!IsVisible || Scope() != scope) return;
+            var applied = await model.ApplyPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabled, overwrite);
+            owner.ShowInstanceNotification($"新增 {applied.Imported} 个 CFG",
+                applied.Overwritten > 0 ? $"覆盖 {applied.Overwritten} 个 CFG。" : null, ToastKind.Info);
+            if (Scope() == scope && applied.Imported + applied.Overwritten > 0) await LoadAsync();
+        }
+        catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
+        { owner.ShowInstanceNotification("无法同步插件 CFG", ex.Message); }
+        finally { syncingPlugins = false; }
+    }
+
+    private async Task<string[]?> ChooseCfgOverwritesAsync(PluginCfgPreview preview, bool writable)
+    {
+            var conflicts = new TreeTable { Caption = "有冲突的 CFG", IsSelectable = writable,
+                ItemsSource = preview.Conflicts.DistinctBy(file => file.Path, StringComparer.OrdinalIgnoreCase).ToArray(),
+                KeySelector = item => ((PluginCfgEntry)item).Path, RowLabelSelector = item => ((PluginCfgEntry)item).Path,
+                Height = 240 };
+            conflicts.Columns.Add(TreeTableColumn.Create<PluginCfgEntry>("路径", file => file.Path));
+            conflicts.Columns.Add(new TreeTableColumn { Header = "插件", Width = new GridLength(110),
+                ValueSelector = item => ((PluginCfgEntry)item).PluginId });
+            SuppressSelectionFill(conflicts);
             var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
             actions.Classes.Add("dialog-actions");
             var cancel = new TKCode.Arc.Button { Content = "关闭", Variant = ButtonVariant.Secondary };
             Dialog.SetResult(cancel, false);
             actions.Children.Add(cancel);
-            if (model.CanEditPlugins && (preview.Import.Length > 0 || conflicts.Length > 0))
+            if (writable)
             {
                 var apply = new TKCode.Arc.Button { Content = "同步", Variant = ButtonVariant.Primary };
                 apply.Classes.Add("dialog-primary");
                 Dialog.SetResult(apply, true);
                 actions.Children.Add(apply);
+                apply.IsEnabled = preview.Import.Length > 0;
+                conflicts.SelectionChanged += (_, e) => apply.IsEnabled = preview.Import.Length > 0 || e.SelectedItems.Any();
             }
-            var dialog = new Dialog { Title = "从插件同步 CFG", Content = new ScrollViewer { Content = body, MaxHeight = 360 }, Actions = actions };
-            if (await dialog.ShowAsync(this) is not true || Scope() is not { } active || active != scope) return;
-            var latest = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id, PackageMetadataOnly: true));
-            if (latest.Hash != result.Hash) throw new IOException("插件启用列表已变化，请重新预览。");
-            var applied = await model.ApplyPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabled,
-                conflicts.Where(c => c.Box.IsChecked == true).Select(c => c.Path).ToArray());
-            owner.ShowInstanceNotification("CFG 同步完成", $"新增 {applied.Imported} 个，覆盖 {applied.Overwritten} 个。", ToastKind.Success);
-            if (Scope() == scope) await LoadAsync();
-        }
-        catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
-        { owner.ShowInstanceNotification("无法同步插件 CFG", ex.Message); }
-        finally { syncingPlugins = false; }
+            var dialog = new Dialog { Title = "选择要覆盖的 CFG", Size = ControlSize.Large,
+                Description = writable ? $"新增 {preview.Import.Length} 个；勾选要覆盖的冲突文件。" : "当前预设不可写，仅供查看。",
+                Content = conflicts, Actions = actions };
+            return await dialog.ShowAsync(this) is true ? conflicts.SelectedKeys.OfType<string>().ToArray() : null;
+    }
+
+    private static void SuppressSelectionFill(TreeTable table)
+    {
+        // Arc 1.1 keeps its row type internal; preserve the check mark without the accent fill.
+        if (typeof(TreeTable).Assembly.GetType("TKCode.Arc.TreeTableRow") is { } rowType)
+            table.Styles.Add(new Style(selector => selector.OfType(rowType).Class(":selected"))
+            {
+                Setters = { new Setter(Panel.BackgroundProperty, Brushes.Transparent) }
+            });
     }
 
     private async void Refresh(object? sender, RoutedEventArgs e) => await LoadAsync();
