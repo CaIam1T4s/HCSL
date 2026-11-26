@@ -33,7 +33,7 @@ public sealed record PluginImportPreview(string SourcePath, string Kind, string 
 /// <summary>Result of an import. Warnings are advisory; the package is already written when this is returned.</summary>
 public sealed record PluginImportResult(string PackagePath, string Id, string Version, int Files, long Bytes,
     bool CurrentPlatformSupported, string[] Warnings, bool Enabled, int ImportedCfg = 0, int KeptCfg = 0,
-    string? Framework = null);
+    string? Framework = null, PluginPackageInfo? Package = null);
 
 /// <summary>A validated package available under &lt;library&gt;/plugin-packages.</summary>
 public sealed record PluginPackageInfo(string Id, string Name, string Version, [property: JsonIgnore] string Hash, int Files, long Bytes,

@@ -466,13 +466,26 @@ public partial class PresetPluginsPage : UserControl
         editing = true;
         ManageButton.IsEnabled = false;
         var refresh = false;
+        var ticket = generation;
         try
         {
             var imported = await owner.ImportPluginToLibraryAsync(scope.Model, scope.Instance, scope.Preset);
-            if (imported is not null && Scope()?.Preset.Id == scope.Preset.Id)
+            if (imported is null || !IsVisible || Scope() is not { } active ||
+                (active.Model, active.Instance.Id, active.Preset.Id) != (scope.Model, scope.Instance.Id, scope.Preset.Id)) return;
+            if (ticket != generation || imported.Package is not { } package || snapshot is not { } current)
             {
                 refresh = true;
+                return;
             }
+            var alreadyListed = current.Available.Any(p => p.Id == package.Id && p.Version == package.Version);
+            Render(current with
+            {
+                Available = [.. current.Available.Where(p => p.Id != package.Id || p.Version != package.Version), package],
+                Selected = current.Selected.Select(p => p.Id == package.Id && p.Version == package.Version
+                    ? p with { Name = package.Name, Available = true, Error = null } : p).ToArray(),
+                Rejected = current.Rejected?.Where(p => p.Id != package.Id || p.Version != package.Version).ToArray(),
+                AvailableTotal = current.AvailableTotal + (alreadyListed ? 0 : 1)
+            });
         }
         finally
         {

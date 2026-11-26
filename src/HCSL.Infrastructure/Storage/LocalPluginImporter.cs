@@ -180,8 +180,14 @@ public sealed class LocalPluginImporter : IPluginImporter
         allFiles.AddRange(generated);
         var supported = CurrentPlatform(allFiles);
         if (!supported) warnings.Insert(0, "The package has no binary for this platform (" + (OperatingSystem.IsWindows() ? "Windows" : "Linux") + ").");
+        var bytes = allFiles.Sum(f => f.Bytes);
+        var paths = allFiles.Select(f => f.RelativePath).ToArray();
+        var packageFramework = FrameworkRules.Resolve(paths);
+        var frameworkPayload = FrameworkRules.IsFrameworkPayload(packageFramework, paths);
+        var package = new PluginPackageInfo(command.Id, name, command.Version, "", allFiles.Count, bytes,
+            packageFramework, frameworkPayload, FrameworkRules.CategoryFor(packageFramework, frameworkPayload));
         return new(Path.Combine(workspace.LibraryRoot, "plugin-packages", command.Id, command.Version),
-            command.Id, command.Version, allFiles.Count, allFiles.Sum(f => f.Bytes), supported, [.. warnings], enabled, importedCfg, keptCfg, framework);
+            command.Id, command.Version, allFiles.Count, bytes, supported, [.. warnings], enabled, importedCfg, keptCfg, framework, package);
     }
 
     public PluginImportPreview Probe(WorkspaceRequest workspace, PluginImportProbeCommand command)
