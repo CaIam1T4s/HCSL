@@ -64,7 +64,8 @@ public partial class MainWindow
                 {
                     Title = "导入插件",
                     Description = Path.GetFileName(path),
-                    Content = new ScrollViewer { Content = body, Width = 280, MaxHeight = 360 },
+                    Size = ControlSize.Small,
+                    Content = new ScrollViewer { Content = body, MaxHeight = 360 },
                     Actions = actions
                 };
                 var choice = await dialog.ShowAsync(this);
@@ -102,7 +103,13 @@ public partial class MainWindow
 
             Func<string> Metadata(string label, string value)
             {
-                var input = new Input { Text = value, Width = 184 };
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    AddRow(label, Value(value));
+                    return () => value;
+                }
+                var input = new Input { Size = ControlSize.Small, Width = 136,
+                    TextAlignment = Avalonia.Media.TextAlignment.Right };
                 Avalonia.Automation.AutomationProperties.SetName(input, label);
                 AddRow(label, input);
                 return () => (input.Text ?? "").Trim();
@@ -113,7 +120,8 @@ public partial class MainWindow
 
             void AddRow(string label, Control value)
             {
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 16 };
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 16,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
                 row.Children.Add(new TextBlock { Text = label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
                 value.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
                 Grid.SetColumn(value, 1);
