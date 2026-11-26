@@ -1,0 +1,45 @@
+name: Host GUI package validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Host / ${{ matrix.os }} / ${{ matrix.mode }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        mode: [self-contained, framework-dependent, aot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Linux desktop and native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libx11-6 libice6 libsm6 libfontconfig1 clang zlib1g-dev
+      - name: Publish, archive and smoke-test extracted Host
+        shell: pwsh
+        run: ./build/host-package.ps1 -Mode '${{ matrix.mode }}' -Output artifacts/host-packages -Smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-${{ matrix.os }}-${{ matrix.mode }}
+          path: artifacts/host-packages/*
+          if-no-files-found: error
+      - name: Upload startup diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-logs-${{ matrix.os }}-${{ matrix.mode }}
+          path: |
+            ~/.local/share/hcsl/logs/*.log
+            ~/AppData/Local/HCSL/data/logs/*.log
+          if-no-files-found: ignore

@@ -15,6 +15,8 @@
   </Target>
   <Target Name="PublishBundledDaemon" BeforeTargets="ComputeFilesToPublish" Condition="'$(DesignTimeBuild)' != 'true'">
     <PropertyGroup><_DaemonPublishDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/$(IntermediateOutputPath)daemon-publish/'))</_DaemonPublishDir></PropertyGroup>
+    <!-- Publishing different deployment modes must not carry over runtime files. -->
+    <RemoveDir Directories="$(_DaemonPublishDir)" />
     <MSBuild Projects="$(MSBuildThisFileDirectory)../src/HCSL.Daemon/HCSL.Daemon.csproj" Targets="Publish"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=false;PublishDir=$(_DaemonPublishDir)">
     </MSBuild>

@@ -38,7 +38,23 @@ public partial class App : Avalonia.Application
                 servers.Dispose(); steamCmd.Dispose(); baseline.Dispose();
             };
             desktop.MainWindow = new MainWindow { DataContext = new ShellViewModel(new ThemeService(this), steamCmd, servers, baseline) };
-            desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); _ = baseline.RefreshStatusAsync(); };
+            if (desktop.Args is ["--package-smoke"])
+                desktop.MainWindow.Opened += async (_, _) =>
+                {
+                    try
+                    {
+                        await new DaemonBootstrapper($"hcsl-package-smoke-{Guid.NewGuid():N}").EnsureRunningAsync();
+                        desktop.Shutdown(0);
+                    }
+                    catch (Exception error)
+                    {
+                        HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "package smoke failed: " + error);
+                        Console.Error.WriteLine(error);
+                        desktop.Shutdown(1);
+                    }
+                };
+            else
+                desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); _ = baseline.RefreshStatusAsync(); };
         }
         base.OnFrameworkInitializationCompleted();
     }

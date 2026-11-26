@@ -2,6 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Project-local: the bundled daemon still needs its managed assembly for IPC identity. -->
+    <PublishAot Condition="'$(HostPublishAot)' == 'true'">true</PublishAot>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
