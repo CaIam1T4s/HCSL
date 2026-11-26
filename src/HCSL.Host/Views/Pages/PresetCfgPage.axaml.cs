@@ -145,6 +145,7 @@ public partial class PresetCfgPage : UserControl
             conflicts.Columns.Add(TreeTableColumn.Create<PluginCfgEntry>("路径", file => file.Path));
             conflicts.Columns.Add(new TreeTableColumn { Header = "插件", Width = new GridLength(110),
                 ValueSelector = item => ((PluginCfgEntry)item).PluginId });
+            TreeTableHeaderAlignment.Attach(conflicts);
             SuppressSelectionFill(conflicts);
             var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
