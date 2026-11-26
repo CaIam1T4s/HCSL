@@ -164,7 +164,7 @@ public partial class PresetCfgPage : UserControl
             var dialog = new Dialog { Title = "选择要覆盖的 CFG", Size = ControlSize.Large,
                 Description = writable ? $"新增 {preview.Import.Length} 个；勾选要覆盖的冲突文件。" : "当前预设不可写，仅供查看。",
                 Content = conflicts, Actions = actions };
-            return await dialog.ShowAsync(this) is true ? conflicts.SelectedKeys.OfType<string>().ToArray() : null;
+            return await dialog.ShowAsync(this) is true ? (conflicts.SelectedKeys ?? []).OfType<string>().ToArray() : null;
     }
 
     private static void SuppressSelectionFill(TreeTable table)
