@@ -18,6 +18,11 @@
                            Foreground="{arc:ArcDesignTokenResource TextSecondary}"/>
                 <lucide:LucideIcon Grid.Column="3" Kind="ArrowRight" VerticalAlignment="Center"/>
               </Grid>
+              <arc:Button Variant="Ghost" Size="Small" HorizontalAlignment="Right" VerticalAlignment="Center"
+                          Margin="0,0,42,0" IsVisible="{Binding CanDisable}" Click="DisableFramework"
+                          AutomationProperties.Name="停用框架">
+                <lucide:LucideIcon Kind="X"/>
+              </arc:Button>
             </Grid>
           </Border>
         </DataTemplate>

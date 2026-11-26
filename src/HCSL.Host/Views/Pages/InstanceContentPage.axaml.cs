@@ -10,7 +10,10 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class InstanceContentPage : UserControl
 {
-    private sealed record Row(FrameworkDefinition Framework, string Name, string State, string? PresetVersion);
+    private sealed record Row(FrameworkDefinition Framework, string Name, string State, string? PresetVersion)
+    {
+        public bool CanDisable => PresetVersion is not null;
+    }
     private HostServerController? observed;
     private bool loading, opening;
     private (Guid Instance, Guid Preset)? loaded;
@@ -86,6 +89,32 @@ public partial class InstanceContentPage : UserControl
             loading = false;
             if (Scope()?.Preset.Id != key.Item2) { loaded = null; _ = LoadAsync(); }
         }
+    }
+
+    private async void DisableFramework(object? sender, RoutedEventArgs e)
+    {
+        if (opening || sender is not Control { DataContext: Row { CanDisable: true } row } ||
+            Scope() is not { } scope || TopLevel.GetTopLevel(this) is not MainWindow owner) return;
+        opening = true;
+        try
+        {
+            if (!scope.Model.CanEditPlugins) throw new IOException("请停止服务器并等待当前操作完成后再停用框架。");
+            var current = await scope.Model.PluginsAsync(new(PluginAction.List, scope.Instance.Id, scope.Preset.Id, PackageMetadataOnly: true));
+            var selected = current.Selected.FirstOrDefault(p => p.Id == row.Framework.Id && p.Enabled);
+            if (selected?.Version != row.PresetVersion || Scope() != scope) return;
+            var next = current.Selected.Select(p => new PluginSelection(p.Id, p.Version, p.Enabled && p.Id != row.Framework.Id)).ToArray();
+            // Do not silently disable dependent plugins or frameworks.
+            FrameworkRules.ValidateSelections(next.Where(p => p.Enabled).Select(p =>
+            {
+                var package = current.Available.FirstOrDefault(a => a.Id == p.Id && a.Version == p.Version);
+                return new FrameworkRules.SelectedFramework(p.Id, package?.Framework, package?.FrameworkPayload ?? false);
+            }));
+            await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
+                scope.Instance.Revision, current.Hash, next, PackageMetadataOnly: true));
+        }
+        catch (Exception ex) when (ex is IOException or InstanceException)
+        { owner.ShowInstanceNotification("无法停用框架", ex.Message); }
+        finally { opening = false; loaded = null; await LoadAsync(); }
     }
 
     private async void OpenFramework(object? sender, RoutedEventArgs e)
