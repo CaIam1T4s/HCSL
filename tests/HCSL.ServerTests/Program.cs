@@ -11,6 +11,11 @@ using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
 
 var only = ParseOnly(args);
+if (only is "windows-runtime")
+{
+    await HCSL.ServerTests.WindowsRuntimeTests.RunAsync();
+    return 0;
+}
 if (only is null or "maps")
 {
     await HCSL.ServerTests.ServerMapTests.RunAsync();

@@ -1,0 +1,26 @@
+name: Windows runtime checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-runtime:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore server tests
+        run: dotnet restore tests/HCSL.ServerTests/HCSL.ServerTests.csproj
+      - name: Build daemon and server tests
+        run: dotnet build tests/HCSL.ServerTests/HCSL.ServerTests.csproj --no-restore -v:q
+      - name: Check Windows process ownership
+        run: dotnet run --project tests/HCSL.ServerTests --no-build -- --only windows-runtime
+      - name: Check framework rules
+        run: dotnet run --project tests/HCSL.ServerTests --no-build -- --only frameworks
