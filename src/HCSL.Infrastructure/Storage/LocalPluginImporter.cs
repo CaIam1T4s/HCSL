@@ -400,7 +400,11 @@ public sealed class LocalPluginImporter : IPluginImporter
             warnings.Add("This package is a sub-plugin, not the " + id + " framework loader; importing it as '" + id + "' would replace the framework selection.");
         WarnWrongSourceModBuild(files, warnings);
         WarnMissingMetaBinary(files, metaPlugin, warnings);
-        return new(files, id, name, version, metaPlugin, cfgFiles);
+        var detected = FrameworkRules.Known.Where(rule => rule.PluginRoot is { } pluginRoot &&
+            files.Any(file => file.RelativePath.StartsWith(pluginRoot + "/", StringComparison.OrdinalIgnoreCase))).ToArray();
+        var requiredFramework = detected.Length == 1 && !FrameworkRules.IsFrameworkPayload(detected[0].Id,
+            files.Select(file => file.RelativePath)) ? detected[0].Id : null;
+        return new(files, id, name, version, metaPlugin, cfgFiles, requiredFramework);
     }
 
     private static (string Root, string Prefix) Layout(string source)
