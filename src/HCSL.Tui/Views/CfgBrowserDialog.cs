@@ -115,7 +115,7 @@ public sealed class CfgBrowserDialog : Dialog
                 + T("\n可能改变游戏状态；不代表执行成功。", "\nMay change game state; delivery is not execution."), T("取消", "Cancel"), T("执行", "Exec"));
             if (confirm != 1) return () => status.Text = T("已取消。", "Cancelled.");
             var result = await client.ExecAsync(instance.Id, preset.Id, run, target, read.Hash ?? "");
-            return () => status.Text = result;
+            return () => status.Text = result.Message;
         });
     }
 }
