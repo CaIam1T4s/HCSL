@@ -24,20 +24,27 @@ public sealed class LocalDirectoryOpener : ILocalDirectoryOpener
             }
             else if (OperatingSystem.IsLinux())
             {
-                var start = new ProcessStartInfo("gdbus") { UseShellExecute = false, CreateNoWindow = true };
-                foreach (var arg in new[] { "call", "--session", "--timeout", "3", "--dest", "org.freedesktop.FileManager1",
-                    "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1.ShowItems",
-                    "['" + new Uri(path).AbsoluteUri.Replace("'", "%27", StringComparison.Ordinal) + "']", "''" }) start.ArgumentList.Add(arg);
-                using var bus = Process.Start(start);
-                if (bus is not null)
-                {
-                    await bus.WaitForExitAsync(cancellationToken);
-                    if (bus.ExitCode == 0) return;
-                }
+                if (await TryFileManagerAsync(path, "ShowItems", cancellationToken)) return;
             }
         }
         catch (System.ComponentModel.Win32Exception) { }
         await OpenAsync(Path.GetDirectoryName(path) ?? path, cancellationToken);
+    }
+
+    private static async Task<bool> TryFileManagerAsync(string path, string method, CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo("gdbus") { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var arg in new[] { "call", "--session", "--timeout", "3", "--dest", "org.freedesktop.FileManager1",
+            "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1." + method,
+            "['" + new Uri(path).AbsoluteUri.Replace("'", "%27", StringComparison.Ordinal) + "']", "''" }) start.ArgumentList.Add(arg);
+        try
+        {
+            using var bus = Process.Start(start);
+            if (bus is null) return false;
+            await bus.WaitForExitAsync(cancellationToken);
+            return bus.ExitCode == 0;
+        }
+        catch (System.ComponentModel.Win32Exception) { return false; }
     }
 
     public async Task OpenAsync(string directory, CancellationToken cancellationToken = default)
@@ -51,6 +58,7 @@ public sealed class LocalDirectoryOpener : ILocalDirectoryOpener
         }
         catch (WorkspaceException e) { throw new IOException("HCSL-PRESET-CFG: Linked directories are not opened.", e); }
         if (!Directory.Exists(path)) throw new IOException("HCSL-PRESET-CFG: CFG directory does not exist; refresh the instance catalog.");
+        if (OperatingSystem.IsLinux() && await TryFileManagerAsync(path, "ShowFolders", cancellationToken)) return;
         var start = OperatingSystem.IsWindows()
             ? new ProcessStartInfo(path) { UseShellExecute = true }
             : OperatingSystem.IsLinux()
