@@ -98,7 +98,7 @@ public partial class MainWindow
                     var imported = await model.ImportPluginAsync(new PluginImportCommand(instance.Id, preset.Id,
                         archive is null ? path : "", id(), name(), version(), preview.MetaPlugin, false, false,
                         instance.Revision, archive, CfgIntoPreset: false, Framework: frameworkId));
-                    ShowInstanceNotification("已导入插件", $"{imported.Id} {imported.Version} 已加入插件库，未启用。");
+                    ShowInstanceNotification("已导入插件", $"{imported.Id} {imported.Version} 已加入插件库，未启用。", ToastKind.Success);
                     return imported;
                 }
                 catch (Exception ex) when (ex is IOException or InstanceException)
