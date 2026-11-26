@@ -122,7 +122,7 @@ public partial class InstanceContentPage : UserControl
                     }
                 }
             } while (changed);
-            if (dependents.Count > 0 && !await ConfirmDisableAsync(row.Name, dependents)) return;
+            if (dependents.Count > 0 && !await ConfirmDisableAsync(dependents)) return;
             if (Scope() != scope) return;
             var next = current.Selected.Select(p => new PluginSelection(p.Id, p.Version, p.Enabled && !disabled.Contains(p.Id))).ToArray();
             await scope.Model.PluginsAsync(new(PluginAction.Save, scope.Instance.Id, scope.Preset.Id,
@@ -133,25 +133,31 @@ public partial class InstanceContentPage : UserControl
         finally { opening = false; loaded = null; await LoadAsync(); }
     }
 
-    private async Task<bool> ConfirmDisableAsync(string framework, IReadOnlyList<PluginSelectionInfo> dependents)
+    private async Task<bool> ConfirmDisableAsync(IReadOnlyList<PluginSelectionInfo> dependents)
     {
         var table = new Table { Caption = "将一并停用的依赖项", IsSelectable = false,
-            ItemsSource = dependents, Height = Math.Min(260, 52 * (dependents.Count + 1)) };
+            ItemsSource = dependents, Height = Math.Clamp(56 + 56 * dependents.Count, 180, 300) };
+        // Keep both columns in the same row inside the dialog, below Arc's default compact breakpoint.
+        if (typeof(Table).GetField("CompactBreakpointProperty", System.Reflection.BindingFlags.Static |
+            System.Reflection.BindingFlags.NonPublic)?.GetValue(null) is Avalonia.StyledProperty<double> breakpoint)
+            table.SetValue(breakpoint, 0);
         AddColumn("插件 / 框架", new GridLength(1, GridUnitType.Star), item => item.Name ?? item.Id);
-        AddColumn("版本", new GridLength(112), item => item.Version);
+        AddColumn("版本", new GridLength(112), item => item.Version, right: true);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         actions.Classes.Add("dialog-actions");
         AddAction("取消", false);
-        AddAction("一并停用", true);
+        AddAction("停用", true);
         var dialog = new Dialog { Title = "停用框架", Size = ControlSize.Medium,
-            Description = $"停用 {framework} 时，以下依赖项也会在当前预设中停用。共享包不会被删除。",
+            Description = "以下依赖也会同时停用",
             Content = table, Actions = actions };
         return await dialog.ShowAsync(this) is true;
 
-        void AddColumn(string header, GridLength width, Func<PluginSelectionInfo, string> text) =>
-            table.Columns.Add(new DataTableColumn { Header = header, Width = width, IsSortable = false,
+        void AddColumn(string header, GridLength width, Func<PluginSelectionInfo, string> text, bool right = false) =>
+            table.Columns.Add(new DataTableColumn { Header = header, Width = width, IsSortable = false, IsNumeric = right,
                 CellTemplate = new FuncDataTemplate<PluginSelectionInfo>((item, _) => new TextBlock
-                { Text = item is null ? "" : text(item), VerticalAlignment = VerticalAlignment.Center }) });
+                { Text = item is null ? "" : text(item), VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Stretch,
+                    TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis }) });
 
         void AddAction(string label, bool primary)
         {
