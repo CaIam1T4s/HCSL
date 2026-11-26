@@ -1,4 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using HCSL.Contracts;
 using HCSL.Core;
 
 namespace HCSL.Frontend;
@@ -18,4 +21,36 @@ namespace HCSL.Frontend;
 [JsonSerializable(typeof(BaselineCommand))]
 [JsonSerializable(typeof(BaselineResult))]
 [JsonSerializable(typeof(ServerSnapshot))]
-internal sealed partial class WorkspaceJsonContext : JsonSerializerContext;
+[JsonSerializable(typeof(AdminCommand))]
+[JsonSerializable(typeof(AdminResult))]
+[JsonSerializable(typeof(FrameworkCatalogCommand))]
+[JsonSerializable(typeof(FrameworkCatalogResult))]
+[JsonSerializable(typeof(FrameworkCheckCommand))]
+[JsonSerializable(typeof(FrameworkCheckResult))]
+[JsonSerializable(typeof(FrameworkInstallCommand))]
+[JsonSerializable(typeof(FrameworkInstallResult))]
+[JsonSerializable(typeof(TransferSnapshot))]
+[JsonSerializable(typeof(PluginCommand))]
+[JsonSerializable(typeof(PluginResult))]
+[JsonSerializable(typeof(PluginImportCommand))]
+[JsonSerializable(typeof(PluginImportResult))]
+[JsonSerializable(typeof(PluginImportProbeCommand))]
+[JsonSerializable(typeof(PluginImportPreview))]
+[JsonSerializable(typeof(PluginCfgCommand))]
+[JsonSerializable(typeof(PluginCfgPreview))]
+[JsonSerializable(typeof(PluginCfgResult))]
+[JsonSerializable(typeof(PresetCfgCommand))]
+[JsonSerializable(typeof(PresetCfgResult))]
+[JsonSerializable(typeof(ServerConsoleCommand))]
+[JsonSerializable(typeof(ServerConsoleReceipt))]
+[JsonSerializable(typeof(ServerConsoleReceipt[]))]
+[JsonSerializable(typeof(ServerKickCommand))]
+[JsonSerializable(typeof(ServerKickResult))]
+internal sealed partial class WorkspaceJsonContext : JsonSerializerContext
+{
+    internal static string Encode<T>(T value) => JsonSerializer.Serialize(value, TypeInfo<T>());
+    internal static T? Decode<T>(string json) => JsonSerializer.Deserialize(json, TypeInfo<T>());
+
+    private static JsonTypeInfo<T> TypeInfo<T>() => Default.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>
+        ?? throw new NotSupportedException($"Unsupported workspace IPC payload: {typeof(T)}.");
+}

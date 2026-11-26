@@ -50,18 +50,18 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Plugin,
-            Options: new(hello.Defaults), PluginJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(2), ct);
+            Options: new(hello.Defaults), PluginJson: WorkspaceJsonContext.Encode(command)), TimeSpan.FromMinutes(2), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<PluginResult>(response.PluginResultJson ?? "null") ?? throw new IOException("Missing plugin result.");
+        return WorkspaceJsonContext.Decode<PluginResult>(response.PluginResultJson ?? "null") ?? throw new IOException("Missing plugin result.");
     }
     public async Task<PluginImportResult> PluginImportAsync(PluginImportCommand command, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginImport,
-            Options: new(hello.Defaults), PluginImportJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(5), ct);
+            Options: new(hello.Defaults), PluginImportJson: WorkspaceJsonContext.Encode(command)), TimeSpan.FromMinutes(5), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<PluginImportResult>(response.PluginImportResultJson ?? "null")
+        return WorkspaceJsonContext.Decode<PluginImportResult>(response.PluginImportResultJson ?? "null")
             ?? throw new IOException("Missing plugin import result.");
     }
 
@@ -70,9 +70,9 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginImportProbe,
-            Options: new(hello.Defaults), PluginImportProbeJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(5), ct);
+            Options: new(hello.Defaults), PluginImportProbeJson: WorkspaceJsonContext.Encode(command)), TimeSpan.FromMinutes(5), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<PluginImportPreview>(response.PluginImportPreviewJson ?? "null")
+        return WorkspaceJsonContext.Decode<PluginImportPreview>(response.PluginImportPreviewJson ?? "null")
             ?? throw new IOException("Missing plugin import preview.");
     }
 
@@ -85,17 +85,17 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PluginCfg,
-            Options: new(hello.Defaults), PluginCfgJson: JsonSerializer.Serialize(command)), TimeSpan.FromMinutes(2), ct);
+            Options: new(hello.Defaults), PluginCfgJson: WorkspaceJsonContext.Encode(command)), TimeSpan.FromMinutes(2), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<T>(response.PluginCfgResultJson ?? "null") ?? throw new IOException("Missing plugin cfg result.");
+        return WorkspaceJsonContext.Decode<T>(response.PluginCfgResultJson ?? "null") ?? throw new IOException("Missing plugin cfg result.");
     }
 
     public async Task<ServerConsoleReceipt[]> DeliverCfgBatchAsync(CfgBatchCommand command, CancellationToken ct = default)
     {
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.CfgBatch,
-            PresetCfgJson: JsonSerializer.Serialize(command)), TimeSpan.FromSeconds(15), ct);
+            PresetCfgJson: WorkspaceJsonContext.Encode(command)), TimeSpan.FromSeconds(15), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<ServerConsoleReceipt[]>(response.ConsoleReceiptJson ?? "null")
+        return WorkspaceJsonContext.Decode<ServerConsoleReceipt[]>(response.ConsoleReceiptJson ?? "null")
             ?? throw new IOException("Missing CFG batch receipt; delivery unknown.");
     }
 
@@ -104,9 +104,9 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.PresetCfg,
-            Options: new(hello.Defaults), PresetCfgJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), PresetCfgJson: WorkspaceJsonContext.Encode(command)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<PresetCfgResult>(response.PresetCfgResultJson ?? "null") ?? throw new IOException("Missing CFG result.");
+        return WorkspaceJsonContext.Decode<PresetCfgResult>(response.PresetCfgResultJson ?? "null") ?? throw new IOException("Missing CFG result.");
     }
     public Task<string> PresetCfgDirectoryAsync(Guid instanceId, Guid presetId, CancellationToken ct = default) =>
         PresetDirectoryAsync(instanceId, presetId, "cfg", ct);

@@ -10,9 +10,9 @@ public sealed class ServerClient(IDaemonClient client)
         try
         {
             var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.ServerConsole,
-                ServerConsoleJson: JsonSerializer.Serialize(command)), ct);
+                ServerConsoleJson: WorkspaceJsonContext.Encode(command)), ct);
             if (!response.Success) return new(command.RunId, command.CommandId, ConsoleDelivery.Rejected, response.Code ?? "HCSL-CONSOLE-REJECTED");
-            var receipt = JsonSerializer.Deserialize<ServerConsoleReceipt>(response.ConsoleReceiptJson ?? "null");
+            var receipt = WorkspaceJsonContext.Decode<ServerConsoleReceipt>(response.ConsoleReceiptJson ?? "null");
             return receipt is not null && receipt.RunId == command.RunId && receipt.CommandId == command.CommandId
                 ? receipt : new(command.RunId, command.CommandId, ConsoleDelivery.Unknown, "HCSL-CONSOLE-UNKNOWN");
         }
@@ -44,10 +44,10 @@ public sealed class ServerClient(IDaemonClient client)
     {
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,
             Options: workspace == null ? null : new(workspace),
-            ServerCommandJson: JsonSerializer.Serialize(new ServerCommand(ServerAction.Kick, command.InstanceId)),
-            ServerKickJson: JsonSerializer.Serialize(command)), ct);
+            ServerCommandJson: WorkspaceJsonContext.Encode(new ServerCommand(ServerAction.Kick, command.InstanceId)),
+            ServerKickJson: WorkspaceJsonContext.Encode(command)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<ServerKickResult>(response.ServerKickResultJson ?? "null")
+        return WorkspaceJsonContext.Decode<ServerKickResult>(response.ServerKickResultJson ?? "null")
             ?? throw new IOException("HCSL-KICK-STATE: The daemon returned no kick result.");
     }
 

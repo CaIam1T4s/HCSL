@@ -1,4 +1,3 @@
-using System.Text.Json;
 using HCSL.Contracts;
 using HCSL.Core;
 namespace HCSL.Frontend;
@@ -21,9 +20,9 @@ public sealed class AdminClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Admin,
-            Options: new(hello.Defaults), AdminJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), AdminJson: WorkspaceJsonContext.Encode(command)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<AdminResult>(response.AdminResultJson ?? "null")
+        return WorkspaceJsonContext.Decode<AdminResult>(response.AdminResultJson ?? "null")
             ?? throw new IOException("HCSL-ADMIN-REQUEST: The daemon returned no admin result.");
     }
 }

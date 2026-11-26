@@ -1,4 +1,3 @@
-using System.Text.Json;
 using HCSL.Contracts;
 using HCSL.Core;
 namespace HCSL.Frontend;
@@ -14,9 +13,9 @@ public sealed class FrameworkClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkCatalog,
-            Options: new(workspace ?? hello.Defaults), FrameworkCatalogJson: JsonSerializer.Serialize(command)), CheckTimeout, ct);
+            Options: new(workspace ?? hello.Defaults), FrameworkCatalogJson: WorkspaceJsonContext.Encode(command)), CheckTimeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<FrameworkCatalogResult>(response.FrameworkCatalogJson ?? "null")
+        return WorkspaceJsonContext.Decode<FrameworkCatalogResult>(response.FrameworkCatalogJson ?? "null")
             ?? throw new IOException("Missing framework catalog result.");
     }
 
@@ -25,9 +24,9 @@ public sealed class FrameworkClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkCheck,
-            Options: new(hello.Defaults), FrameworkCheckJson: JsonSerializer.Serialize(new FrameworkCheckCommand(id))), CheckTimeout, ct);
+            Options: new(hello.Defaults), FrameworkCheckJson: WorkspaceJsonContext.Encode(new FrameworkCheckCommand(id))), CheckTimeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<FrameworkCheckResult>(response.FrameworkCheckJson ?? "null")
+        return WorkspaceJsonContext.Decode<FrameworkCheckResult>(response.FrameworkCheckJson ?? "null")
             ?? throw new IOException("Missing framework check result.");
     }
 
@@ -43,9 +42,9 @@ public sealed class FrameworkClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, requestId, RequestKind.FrameworkInstall,
-            Options: new(workspace ?? hello.Defaults), FrameworkInstallJson: JsonSerializer.Serialize(command)), InstallTimeout, ct);
+            Options: new(workspace ?? hello.Defaults), FrameworkInstallJson: WorkspaceJsonContext.Encode(command)), InstallTimeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<FrameworkInstallResult>(response.FrameworkInstallResultJson ?? "null")
+        return WorkspaceJsonContext.Decode<FrameworkInstallResult>(response.FrameworkInstallResultJson ?? "null")
             ?? throw new IOException("Missing framework install result.");
     }
 
@@ -56,7 +55,7 @@ public sealed class FrameworkClient(IDaemonClient client)
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkProgress,
             OperationId: requestId), ct);
         if (!response.Success || response.TransferJson is null) return null;
-        return JsonSerializer.Deserialize<TransferSnapshot>(response.TransferJson);
+        return WorkspaceJsonContext.Decode<TransferSnapshot>(response.TransferJson);
     }    public async Task CancelInstallAsync(Guid requestId, CancellationToken ct = default)
     {
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
