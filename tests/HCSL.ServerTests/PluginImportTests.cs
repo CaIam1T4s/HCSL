@@ -33,6 +33,14 @@ public static class PluginImportTests
 
     public static void Run()
     {
+        string[] baseline = ["    Game_LowViolence csgo_lv", "    Game csgo", "    Game core"];
+        const string metamodPath = "csgo/addons/metamod", swiftlyPath = "csgo/addons/swiftlys2";
+        var combined = LocalPluginImporter.BuildGameInfoOverlay(baseline, [swiftlyPath, metamodPath, swiftlyPath]);
+        Check(combined.SequenceEqual([baseline[0], "    Game\t" + metamodPath, "    Game\t" + swiftlyPath, .. baseline.Skip(1)]),
+            "Framework search paths were not deduplicated and ordered after Game_LowViolence.");
+        Check(LocalPluginImporter.BuildGameInfoOverlay(baseline, [metamodPath, swiftlyPath]).SequenceEqual(combined), "Selection order affected gameinfo.");
+        Check(LocalPluginImporter.BuildGameInfoOverlay(baseline, [swiftlyPath]).SequenceEqual(combined.Where(line => line != "    Game\t" + metamodPath)),
+            "Disabling Metamod changed unrelated gameinfo paths.");
         var root = Path.Combine(Path.GetTempPath(), "hcsl-import-" + Guid.NewGuid().ToString("N"));
         try
         {

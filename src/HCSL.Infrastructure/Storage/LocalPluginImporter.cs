@@ -639,17 +639,25 @@ public sealed class LocalPluginImporter : IPluginImporter
         return [.. lines];
     }
 
-    private static void WriteGameInfoOverlay(string baseGameInfo, string overlay, string[] additions)
+    private static void WriteGameInfoOverlay(string baseGameInfo, string overlay, string[] additions) =>
+        File.WriteAllLines(overlay, BuildGameInfoOverlay(File.ReadAllLines(baseGameInfo), additions));
+
+    internal static string[] BuildGameInfoOverlay(string[] baseline, IEnumerable<string> additions)
     {
-        var lines = File.ReadAllLines(baseGameInfo).ToList();
-        foreach (var addition in additions)
-        {
-            if (lines.Any(line => line.Contains(addition, StringComparison.OrdinalIgnoreCase))) continue;
-            var at = lines.FindIndex(line => line.TrimStart().StartsWith("Game", StringComparison.Ordinal)
-                && line.TrimEnd().EndsWith("csgo", StringComparison.Ordinal));
-            if (at >= 0) lines.Insert(at, lines[at][..(lines[at].Length - lines[at].TrimStart().Length)] + "Game\t" + addition);
-        }
-        File.WriteAllLines(overlay, lines);
+        string[] order = ["csgo/addons/metamod", "csgo/addons/swiftlys2", "sharp"];
+        var requested = additions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var lines = baseline.ToList();
+        var at = lines.FindIndex(line => Regex.IsMatch(line, @"^\s*Game_LowViolence\s", RegexOptions.IgnoreCase));
+        var insertAfter = at >= 0;
+        if (!insertAfter) at = lines.FindIndex(line => IsGamePath(line, "csgo"));
+        if (at < 0) return baseline;
+        var indent = lines[at][..(lines[at].Length - lines[at].TrimStart().Length)];
+        lines.InsertRange(at + (insertAfter ? 1 : 0), order.Where(path => requested.Contains(path) &&
+            !baseline.Any(line => IsGamePath(line, path))).Select(path => indent + "Game\t" + path));
+        return lines.ToArray();
+
+        static bool IsGamePath(string line, string path) => Regex.IsMatch(line,
+            "^\\s*Game\\s+\"?" + Regex.Escape(path) + "\"?\\s*(?://.*)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     private static void ValidateMetaPlugin(string metaPlugin)
