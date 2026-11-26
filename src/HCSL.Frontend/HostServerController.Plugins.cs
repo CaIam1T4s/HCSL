@@ -74,6 +74,16 @@ public sealed partial class HostServerController
         finally { Busy = false; Notify(); }
     }
 
+    public async Task OpenPluginLocationAsync(string? id = null, string? version = null)
+    {
+        var opener = directoryOpener ?? throw new IOException("文件管理器不可用。");
+        var workspace = await instances.WorkspaceAsync();
+        var root = Path.Combine(workspace.LibraryRoot, "plugin-packages");
+        if (id is null) { await opener.OpenAsync(root); return; }
+        PluginRules.Validate([new PluginSelection(id, version ?? "", false)]);
+        await opener.RevealAsync(Path.Combine(root, id, version!));
+    }
+
     public async Task<PluginResult> PluginsAsync(PluginCommand command)
     {
         if (command.Action == PluginAction.List && Server.Connected)

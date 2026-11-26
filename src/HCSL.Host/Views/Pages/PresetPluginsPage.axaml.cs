@@ -50,7 +50,7 @@ public partial class PresetPluginsPage : UserControl
             CellTemplate = new FuncDataTemplate<Row>((row, _) => EnableCell(row)) });
         Plugins.Columns.Add(new DataTableColumn { Header = "插件", Width = new GridLength(1, GridUnitType.Star), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => NameCell(row)) });
-        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(56), IsSortable = false,
+        Plugins.Columns.Add(new DataTableColumn { Header = "", Width = new GridLength(88), IsSortable = false,
             CellTemplate = new FuncDataTemplate<Row>((row, _) => InfoCell(row)) });
         PropertyChanged += (_, e) =>
         {
@@ -124,7 +124,27 @@ public partial class PresetPluginsPage : UserControl
             PropertyFramework.Text = item.Framework;
             PluginProperties.ShowAt(button);
         };
-        return button;
+        var location = new TKCode.Arc.Button { Variant = ButtonVariant.Ghost, Size = ControlSize.Small,
+            Content = new LucideIcon { Kind = LucideIconKind.FolderOpen } };
+        location.Classes.Add("plugin-info");
+        location.PointerEntered += (_, _) => CloseTip();
+        Avalonia.Automation.AutomationProperties.SetName(location, "打开插件文件位置");
+        location.Click += async (_, _) =>
+        {
+            if (location.DataContext is Row { Available: true } item && ReferenceEquals(RowItem(RowControl(location)), item))
+                await OpenLocationAsync(item);
+        };
+        location.DataContextChanged += (_, _) => location.IsEnabled = location.DataContext is Row { Available: true };
+        return new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { location, button } };
+    }
+
+    private async Task OpenLocationAsync(Row? row = null)
+    {
+        if (Scope() is not { } scope) return;
+        try { await scope.Model.OpenPluginLocationAsync(row?.Id, row?.Version); }
+        catch (Exception ex) when (ex is IOException or InstanceException or UnauthorizedAccessException)
+        { Owner?.ShowInstanceNotification("无法打开文件位置", ex.Message); }
     }
 
     private Control? NameCell(Row? row)
@@ -326,6 +346,10 @@ public partial class PresetPluginsPage : UserControl
         Add("无框架", LucideIconKind.Layers, frameworkFilter == "none", () => frameworkFilter = "none");
         foreach (var framework in FrameworkRules.Known)
             Add(framework.DisplayName, LucideIconKind.Layers, frameworkFilter == framework.Id, () => frameworkFilter = framework.Id);
+        menu.Items.Add(new GlassMenuSeparator());
+        var folder = new GlassMenuItem { Content = "打开插件文件夹", Icon = Lucide.Geometry(LucideIconKind.FolderOpen) };
+        folder.Click += async (_, _) => { menu.Close(); await OpenLocationAsync(); };
+        menu.Items.Add(folder);
         menu.Open(anchor);
 
         void Add(string title, LucideIconKind icon, bool selected, Action select)

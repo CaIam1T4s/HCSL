@@ -6,6 +6,40 @@ namespace HCSL.Infrastructure.Storage;
 
 public sealed class LocalDirectoryOpener : ILocalDirectoryOpener
 {
+    public async Task RevealAsync(string directory, CancellationToken cancellationToken = default)
+    {
+        var path = Path.GetFullPath(directory);
+        if (!Directory.Exists(path)) throw new IOException("插件目录不存在。");
+        for (var current = new DirectoryInfo(path); current is not null; current = current.Parent)
+            LocalPaths.RejectLink(current.FullName);
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var start = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+                start.ArgumentList.Add("/select," + path);
+                using var explorer = Process.Start(start);
+                if (explorer is not null) return;
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                var start = new ProcessStartInfo("gdbus") { UseShellExecute = false, CreateNoWindow = true };
+                foreach (var arg in new[] { "call", "--session", "--timeout", "3", "--dest", "org.freedesktop.FileManager1",
+                    "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1.ShowItems",
+                    "['" + new Uri(path).AbsoluteUri.Replace("'", "%27", StringComparison.Ordinal) + "']", "''" }) start.ArgumentList.Add(arg);
+                using var bus = Process.Start(start);
+                if (bus is not null)
+                {
+                    await bus.WaitForExitAsync(cancellationToken);
+                    if (bus.ExitCode == 0) return;
+                }
+            }
+        }
+        catch (System.ComponentModel.Win32Exception) { }
+        await OpenAsync(Path.GetDirectoryName(path) ?? path, cancellationToken);
+    }
+
     public async Task OpenAsync(string directory, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
