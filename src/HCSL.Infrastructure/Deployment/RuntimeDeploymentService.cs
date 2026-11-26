@@ -743,6 +743,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var dataInstalled = new List<PluginLedgerEntry>();
             var keep = new HashSet<string>(StringComparer.FromComparison(LocalPaths.Comparison));
             var dataKeep = new HashSet<string>(StringComparer.FromComparison(LocalPaths.Comparison));
+            var gameInfo = InRoot(stage, "game/csgo/gameinfo.gi");
+            var mergeGameInfo = TryMergeGeneratedGameInfo(gameInfo, packages);
             foreach (var package in packages)
             {
                 var files = new List<PluginLedgerFile>();
@@ -750,6 +752,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 foreach (var file in package.Files)
                 {
                     RejectReservedPluginPath(file.RelativePath);
+                    if (mergeGameInfo && IsGameInfo(file.RelativePath)) continue;
                     if (string.Equals(package.Framework, dataFramework, StringComparison.Ordinal) && IsManagedPluginFile(package, file.RelativePath))
                     {
                         dataWrites.Add(new(file.RelativePath, file.FullPath, file.Sha256));
@@ -801,6 +804,48 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         catch (DeploymentException) { throw; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or OverflowException or InvalidDataException or NotSupportedException)
         { throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Plugin files could not be prepared; no persistent plugin file was changed."); }
+    }
+
+    private static bool IsGameInfo(string path) => path.Equals("csgo/gameinfo.gi", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryMergeGeneratedGameInfo(string destination, LocalPluginStore.Package[] packages)
+    {
+        var overlays = packages.SelectMany(package => package.Files.Where(file => IsGameInfo(file.RelativePath))
+            .Select(file => (Package: package, File: file))).ToArray();
+        if (overlays.Length < 2 || !File.Exists(destination)) return false;
+        var baseline = File.ReadAllLines(destination);
+        var paths = new List<string>();
+        foreach (var (package, file) in overlays)
+        {
+            var path = package.FrameworkPayload ? package.Framework switch
+            {
+                "metamod" => "csgo/addons/metamod",
+                "swiftlys2" => "csgo/addons/swiftlys2",
+                "modsharp" => "sharp",
+                _ => null
+            } : null;
+            if (path is null) throw Unmergeable();
+            var actual = File.ReadAllLines(file.FullPath);
+            var generated = LocalPluginImporter.BuildGameInfoOverlay(baseline, [path]);
+            var legacy = baseline.ToList();
+            var anchor = legacy.FindIndex(line => line.TrimStart().StartsWith("Game", StringComparison.Ordinal)
+                && line.TrimEnd().EndsWith("csgo", StringComparison.Ordinal));
+            if (anchor >= 0 && !legacy.Any(line => line.Contains(path, StringComparison.OrdinalIgnoreCase)))
+                legacy.Insert(anchor, legacy[anchor][..(legacy[anchor].Length - legacy[anchor].TrimStart().Length)] + "Game\t" + path);
+            if (!actual.SequenceEqual(generated) && !actual.SequenceEqual(legacy)) throw Unmergeable();
+            paths.Add(path);
+        }
+        var merged = LocalPluginImporter.BuildGameInfoOverlay(baseline, paths);
+        if (!merged.SequenceEqual(baseline))
+        {
+            // Replace the staged file, never write through a shared clone or link.
+            File.Delete(destination);
+            File.WriteAllLines(destination, merged);
+        }
+        return true;
+
+        static DeploymentException Unmergeable() => new("HCSL-DEPLOY-GAMEINFO",
+            "Multiple gameinfo overlays are present and at least one is custom or based on another game build. Reimport or manually reconcile the overlays before deploying.");
     }
 
     private static void DeleteLegacyPluginLedger(string presetPath)
