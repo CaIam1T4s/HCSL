@@ -33,7 +33,8 @@ public sealed class LocalDirectoryOpener : ILocalDirectoryOpener
 
     private static async Task<bool> TryFileManagerAsync(string path, string method, CancellationToken cancellationToken)
     {
-        var start = new ProcessStartInfo("gdbus") { UseShellExecute = false, CreateNoWindow = true };
+        var start = new ProcessStartInfo("gdbus") { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var arg in new[] { "call", "--session", "--timeout", "3", "--dest", "org.freedesktop.FileManager1",
             "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1." + method,
             "['" + new Uri(path).AbsoluteUri.Replace("'", "%27", StringComparison.Ordinal) + "']", "''" }) start.ArgumentList.Add(arg);
@@ -41,7 +42,9 @@ public sealed class LocalDirectoryOpener : ILocalDirectoryOpener
         {
             using var bus = Process.Start(start);
             if (bus is null) return false;
-            await bus.WaitForExitAsync(cancellationToken);
+            // gdbus prints the empty D-Bus reply tuple on success; only the exit code matters here.
+            await Task.WhenAll(bus.StandardOutput.ReadToEndAsync(cancellationToken),
+                bus.StandardError.ReadToEndAsync(cancellationToken), bus.WaitForExitAsync(cancellationToken));
             return bus.ExitCode == 0;
         }
         catch (System.ComponentModel.Win32Exception) { return false; }
