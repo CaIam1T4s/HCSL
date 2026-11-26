@@ -162,7 +162,7 @@ public sealed class LocalPluginStore : IPluginStore
         {
             var package = ordered.First(a => a.Id == p.Id && a.Version == p.Version);
             // Saving selections validates metadata; deployment verifies package content hashes.
-            return new FrameworkRules.SelectedFramework(p.Id, package.Framework, package.FrameworkPayload);
+            return new FrameworkRules.SelectedFramework(p.Id, package.Framework, package.FrameworkPayload, package.Version);
         }));
         var current = File.Exists(file) ? Hash(file) : null;
         if (!string.Equals(current, c.ExpectedHash, StringComparison.Ordinal))

@@ -72,13 +72,13 @@ public partial class InstanceContentPage : UserControl
         {
             var plugins = await scope.Model.PluginsAsync(new(PluginAction.List, key.Item1, key.Item2, FrameworkOverviewOnly: true));
             if (Scope()?.Preset.Id != key.Item2) return;
-            var current = FrameworkSelection.Current(plugins);
+            var enabled = plugins.Selected.Where(s => s.Enabled && FrameworkRules.Find(s.Id)?.Kind == FrameworkKind.ScriptFramework).ToArray();
             Frameworks.ItemsSource = FrameworkRules.Known.Select(framework =>
             {
                 var version = plugins.Selected.FirstOrDefault(s => s.Id == framework.Id && s.Enabled)?.Version;
-                var state = framework.Kind == FrameworkKind.ScriptFramework && current is not null && current != framework.Id
-                    ? "与 " + (FrameworkRules.Find(current)?.DisplayName ?? current) + " 不兼容"
-                    : version ?? "未安装";
+                var conflict = enabled.FirstOrDefault(s => FrameworkRules.Conflicts(s.Id, framework.Id));
+                var state = version ?? (conflict is null ? "未安装" : "与 " +
+                    (FrameworkRules.Find(conflict.Id)?.DisplayName ?? conflict.Id) + " 不兼容");
                 return new Row(framework, framework.DisplayName, state, version);
             }).ToArray();
         }

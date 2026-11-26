@@ -55,7 +55,27 @@ public static class FrameworkTests
         Check(FrameworkRules.OrderVersions("swiftlys2", ["1.5.2-beta.13", "1.5.1"]).First() == "1.5.1", "Stable SwiftlyS2 is not preferred.");
         Check(FrameworkRules.OrderVersions("metamod", ["2.0.0-dev+999", "2.0.0-dev+1490"]).First() == "2.0.0-dev+1490", "Newest Metamod build is not first.");
         Check(FrameworkRules.CompareVersions("counterstrikesharp", "1.0.379", "1.0.9") > 0, "Version numbers compared as text.");
-        Check(FrameworkRules.Conflicts("counterstrikesharp", "source2mod"), "Scripting frameworks not exclusive.");
+        Check(FrameworkRules.Conflicts("counterstrikesharp", "source2mod") == !OperatingSystem.IsLinux(), "Linux allowlist differs.");
+        Check(FrameworkRules.Conflicts("swiftlys2", "source2mod"), "Unverified pair accepted.");
+        if (OperatingSystem.IsLinux())
+        {
+            FrameworkRules.SelectedFramework[] dependencies = [new("metamod", "metamod", true, "2.0.0-dev+1491"),
+                new("counterstrikesharp", "counterstrikesharp", true, "1.0.381"), new("matchzy", "counterstrikesharp")];
+            var swift = new FrameworkRules.SelectedFramework("swiftlys2", "swiftlys2", true, "1.5.4");
+            var s2m = new FrameworkRules.SelectedFramework("source2mod", "source2mod", true, "1.0.66");
+            FrameworkRules.ValidateSelections([swift, .. dependencies]);
+            FrameworkRules.ValidateSelections([.. dependencies, s2m]);
+            RejectCombination([.. dependencies, swift, s2m]);
+            RejectCombination([.. dependencies, swift with { Version = "1.5.3" }]);
+            RejectCombination([.. dependencies, new("modsharp", "modsharp", true, "git227")]);
+        }
+
+        static void RejectCombination(FrameworkRules.SelectedFramework[] selection)
+        {
+            try { FrameworkRules.ValidateSelections(selection); }
+            catch (InstanceException e) when (e.Code == "HCSL-PLUGIN-FRAMEWORK-CONFLICT") { return; }
+            throw new Exception("An unverified framework combination was accepted.");
+        }
         Check(!FrameworkRules.Conflicts("metamod", "counterstrikesharp"), "Metamod marked exclusive.");
         Check(FrameworkRules.Find("unknown") is null, "Unknown framework accepted.");
 
@@ -116,8 +136,8 @@ public static class FrameworkTests
         Check(switched.MissingFramework is null, "Installed target framework reported missing.");
         Check(switched.Selections.Single(s => s.Id == "metamod").Enabled, "Metamod was not kept enabled.");
         Check(switched.Selections.Single(s => s.Id == "source2mod").Enabled, "Target framework was not enabled.");
-        Check(!switched.Selections.Single(s => s.Id == "counterstrikesharp").Enabled, "Old framework was not disabled.");
-        Check(!switched.Selections.Single(s => s.Id == "matchzy").Enabled, "Old framework plugin was not disabled.");
+        Check(switched.Selections.Single(s => s.Id == "counterstrikesharp").Enabled == OperatingSystem.IsLinux(), "Old framework preservation differs.");
+        Check(switched.Selections.Single(s => s.Id == "matchzy").Enabled == OperatingSystem.IsLinux(), "Old framework plugin preservation differs.");
         Check(switched.Selections.Single(s => s.Id == "cs2fixes").Enabled, "Native plugin was disabled.");
         Check(switched.Selections[0].Id == "metamod" && switched.Selections[1].Id == "source2mod", "Metamod/target order is wrong.");
         var none = FrameworkSelection.Apply([new("metamod", "1.0.0"), new("counterstrikesharp", "1.0.0"), new("matchzy", "1.0.0")], null, available);

@@ -19,8 +19,8 @@ public static class FrameworkSelection
     }
 
     /// <summary>
-    /// Disable the old scripting framework and its plugins, enable metamod, and enable the chosen
-    /// framework package. Nothing is removed; the caller saves the manifest explicitly.
+    /// Keep allowlisted companion frameworks and their plugins, disable incompatible selections,
+    /// and enable the chosen framework with its base dependency. The caller saves explicitly.
     /// </summary>
     public static FrameworkChoice Apply(PluginSelection[] current, string? target, PluginResult available, string? version = null)
     {
@@ -49,7 +49,7 @@ public static class FrameworkSelection
             }
             var package = Package(available, selection.Id, selection.Version);
             if (package?.Framework is { } framework && FrameworkRules.Find(framework)?.Kind == FrameworkKind.ScriptFramework
-                && !string.Equals(framework, target, StringComparison.Ordinal))
+                && (target is null || FrameworkRules.Conflicts(framework, target)))
                 next.Add(selection with { Enabled = false });
             else next.Add(selection);
         }

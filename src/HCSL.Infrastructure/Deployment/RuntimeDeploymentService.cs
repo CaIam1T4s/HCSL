@@ -199,6 +199,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
         if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must have a valid BuildId before deployment.");
+        if (pluginSet.Packages.Count(package => package.FrameworkPayload &&
+                FrameworkRules.Find(package.Framework)?.Kind == FrameworkKind.ScriptFramework) > 1 && state.BuildId != "26879581")
+            throw new DeploymentException("HCSL-DEPLOY-FRAMEWORK-BUILD", "多框架组合仅在 CS2 构建 26879581 上通过验证。");
         var activeBaseline = ActiveBaseline(l, state.BuildId!);
         if (state.BuildId != activeBaseline.BuildId)
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must match the verified deployment baseline. Update the baseline after a new game build.");
@@ -312,7 +315,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     }
     private static string? FrameworkOf(IEnumerable<LocalPluginStore.Package> packages) =>
         packages.Where(p => p.FrameworkPayload && FrameworkRules.Find(p.Framework)?.Kind == FrameworkKind.ScriptFramework)
-            .Select(p => p.Framework).Distinct(StringComparer.Ordinal).SingleOrDefault();
+            .Select(p => p.Framework).Distinct(StringComparer.Ordinal)
+            // The allowed pairs have at most one framework requiring special persistent mappings.
+            .OrderByDescending(id => FrameworkRules.PersistentPathsFor(id).Length)
+            .ThenBy(id => id, StringComparer.Ordinal).FirstOrDefault();
 
     private static bool Overlaps(string left, string right) =>
         PluginRules.IsPathUnder(left, right) || PluginRules.IsPathUnder(right, left);
@@ -325,7 +331,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var packages = new List<LocalPluginStore.Package>();
             foreach (var plugin in manifest.Plugins.Where(p => p.Enabled))
                 packages.Add(LocalPluginStore.LoadPackage(Path.Combine(libraryRoot, "plugin-packages"), plugin.Id, plugin.Version));
-            FrameworkRules.ValidateSelections(packages.Select(p => new FrameworkRules.SelectedFramework(p.Id, p.Framework, p.FrameworkPayload)));
+            FrameworkRules.ValidateSelections(packages.Select(p => new FrameworkRules.SelectedFramework(p.Id, p.Framework, p.FrameworkPayload, p.Version)));
             using var sha = SHA256.Create();
             foreach (var package in packages)
             {

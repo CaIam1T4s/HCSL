@@ -150,12 +150,16 @@ public static class FrameworkRules
 
     public static bool IsBase(string id) => string.Equals(id, "metamod", StringComparison.Ordinal);
 
-    /// <summary>True when both are scripting frameworks; the base may always coexist.</summary>
+    public static bool IsCoexistenceCandidate(string? left, string? right) => OperatingSystem.IsLinux() &&
+        (left == "counterstrikesharp" && right is "swiftlys2" or "source2mod" ||
+         right == "counterstrikesharp" && left is "swiftlys2" or "source2mod");
+
+    /// <summary>True for scripting pairs outside the Linux coexistence allowlist.</summary>
     public static bool Conflicts(string? left, string? right)
     {
         if (left is null || right is null || left == right) return false;
         var a = Find(left); var b = Find(right);
-        return a?.Kind == FrameworkKind.ScriptFramework && b?.Kind == FrameworkKind.ScriptFramework;
+        return a?.Kind == FrameworkKind.ScriptFramework && b?.Kind == FrameworkKind.ScriptFramework && !IsCoexistenceCandidate(left, right);
     }
 
     /// <summary>Map a release tag to the version stored in the package. Unknown formats are rejected, never guessed.</summary>
@@ -326,7 +330,7 @@ public static class FrameworkRules
     }
 
     /// <summary>One enabled package projection used by the selection gate.</summary>
-    public sealed record SelectedFramework(string Id, string? Framework, bool IsFrameworkPackage = false);
+    public sealed record SelectedFramework(string Id, string? Framework, bool IsFrameworkPackage = false, string? Version = null);
 
     /// <summary>
     /// Derive the owning framework from game-relative package paths. Most specific markers win:
@@ -369,7 +373,7 @@ public static class FrameworkRules
     }
 
     /// <summary>
-    /// Reject two scripting frameworks and scripting packages without their framework/base.
+    /// Reject unverified scripting combinations and scripting packages without their framework/base.
     /// Base Metamod and unknown native plugins impose no extra requirement.
     /// </summary>
     public static void ValidateSelections(IEnumerable<SelectedFramework> enabled)
@@ -380,9 +384,13 @@ public static class FrameworkRules
             .Where(f => Find(f)?.Kind == FrameworkKind.ScriptFramework)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        if (scripts.Length > 1)
+        if (scripts.Length > 1 && !(scripts.Length == 2 && IsCoexistenceCandidate(scripts[0], scripts[1]) &&
+            HasVersion("metamod", "2.0.0-dev+1491") && HasVersion("counterstrikesharp", "1.0.381") &&
+            (scripts.Contains("swiftlys2") ? HasVersion("swiftlys2", "1.5.4") : HasVersion("source2mod", "1.0.66"))))
             throw new InstanceException("HCSL-PLUGIN-FRAMEWORK-CONFLICT",
-                "A preset can enable only one scripting framework; found " + string.Join(", ", scripts) + ".");
+                "多框架仅支持 Linux：Metamod 2.0.0-dev+1491、CounterStrikeSharp 1.0.381，另加 SwiftlyS2 1.5.4 或 Source2Mod 1.0.66。");
+
+        bool HasVersion(string id, string version) => selected.Any(x => x.Id == id && x.Framework == id && x.IsFrameworkPackage && x.Version == version);
         foreach (var script in scripts)
         {
             if (!selected.Any(x => string.Equals(x.Id, script, StringComparison.Ordinal) && x.IsFrameworkPackage))
