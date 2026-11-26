@@ -1,13 +1,22 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using HCSL.Application.Abstractions;
 
 namespace HCSL.Infrastructure.Storage;
 
 /// <summary>Single-user local workspace ownership. Does not start or supervise child processes.</summary>
-public sealed class LocalWorkspaceManager : IWorkspaceManager
+public sealed partial class LocalWorkspaceManager : IWorkspaceManager
 {
     private const string LockName = ".hcsl-management.lock";
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    [JsonSourceGenerationOptions(WriteIndented = true)]
+    [JsonSerializable(typeof(Marker))]
+    [JsonSerializable(typeof(Settings))]
+    private sealed partial class WorkspaceJsonContext : JsonSerializerContext;
+
+    private static JsonTypeInfo<T> JsonType<T>() =>
+        WorkspaceJsonContext.Default.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>
+        ?? throw new NotSupportedException($"Unsupported workspace file type: {typeof(T)}.");
     private sealed record Marker(int FormatVersion, string Product, string Kind, Guid Id);
     private sealed record Settings(int FormatVersion, string DataRoot, string LibraryRoot, Guid DataId, Guid LibraryId);
 
@@ -190,7 +199,7 @@ public sealed class LocalWorkspaceManager : IWorkspaceManager
         {
             if (new FileInfo(path).Length > 1024 * 1024)
                 throw new WorkspaceException("HCSL-FORMAT", "Workspace metadata exceeds its size limit.");
-            return JsonSerializer.Deserialize<T>(File.ReadAllText(path))
+            return JsonSerializer.Deserialize(File.ReadAllText(path), JsonType<T>())
                 ?? throw new WorkspaceException("HCSL-FORMAT", "Empty JSON document: " + path);
         }
         catch (JsonException ex)
@@ -230,7 +239,7 @@ public sealed class LocalWorkspaceManager : IWorkspaceManager
         {
             using (var stream = LocalPaths.CreateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, value, JsonOptions);
+                JsonSerializer.Serialize(stream, value, JsonType<T>());
                 stream.Flush(true);
             }
             File.Move(temporary, path, overwrite: true);

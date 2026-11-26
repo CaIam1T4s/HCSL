@@ -57,6 +57,27 @@ if (args is ["--only", "workspace-json"])
     return 0;
 }
 
+if (args is ["--only", "workspace-storage-json"])
+{
+    AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
+    Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+    var dir = Directory.CreateTempSubdirectory("hcsl-workspace-json-");
+    try
+    {
+        var settings = Path.Combine(dir.FullName, "settings");
+        var data = Path.Combine(dir.FullName, "saved-data");
+        var library = Path.Combine(dir.FullName, "saved-library");
+        var workspace = new HCSL.Application.Abstractions.WorkspaceRequest(settings, data, library);
+        using (new LocalWorkspaceManager().Acquire(workspace)) { }
+        var saved = LocalPaths.Defaults(settings);
+        Check(saved.DataRoot == data && saved.LibraryRoot == library, "startup must reuse the saved workspace paths");
+        using (new LocalWorkspaceManager().Acquire(workspace)) { }
+        Console.WriteLine("PASS saved workspace startup with JSON reflection disabled");
+        return 0;
+    }
+    finally { dir.Delete(recursive: true); }
+}
+
 var root = Path.Combine(Path.GetTempPath(), "hcsl-ipc-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var oldConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
