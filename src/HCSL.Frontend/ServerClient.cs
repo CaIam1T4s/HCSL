@@ -57,8 +57,9 @@ public sealed class ServerClient(IDaemonClient client)
         // than a legitimate busy period, so polling opts into a longer deadline than mutations.
         var timeout = command.Action is ServerAction.Status or ServerAction.Logs ? TimeSpan.FromSeconds(15) : TimeSpan.FromSeconds(10);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,
-            Options: workspace == null ? null : new(workspace), ServerCommandJson: JsonSerializer.Serialize(command)), timeout, ct);
+            Options: workspace == null ? null : new(workspace),
+            ServerCommandJson: JsonSerializer.Serialize(command, WorkspaceJsonContext.Default.ServerCommand)), timeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<ServerSnapshot>(response.ServerSnapshotJson!) ?? throw new IOException("Missing server state.");
+        return JsonSerializer.Deserialize(response.ServerSnapshotJson!, WorkspaceJsonContext.Default.ServerSnapshot) ?? throw new IOException("Missing server state.");
     }
 }

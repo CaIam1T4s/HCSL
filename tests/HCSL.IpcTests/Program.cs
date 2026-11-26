@@ -45,7 +45,15 @@ if (args is ["--only", "workspace-json"])
     var plan = await new ServerClient(stub).PlanDeploymentAsync(stub.InstanceId, WorkspaceJsonDaemon.Paths);
     Check(plan.InstanceId == stub.InstanceId && plan.CopyMode == DeploymentCopyMode.FullCopy &&
         plan.PersistentMappings is [{ RuntimePath: "cfg" }], "deployment plan was not decoded");
-    Console.WriteLine("PASS workspace JSON with reflection disabled");
+    var baseline = await new BaselineClient(stub).StatusAsync();
+    Check(baseline.BuildId == "123", "baseline was not decoded");
+    var server = await new ServerClient(stub).SendAsync(new(ServerAction.Status));
+    Check(server.State == ServerState.Idle && server.Lines is [], "server status was not decoded");
+    using var steam = new SteamCmdController(stub, action => action());
+    await steam.ConnectAsync();
+    await steam.RefreshContentStatusAsync();
+    Check(steam.ContentInstalled == true && steam.ContentBuildId == "123", "content status was not decoded");
+    Console.WriteLine("PASS workspace and startup JSON with reflection disabled");
     return 0;
 }
 
@@ -423,9 +431,12 @@ sealed class WorkspaceJsonDaemon : IDaemonClient
     public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
     {
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: Paths);
-        if (request.Kind == RequestKind.Hello) return Task.FromResult(response);
+        if (request.Kind is RequestKind.Hello or RequestKind.Status)
+            return Task.FromResult(response with { InstanceId = InstanceId });
+        if (request.Kind == RequestKind.ContentStatus)
+            return Task.FromResult(response with { InstanceId = InstanceId, ContentStatusJson = """{"Installed":true,"BuildId":"123"}""" });
 
-        using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson!);
+        using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson ?? request.BaselineJson!);
         var action = command.RootElement.GetProperty("Action").GetInt32();
         return Task.FromResult(request.Kind switch
         {
@@ -437,6 +448,14 @@ sealed class WorkspaceJsonDaemon : IDaemonClient
                 command.RootElement.GetProperty("InstanceId").GetGuid() == InstanceId => response with
             {
                 DeploymentPlanJson = $$"""{"InstanceId":"{{InstanceId}}","CopyMode":1,"PersistentMappings":[{"RuntimePath":"cfg","PersistentPath":"preset/cfg"}],"Notes":[]}"""
+            },
+            RequestKind.Baseline when action == (int)BaselineAction.Status => response with
+            {
+                BaselineResultJson = """{"BuildId":"123","Source":"local"}"""
+            },
+            RequestKind.Server when action == (int)ServerAction.Status => response with
+            {
+                ServerSnapshotJson = """{"State":0,"Code":"idle","Lines":[]}"""
             },
             _ => throw new InvalidOperationException("Unexpected workspace command")
         });

@@ -133,7 +133,7 @@ public sealed class SteamCmdController(IDaemonClient client, Action<Action> disp
         {
             var response = await client.SendAsync(Request(RequestKind.ContentStatus, new(new(settings, data, library))), connection.Token);
             if (!response.Success || response.InstanceId != daemonInstance) throw new IOException(response.Code);
-            var value = System.Text.Json.JsonSerializer.Deserialize<HCSL.Core.Cs2ContentStatus>(response.ContentStatusJson ?? "null");
+            var value = System.Text.Json.JsonSerializer.Deserialize(response.ContentStatusJson ?? "null", WorkspaceJsonContext.Default.Cs2ContentStatus);
             Post(() => { contentStatus = value; Notify(); }, current);
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or System.Text.Json.JsonException)

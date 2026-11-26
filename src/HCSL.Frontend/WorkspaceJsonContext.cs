@@ -8,4 +8,8 @@ namespace HCSL.Frontend;
 [JsonSerializable(typeof(InstanceCatalog))]
 [JsonSerializable(typeof(ServerCommand))]
 [JsonSerializable(typeof(DeploymentPlan))]
+[JsonSerializable(typeof(Cs2ContentStatus))]
+[JsonSerializable(typeof(BaselineCommand))]
+[JsonSerializable(typeof(BaselineResult))]
+[JsonSerializable(typeof(ServerSnapshot))]
 internal sealed partial class WorkspaceJsonContext : JsonSerializerContext;

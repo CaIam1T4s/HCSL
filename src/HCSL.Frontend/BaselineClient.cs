@@ -19,9 +19,9 @@ public sealed class BaselineClient(IDaemonClient client, Func<WorkspacePaths>? w
         if (paths is null || string.IsNullOrWhiteSpace(paths.SettingsRoot) || string.IsNullOrWhiteSpace(paths.DataRoot) || string.IsNullOrWhiteSpace(paths.LibraryRoot))
             paths = hello.Defaults;
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Baseline,
-            Options: new(paths), BaselineJson: System.Text.Json.JsonSerializer.Serialize(new BaselineCommand(action))), timeout, ct);
+            Options: new(paths), BaselineJson: System.Text.Json.JsonSerializer.Serialize(new BaselineCommand(action), WorkspaceJsonContext.Default.BaselineCommand)), timeout, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return System.Text.Json.JsonSerializer.Deserialize<BaselineResult>(response.BaselineResultJson ?? "null")
+        return System.Text.Json.JsonSerializer.Deserialize(response.BaselineResultJson ?? "null", WorkspaceJsonContext.Default.BaselineResult)
             ?? throw new IOException("Missing baseline result.");
     }
 }
