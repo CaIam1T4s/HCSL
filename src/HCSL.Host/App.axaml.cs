@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Threading;
 using HCSL.Frontend;
+using HCSL.Core;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using HCSL.Host.Services;
@@ -43,7 +44,7 @@ public partial class App : Avalonia.Application
                 {
                     try
                     {
-                        await new DaemonBootstrapper($"hcsl-package-smoke-{Guid.NewGuid():N}").EnsureRunningAsync();
+                        await CheckPackagedDaemonAsync();
                         desktop.Shutdown(0);
                     }
                     catch (Exception error)
@@ -57,5 +58,25 @@ public partial class App : Avalonia.Application
                 desktop.MainWindow.Opened += (_, _) => { _ = steamCmd.ConnectAsync(); _ = servers.InitializeAsync(); _ = baseline.RefreshStatusAsync(); };
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static async Task CheckPackagedDaemonAsync()
+    {
+        var pipe = $"hcsl-package-smoke-{Guid.NewGuid():N}";
+        await new DaemonBootstrapper(pipe).EnsureRunningAsync();
+        var client = new DaemonClient(pipe);
+        using var steam = new SteamCmdController(client, action => action());
+        await steam.ConnectAsync();
+        await steam.RefreshContentStatusAsync();
+        if (!steam.Connected || steam.ContentInstalled is null)
+            throw new IOException("Package smoke could not read the managed content status.");
+
+        await new InstanceClient(client).ExecuteAsync(new(InstanceAction.List));
+        await new ServerClient(client).SendAsync(new(ServerAction.Status));
+        try { await new BaselineClient(client).StatusAsync(); }
+        catch (IOException error) when (error.Message.StartsWith("HCSL-BASELINE-NOT-READY:", StringComparison.Ordinal))
+        {
+            // A clean runner has no managed CS2 installation.
+        }
     }
 }
