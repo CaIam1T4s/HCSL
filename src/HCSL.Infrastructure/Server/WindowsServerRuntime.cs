@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Deployment;
@@ -9,6 +10,86 @@ namespace HCSL.Infrastructure.Server;
 /// <summary>Windows x64 local dedicated server backend. External networking is not enabled here.</summary>
 public sealed class WindowsServerRuntime : IServerRuntimeService
 {
+    private sealed class ConsoleSession(Process process, CancellationToken stop)
+    {
+        public Process Process { get; } = process;
+        public CancellationToken Stop { get; } = stop;
+        public SemaphoreSlim Admission { get; } = new(1, 1);
+        public Dictionary<Guid, (string Query, ServerConsoleReceipt Receipt)> History { get; } = [];
+        public long LastSend;
+    }
+
+    private readonly ConcurrentDictionary<Guid, ConsoleSession> sessions = new();
+
+    public async Task<ServerConsoleReceipt> SendConsoleAsync(ServerConsoleCommand command, CancellationToken ct = default)
+    {
+        var query = ServerConsoleRules.ValidateConfirmed(command);
+        if (!sessions.TryGetValue(command.RunId, out var session))
+            return new(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-STALE");
+        if (!await session.Admission.WaitAsync(0, ct))
+            return new(command.RunId, command.CommandId, ConsoleDelivery.Rejected, "HCSL-CONSOLE-BUSY");
+        try { return await WriteAsync(session, command, query, true, ct); }
+        finally { session.Admission.Release(); }
+    }
+
+    public async Task<ServerConsoleReceipt[]> SendCfgBatchAsync(Guid runId, string[] paths,
+        Action<ServerConsoleReceipt> onReceipt, CancellationToken ct = default)
+    {
+        var commands = paths.Select(path => new ServerConsoleCommand(runId, Guid.NewGuid(),
+            "exec " + PresetCfgRules.Path(path, requireCfgFile: true))).ToArray();
+        var queries = commands.Select(ServerConsoleRules.ValidateConfirmed).ToArray();
+        if (!sessions.TryGetValue(runId, out var session))
+            throw new ServerException("HCSL-CONSOLE-STALE", "Server session changed.");
+        if (!await session.Admission.WaitAsync(0, ct))
+            throw new ServerException("HCSL-CONSOLE-BUSY", "Console is busy.");
+        try
+        {
+            var receipts = new List<ServerConsoleReceipt>();
+            for (var i = 0; i < commands.Length; i++)
+            {
+                var receipt = await WriteAsync(session, commands[i], queries[i], i == 0, ct);
+                receipts.Add(receipt);
+                onReceipt(receipt);
+                if (receipt.Delivery != ConsoleDelivery.Written) break;
+            }
+            return [.. receipts];
+        }
+        finally { session.Admission.Release(); }
+    }
+
+    private static async Task<ServerConsoleReceipt> WriteAsync(ConsoleSession session, ServerConsoleCommand command,
+        string query, bool rateLimit, CancellationToken ct)
+    {
+        ServerConsoleReceipt Receipt(ConsoleDelivery delivery, string code) => new(command.RunId, command.CommandId, delivery, code);
+        if (session.Stop.IsCancellationRequested || !IsAlive(session.Process))
+            return Receipt(ConsoleDelivery.Rejected, "HCSL-CONSOLE-STALE");
+        if (session.History.TryGetValue(command.CommandId, out var previous))
+            return previous.Query == query ? previous.Receipt : Receipt(ConsoleDelivery.Rejected, "HCSL-CONSOLE-ID");
+        if (session.History.Count >= 4096) return Receipt(ConsoleDelivery.Rejected, "HCSL-CONSOLE-LIMIT");
+        if (rateLimit && session.LastSend != 0 && Stopwatch.GetElapsedTime(session.LastSend) < TimeSpan.FromMilliseconds(250))
+            return Receipt(ConsoleDelivery.Rejected, "HCSL-CONSOLE-RATE");
+        session.LastSend = Stopwatch.GetTimestamp();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, session.Stop);
+        deadline.CancelAfter(TimeSpan.FromSeconds(2));
+        ServerConsoleReceipt result;
+        try
+        {
+            await session.Process.StandardInput.WriteLineAsync(query.AsMemory(), deadline.Token);
+            await session.Process.StandardInput.FlushAsync(deadline.Token);
+            result = Receipt(ConsoleDelivery.Written, "HCSL-CONSOLE-WRITTEN");
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidOperationException)
+        { result = Receipt(ConsoleDelivery.Unknown, "HCSL-CONSOLE-DELIVERY-UNKNOWN"); }
+        session.History.Add(command.CommandId, (query, result));
+        return result;
+    }
+
+    private static bool IsAlive(Process process)
+    {
+        try { return !process.HasExited; }
+        catch (InvalidOperationException) { return false; }
+    }
+
     public Task<DeploymentPlan> PlanDeploymentAsync(WorkspaceRequest workspace, Guid instanceId, CancellationToken ct = default) =>
         Task.Run(() => new RuntimeDeploymentService().Plan(workspace, new(instanceId, DeploymentCopyMode.FullCopy), ct), ct);
 
@@ -44,7 +125,7 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
         var executable = Path.Combine(game, "bin", "win64", "cs2.exe");
         LocalPaths.RejectLink(executable);
         var start = new ProcessStartInfo(executable) { WorkingDirectory = game, UseShellExecute = false,
-            RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, CreateNoWindow = true };
         foreach (var arg in new[] { "-dedicated", "-console", "-insecure", "-nomaster", "-ip", "127.0.0.1", "-port", definition.GamePort.ToString(),
             "+sv_lan", "1", "+game_type", preset.GameType.ToString(), "+game_mode", preset.GameMode.ToString(), "+servercfgfile", InstancePasswordConfig.ExecName, "+map", preset.Map })
             start.ArgumentList.Add(arg);
@@ -54,12 +135,19 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
         events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING", Preset: identity));
         using var process = Process.Start(start) ?? throw new ServerException("HCSL-SERVER-START", "Could not start cs2.exe.");
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var session = new ConsoleSession(process, stop);
         var output = PumpAsync(process.StandardOutput);
         var errors = PumpAsync(process.StandardError);
         var exited = process.WaitForExitAsync();
         var deadline = Task.Delay(TimeSpan.FromSeconds(Math.Clamp(options.StartTimeoutSeconds, 1, 600)), stop);
         var winner = await Task.WhenAny(ready.Task, exited, deadline);
-        if (winner == ready.Task) await Task.WhenAny(exited, Task.Delay(Timeout.InfiniteTimeSpan, stop));
+        if (winner == ready.Task && !stop.IsCancellationRequested && IsAlive(process))
+        {
+            sessions.TryAdd(runId, session);
+            events.Report(new(ServerState.Running, "HCSL-SERVER-RUNNING", Map: preset.Map, Preset: identity));
+            await Task.WhenAny(exited, Task.Delay(Timeout.InfiniteTimeSpan, stop));
+        }
+        sessions.TryRemove(runId, out _);
         var timedOut = winner == deadline && !stop.IsCancellationRequested;
         if (!process.HasExited)
         {
@@ -78,8 +166,7 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
         {
             while (await reader.ReadLineAsync() is { } line)
             {
-                if (line.Contains("ss_loading -> ss_active", StringComparison.Ordinal) && ready.TrySetResult())
-                    events.Report(new(ServerState.Running, "HCSL-SERVER-RUNNING", Map: preset.Map, Preset: identity));
+                if (line.Contains("ss_loading -> ss_active", StringComparison.Ordinal)) ready.TrySetResult();
                 events.Report(new(ready.Task.IsCompleted ? ServerState.Running : ServerState.LoadingMap,
                     "HCSL-SERVER-LOG", line, LogReceivedAt: DateTimeOffset.UtcNow));
             }
