@@ -57,14 +57,24 @@ public static class FrameworkTests
         Check(FrameworkRules.CompareVersions("counterstrikesharp", "1.0.379", "1.0.9") > 0, "Version numbers compared as text.");
         Check(FrameworkRules.Conflicts("counterstrikesharp", "source2mod") == !OperatingSystem.IsLinux(), "Linux allowlist differs.");
         Check(FrameworkRules.Conflicts("swiftlys2", "source2mod"), "Unverified pair accepted.");
-        if (OperatingSystem.IsLinux())
         {
             FrameworkRules.SelectedFramework[] dependencies = [new("metamod", "metamod", true, "2.0.0-dev+1491"),
                 new("counterstrikesharp", "counterstrikesharp", true, "1.0.381"), new("matchzy", "counterstrikesharp")];
             var swift = new FrameworkRules.SelectedFramework("swiftlys2", "swiftlys2", true, "1.5.4");
             var s2m = new FrameworkRules.SelectedFramework("source2mod", "source2mod", true, "1.0.66");
-            FrameworkRules.ValidateSelections([swift, .. dependencies]);
-            FrameworkRules.ValidateSelections([.. dependencies, s2m]);
+            if (OperatingSystem.IsLinux())
+            {
+                FrameworkRules.ValidateSelections([swift, .. dependencies]);
+                FrameworkRules.ValidateSelections([.. dependencies, s2m]);
+                FrameworkRules.ValidateSelections([.. dependencies]);
+                FrameworkRules.ValidateSelections([swift]);
+                FrameworkRules.ValidateSelections([dependencies[0], s2m]);
+            }
+            else
+            {
+                RejectCombination([swift, .. dependencies]);
+                RejectCombination([.. dependencies, s2m]);
+            }
             RejectCombination([.. dependencies, swift, s2m]);
             RejectCombination([.. dependencies, swift with { Version = "1.5.3" }]);
             RejectCombination([.. dependencies, new("modsharp", "modsharp", true, "git227")]);
