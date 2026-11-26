@@ -92,7 +92,7 @@ internal static class ServerPreparation
         foreach (var port in ports) port.Dispose();
         if (access is not null) await access.DisposeAsync();
     }
-    private static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
+    internal static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId
         || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision
         || !string.Equals(receipt.RotationGroup, plan.RotationGroup, StringComparison.Ordinal)
