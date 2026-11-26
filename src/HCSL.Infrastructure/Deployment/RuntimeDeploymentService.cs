@@ -38,7 +38,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             root.GetProperty("independentConfigPaths").EnumerateArray().Select(p => p.GetString()!).ToArray());
     }
 
-    private static string LocalBaselinePath(WorkspaceLayout layout) => Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json");
+    private const string WindowsEntrypoint = "game/bin/win64/cs2.exe";
+
+    private static string LocalBaselinePath(WorkspaceLayout layout) => Path.Combine(layout.LibraryRoot, ".hcsl",
+        OperatingSystem.IsWindows() ? "windows-startup-baseline.json" : "linux-startup-baseline.json");
 
     private static Baseline? ReadLocalBaseline(WorkspaceLayout layout, string buildId)
     {
@@ -63,8 +66,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     /// <summary>Refreshes the library-local baseline after a successful managed SteamCMD update.</summary>
     internal static void RefreshLocalBaseline(WorkspaceLayout layout, string buildId, Guid operationId, Baseline? template = null)
     {
-        Platform();
-        template ??= ReadBaseline();
+        var windows = OperatingSystem.IsWindows();
+        if (!windows) Platform();
+        else if (RuntimeInformation.ProcessArchitecture != Architecture.X64)
+            throw new DeploymentException("HCSL-DEPLOY-PLATFORM", "The Windows startup baseline requires an x64 process.");
+        template ??= windows ? new Baseline(buildId, "", [], ["game/csgo/gameinfo.gi", "game/csgo/steam.inf"]) : ReadBaseline();
         // The recorded build must be the build Steam actually delivered: never bind a baseline to an
         // edited install state or a different manifest. This runs before any hashing so nothing is written.
         var manifestPath = InRoot(layout.ServerRoot, "steamapps/appmanifest_730.acf");
@@ -90,9 +96,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 throw new DeploymentException("HCSL-DEPLOY-BASELINE", "A baseline native file is missing or linked: " + item.Path);
             inventory.Add(new(item.Path, info.Length, HashFile(path)));
         }
-        var entrypoint = InRoot(layout.ServerRoot, "game/cs2.sh");
+        var entrypointPath = windows ? WindowsEntrypoint : "game/cs2.sh";
+        var entrypoint = InRoot(layout.ServerRoot, entrypointPath);
         LocalPaths.RejectLink(entrypoint);
-        if (!File.Exists(entrypoint)) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "The baseline entrypoint is missing.");
+        if (!File.Exists(entrypoint) || new FileInfo(entrypoint).Length == 0) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "The baseline entrypoint is missing.");
         foreach (var config in template.Configs)
         {
             var path = InRoot(layout.ServerRoot, config);
@@ -100,8 +107,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             if (!File.Exists(path) || new FileInfo(path).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-BASELINE", "A baseline config is missing or empty: " + config);
         }
+        var entrypointHash = HashFile(entrypoint);
+        if (windows) inventory.Add(new(entrypointPath, new FileInfo(entrypoint).Length, entrypointHash));
         var document = new LocalBaselineDocument(1, 730, buildId, "ManagedSteamCmd", operationId.ToString("N"),
-            DateTimeOffset.UtcNow, HashFile(entrypoint), [.. inventory], template.Configs);
+            DateTimeOffset.UtcNow, entrypointHash, [.. inventory], template.Configs);
         var destination = LocalBaselinePath(layout);
         LocalPaths.RejectLink(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -125,8 +134,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     public static (string Source, string BuildId, string LocalBuildId) BaselineStatus(WorkspaceLayout layout, string installedBuildId)
     {
         var local = ReadLocalBaseline(layout, installedBuildId);
-        var embedded = ReadBaseline();
-        var source = local is not null ? "Local" : embedded.BuildId == installedBuildId ? "Embedded" : "None";
+        var source = local is not null ? "Local" : !OperatingSystem.IsWindows() && ReadBaseline().BuildId == installedBuildId ? "Embedded" : "None";
         return (source, installedBuildId, local?.BuildId ?? "");
     }
 
