@@ -25,6 +25,38 @@ public partial class PresetCfgPage : UserControl
     private readonly SemaphoreSlim loadGate = new(1, 1);
     private bool executing;
     private Node[] selected = [];
+    private Node[] roots = [];
+    private object[]? expandedBeforeSearch;
+
+    private void SearchChanged(object? sender, TextChangedEventArgs e) => ApplySearch();
+
+    private void ApplySearch()
+    {
+        if (CfgTree is null || Search is null) return;
+        var query = (Search.Text ?? "").Trim();
+        CfgTree.SelectedKeys = [];
+        if (query.Length == 0)
+        {
+            CfgTree.ItemsSource = roots;
+            if (expandedBeforeSearch is { } expanded) CfgTree.ExpandedKeys = expanded;
+            expandedBeforeSearch = null;
+            return;
+        }
+        expandedBeforeSearch ??= CfgTree.ExpandedKeys?.Cast<object>().ToArray() ?? [];
+        var filtered = Filter(roots).ToArray();
+        CfgTree.ItemsSource = filtered;
+        CfgTree.ExpandedKeys = Keys(filtered).ToArray();
+
+        IEnumerable<Node> Filter(IEnumerable<Node> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.Path.Contains(query, StringComparison.OrdinalIgnoreCase)) yield return node;
+                else if (Filter(node.Children ?? []).ToArray() is { Length: > 0 } children)
+                    yield return node with { Children = children };
+            }
+        }
+    }
 
     public PresetCfgPage()
     {
@@ -197,6 +229,8 @@ public partial class PresetCfgPage : UserControl
     private async Task LoadAsync()
     {
         var ticket = ++generation;
+        roots = [];
+        expandedBeforeSearch = null;
         CfgTree.ItemsSource = null;
         CfgTree.SelectedKeys = Array.Empty<object>();
         CfgTree.ExpandedKeys = Array.Empty<object>();
@@ -213,9 +247,10 @@ public partial class PresetCfgPage : UserControl
             for (var i = 0; i < 40 && Current() && !scope.Servers.Server.Connected; i++)
                 await Task.Delay(125);
             if (!Current()) return;
-            var roots = await ReadAsync("");
+            var loadedRoots = await ReadAsync("");
             if (!Current()) return;
-            CfgTree.ItemsSource = roots;
+            roots = loadedRoots;
+            ApplySearch();
             if (truncated) Owner?.ShowInstanceNotification("CFG 列表未完整显示", "其余文件可从基本信息打开 CFG 目录查看。");
         }
         catch (Exception e) when (e is IOException or InstanceException or InvalidOperationException)
