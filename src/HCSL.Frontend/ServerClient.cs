@@ -24,9 +24,10 @@ public sealed class ServerClient(IDaemonClient client)
     {
         if (instanceId == Guid.Empty) throw new IOException("HCSL-SERVER-ID: Instance ID is required.");
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Server,
-            Options: new(workspace), ServerCommandJson: JsonSerializer.Serialize(new ServerCommand(ServerAction.PlanDeployment, instanceId))), ct);
+            Options: new(workspace), ServerCommandJson: JsonSerializer.Serialize(new ServerCommand(ServerAction.PlanDeployment, instanceId),
+                WorkspaceJsonContext.Default.ServerCommand)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<DeploymentPlan>(response.DeploymentPlanJson ?? "null")
+        return JsonSerializer.Deserialize(response.DeploymentPlanJson ?? "null", WorkspaceJsonContext.Default.DeploymentPlan)
             ?? throw new IOException("Missing deployment plan.");
     }
 

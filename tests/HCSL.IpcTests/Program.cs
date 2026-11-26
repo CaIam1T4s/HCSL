@@ -35,6 +35,20 @@ if (args is ["--only", "wire-json"])
     }
 }
 
+if (args is ["--only", "workspace-json"])
+{
+    AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
+    Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+    var stub = new WorkspaceJsonDaemon();
+    var catalog = await new InstanceClient(stub).ExecuteAsync(new(InstanceAction.List));
+    Check(catalog.Instances is [] && catalog.ConnectionAddresses is ["127.0.0.1"], "instance catalog was not decoded");
+    var plan = await new ServerClient(stub).PlanDeploymentAsync(stub.InstanceId, WorkspaceJsonDaemon.Paths);
+    Check(plan.InstanceId == stub.InstanceId && plan.CopyMode == DeploymentCopyMode.FullCopy &&
+        plan.PersistentMappings is [{ RuntimePath: "cfg" }], "deployment plan was not decoded");
+    Console.WriteLine("PASS workspace JSON with reflection disabled");
+    return 0;
+}
+
 var root = Path.Combine(Path.GetTempPath(), "hcsl-ipc-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var oldConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
@@ -400,3 +414,31 @@ static bool Live(int pid)
 }
 [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
 static extern int Kill(int pid, int signal);
+
+sealed class WorkspaceJsonDaemon : IDaemonClient
+{
+    public static readonly WorkspacePaths Paths = new("settings", "data", "library");
+    public Guid InstanceId { get; } = Guid.NewGuid();
+
+    public Task<LocalResponse> SendAsync(LocalRequest request, CancellationToken ct = default)
+    {
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, Defaults: Paths);
+        if (request.Kind == RequestKind.Hello) return Task.FromResult(response);
+
+        using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson!);
+        var action = command.RootElement.GetProperty("Action").GetInt32();
+        return Task.FromResult(request.Kind switch
+        {
+            RequestKind.Instances when action == (int)InstanceAction.List => response with
+            {
+                InstanceCatalogJson = """{"Instances":[],"ConnectionAddresses":["127.0.0.1"]}"""
+            },
+            RequestKind.Server when action == (int)ServerAction.PlanDeployment &&
+                command.RootElement.GetProperty("InstanceId").GetGuid() == InstanceId => response with
+            {
+                DeploymentPlanJson = $$"""{"InstanceId":"{{InstanceId}}","CopyMode":1,"PersistentMappings":[{"RuntimePath":"cfg","PersistentPath":"preset/cfg"}],"Notes":[]}"""
+            },
+            _ => throw new InvalidOperationException("Unexpected workspace command")
+        });
+    }
+}
