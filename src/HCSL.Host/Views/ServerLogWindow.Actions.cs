@@ -42,9 +42,6 @@ public sealed partial class ServerLogWindow
         group.Classes.Add("console-actions");        view.Click += (_, _) => OpenViewMenu(view);
         share.Click += (_, _) => OpenShareDialog();
         options.Click += (_, _) => OpenOptionsMenu(options);
-        var cfg = new ExpandingButtonGroupItem { Label = "执行 CFG", Icon = Lucide.Geometry(LucideIconKind.FileCode) };
-        cfg.Click += async (_, _) => await OpenCfgExecutionAsync();
-        group.Items.Add(cfg);
         var toolbar = new Grid { ColumnDefinitions = ColumnDefinitions.Parse("*,Auto") };
         // Same face as the log: the query is text the console will echo back.
         findInput.FontFamily = HCSL.UI.Shared.Services.MonospaceFont.Resolve();
@@ -217,28 +214,6 @@ public sealed partial class ServerLogWindow
         MenuEntry(menu, "加载更早的日志", async () => await TryLoadEarlierAsync(), enabled: model.Server.CanLoadEarlier, icon: LucideIconKind.ArrowUp);
         menu.Open(anchor);
     }
-    private bool cfgExecutionOpen;
-
-    private async Task OpenCfgExecutionAsync()
-    {
-        if (cfgExecutionOpen || model.Server.RunId is not { } run || model.Server.Snapshot is not
-            { InstanceId: { } instance, Preset.Id: var preset } || !model.CanExecCfg(instance, preset))
-        {
-            if (!cfgExecutionOpen) notifications.Show(new ToastOptions { Title = "当前没有可执行 CFG 的服务器会话", Kind = ToastKind.Info });
-            return;
-        }
-        cfgExecutionOpen = true;
-        try
-        {
-            var page = new Pages.PresetCfgPage { ConsoleTarget = (model, instance, preset, run), ConsoleOwner = owner, Height = 360 };
-            var dialog = new Dialog { Title = "执行 CFG", Size = ControlSize.Large, Content = page };
-            var showing = dialog.ShowAsync(this);
-            await page.LoadForConsoleAsync();
-            await showing;
-        }
-        finally { cfgExecutionOpen = false; }
-    }
-
     private void OpenOptionsMenu(Control anchor)
     {
         var menu = NewConsoleMenu("日志选项");

@@ -93,6 +93,9 @@ public sealed partial class ServerLogWindow
         playersHost.IsVisible = e.Item.Key == "players";
         mapsHost.IsVisible = e.Item.Key == "maps";
         if (mapsHost.IsVisible) _ = OpenMapsAsync();
+        cfgHost.IsVisible = e.Item.Key == "cfg";
+        if (cfgHost.IsVisible) _ = OpenCfgPageAsync();
+        else cfgHost.Content = null;
         if (!consoleHost.IsVisible) return;
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
@@ -101,6 +104,19 @@ public sealed partial class ServerLogWindow
             Update();
             if (following) ApplyBottom();
         }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    private async Task OpenCfgPageAsync()
+    {
+        if (model.Server.RunId is not { } run || model.Server.Snapshot is not
+            { InstanceId: { } instance, Preset.Id: var preset } || !model.Server.Active)
+        {
+            cfgHost.Content = new TextBlock { Text = "服务器启动后可在此执行 CFG。", Margin = new Thickness(20) };
+            return;
+        }
+        var page = new Pages.PresetCfgPage { ConsoleTarget = (model, instance, preset, run), ConsoleOwner = owner };
+        cfgHost.Content = page;
+        await page.LoadForConsoleAsync();
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)

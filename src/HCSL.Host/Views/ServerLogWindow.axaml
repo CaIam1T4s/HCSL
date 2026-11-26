@@ -36,6 +36,7 @@
             <arc:SidebarItem Key="console" Label="控制台" Icon="{x:Static arc:ArcIcons.Terminal}"/>
             <arc:SidebarItem Key="players" Label="在线玩家" Icon="{x:Static arc:ArcIcons.Users}"/>
             <arc:SidebarItem Key="maps" Label="地图切换"/>
+            <arc:SidebarItem Key="cfg" Label="CFG"/>
           </arc:SidebarSection>
         </arc:Sidebar>
         <Panel Grid.Row="1" Margin="8,0,8,12">
@@ -74,6 +75,7 @@
         <ContentControl x:Name="consoleHost"/>
         <ContentControl x:Name="playersHost" IsVisible="False"/>
         <ContentControl x:Name="mapsHost" IsVisible="False"/>
+        <ContentControl x:Name="cfgHost" IsVisible="False"/>
       </Grid>
       </Border>
     </Border>
