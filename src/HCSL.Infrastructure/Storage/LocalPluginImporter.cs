@@ -394,7 +394,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         var manifest = ReadPackagedManifest(root);
         var id = forcedId ?? manifest?.Id ?? DetectId(files, hint);
         var name = fallbackName ?? manifest?.Name ?? DetectName(id, files, hint);
-        var version = forcedVersion ?? manifest?.Version ?? DetectVersion(hint) ?? DetectVersionFromBinaries(files) ?? "1.0.0";
+        var version = forcedVersion ?? manifest?.Version ?? DetectVersion(hint) ?? DetectVersionFromBinaries(files) ?? (allowUnknown ? "" : "1.0.0");
         var metaPlugin = DetectMetaPlugin(files);
         if (FrameworkRules.Find(id) is not null && !FrameworkRules.IsFrameworkPayload(id, files.Select(f => f.RelativePath)))
             warnings.Add("This package is a sub-plugin, not the " + id + " framework loader; importing it as '" + id + "' would replace the framework selection.");
@@ -404,6 +404,8 @@ public sealed class LocalPluginImporter : IPluginImporter
             files.Any(file => file.RelativePath.StartsWith(pluginRoot + "/", StringComparison.OrdinalIgnoreCase))).ToArray();
         var requiredFramework = detected.Length == 1 && !FrameworkRules.IsFrameworkPayload(detected[0].Id,
             files.Select(file => file.RelativePath)) ? detected[0].Id : null;
+        if (requiredFramework is null && FrameworkRules.Find(id) is null && metaPlugin is not null)
+            requiredFramework = "metamod";
         return new(files, id, name, version, metaPlugin, cfgFiles, requiredFramework);
     }
 
@@ -461,14 +463,11 @@ public sealed class LocalPluginImporter : IPluginImporter
 
     private static string DetectId(List<SourceFile> files, string hint)
     {
-        foreach (var (marker, id) in new[]
-        {
-            ("csgo/addons/source2mod/", "source2mod"),
-            ("csgo/addons/sourcemod/", "sourcemod"),
-            ("csgo/addons/metamod/", "metamod")
-        })
-            if (files.Any(f => f.RelativePath.StartsWith(marker, StringComparison.OrdinalIgnoreCase))) return id;
         var paths = files.Select(f => f.RelativePath).ToArray();
+        foreach (var id in new[] { "source2mod", "sourcemod", "metamod" })
+            if (FrameworkRules.IsFrameworkPayload(id, paths)) return id;
+        if (paths.Any(p => p.StartsWith("csgo/addons/cs2kz/", StringComparison.OrdinalIgnoreCase)) ||
+            hint.StartsWith("cs2kz-", StringComparison.OrdinalIgnoreCase)) return "cs2kz";
         if (paths.Any(p => p.StartsWith("sharp/", StringComparison.OrdinalIgnoreCase))) return "modsharp";
         if (paths.Any(p => p.StartsWith("csgo/addons/counterstrikesharp/", StringComparison.OrdinalIgnoreCase)))
         {
@@ -489,12 +488,13 @@ public sealed class LocalPluginImporter : IPluginImporter
             .Where(p => p.StartsWith("csgo/addons/", StringComparison.OrdinalIgnoreCase))
             .Select(p => p["csgo/addons/".Length..].Split('/')[0])
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var candidate = addons.Length == 1 ? addons[0] : hint;
+        var candidate = addons.Length == 1 && FrameworkRules.Find(addons[0]) is null && addons[0] != "sourcemod" ? addons[0] : hint;
         return Sanitize(candidate);
     }
 
     private static string DetectName(string id, List<SourceFile> files, string hint)
     {
+        if (id == "cs2kz") return "CS2KZ";
         if (id is "source2mod" or "sourcemod" or "metamod")
             return id switch { "source2mod" => "Source2Mod", "sourcemod" => "SourceMod", _ => "Metamod:Source" };
         var plugin = SubPluginName(files, id);

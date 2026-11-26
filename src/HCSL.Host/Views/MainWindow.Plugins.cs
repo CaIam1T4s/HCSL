@@ -53,9 +53,6 @@ public partial class MainWindow
                 AddRow("所需框架", Value(description));
             }
 
-            var warnings = preview.Warnings.Where(w => !w.StartsWith("This is a Source2Mod sub-plugin;", StringComparison.Ordinal)).ToArray();
-            if (warnings.Length > 0)
-                body.Children.Add(new TextBlock { Text = string.Join("\n", warnings), TextWrapping = Avalonia.Media.TextWrapping.Wrap });
             while (true)
             {
                 var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -67,7 +64,7 @@ public partial class MainWindow
                 {
                     Title = "导入插件",
                     Description = Path.GetFileName(path),
-                    Content = new ScrollViewer { Content = body, MaxHeight = 360 },
+                    Content = new ScrollViewer { Content = body, Width = 280, MaxHeight = 360 },
                     Actions = actions
                 };
                 var choice = await dialog.ShowAsync(this);
@@ -105,12 +102,8 @@ public partial class MainWindow
 
             Func<string> Metadata(string label, string value)
             {
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    AddRow(label, Value(value));
-                    return () => value;
-                }
-                var input = new Input();
+                var input = new Input { Text = value, Width = 184 };
+                Avalonia.Automation.AutomationProperties.SetName(input, label);
                 AddRow(label, input);
                 return () => (input.Text ?? "").Trim();
             }
