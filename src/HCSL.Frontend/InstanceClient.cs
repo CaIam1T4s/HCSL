@@ -36,13 +36,13 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var request = new LocalRequest(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapCatalog,
-            Options: new(hello.Defaults), MapCatalogJson: JsonSerializer.Serialize(command));
+            Options: new(hello.Defaults), MapCatalogJson: JsonSerializer.Serialize(command, WorkspaceJsonContext.Default.MapCatalogCommand));
         // A Steam lookup runs outside the local catalog's normal five-second budget.
         var response = command.WorkshopId is not null
             ? await client.SendAsync(request, TimeSpan.FromSeconds(25), ct)
             : await client.SendAsync(request, ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<MapCatalogResult>(response.MapCatalogResultJson ?? "null")
+        return JsonSerializer.Deserialize(response.MapCatalogResultJson ?? "null", WorkspaceJsonContext.Default.MapCatalogResult)
             ?? throw new IOException("Missing map catalog result.");
     }
     public async Task<PluginResult> PluginAsync(PluginCommand command, CancellationToken ct = default)

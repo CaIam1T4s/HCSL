@@ -10,6 +10,8 @@ namespace HCSL.Frontend;
 [JsonSerializable(typeof(MapPoolResult))]
 [JsonSerializable(typeof(MapPoolLibraryCommand))]
 [JsonSerializable(typeof(MapPoolLibraryResult))]
+[JsonSerializable(typeof(MapCatalogCommand))]
+[JsonSerializable(typeof(MapCatalogResult))]
 [JsonSerializable(typeof(ServerCommand))]
 [JsonSerializable(typeof(DeploymentPlan))]
 [JsonSerializable(typeof(Cs2ContentStatus))]

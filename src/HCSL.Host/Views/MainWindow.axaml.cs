@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Data;
 using HCSL.UI.Shared.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -17,6 +16,8 @@ namespace HCSL.Host.Views;
 public partial class MainWindow : ArcWindow
 {
     private Bitmap? _background;
+    private LShapedFrostedChrome? shellChrome;
+    private ShellViewModel? chromeModel;
     private TaskCompletionSource<int>? prompt;
     private readonly SemaphoreSlim promptGate = new(1, 1);
     private bool windowClosed;
@@ -33,7 +34,9 @@ public partial class MainWindow : ArcWindow
                 e.Source is Avalonia.Visual source && MainSidebar.IsVisualAncestorOf(source))
                 e.Handled = true;
         }, RoutingStrategies.Tunnel);
-        Closed += (_, _) => { windowClosed = true; prompt?.TrySetResult(-1); ResetBackground(); };
+        MainSidebar.SizeChanged += (_, _) => UpdateChrome();
+        DataContextChanged += (_, _) => SetChromeModel(DataContext as ShellViewModel);
+        Closed += (_, _) => { windowClosed = true; shellChrome = null; SetChromeModel(null); prompt?.TrySetResult(-1); ResetBackground(); };
         Closing += OnClosing;
         KeyDown += (_, e) =>
         {
@@ -44,11 +47,37 @@ public partial class MainWindow : ArcWindow
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
         base.OnApplyTemplate(e);
-        if (MainSidebar is not null && e.NameScope.Find<LShapedFrostedChrome>("PART_ShellChrome") is { } chrome)
+        shellChrome = e.NameScope.Find<LShapedFrostedChrome>("PART_ShellChrome");
+        UpdateChrome();
+    }
+
+    private void SetChromeModel(ShellViewModel? model)
+    {
+        if (chromeModel is not null) chromeModel.PropertyChanged -= ChromeModelChanged;
+        chromeModel = model;
+        if (chromeModel is not null) chromeModel.PropertyChanged += ChromeModelChanged;
+        UpdateChrome();
+    }
+
+    private void ChromeModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is null or "" or nameof(ShellViewModel.SidebarBlurRadius) or nameof(ShellViewModel.SidebarTintOpacity))
+            UpdateChrome();
+    }
+
+    private void UpdateChrome()
+    {
+        if (shellChrome is not { } chrome) return;
+        if (MainSidebar is not null) chrome.SidebarWidth = MainSidebar.Bounds.Width;
+        if (chromeModel is { } model)
         {
-            chrome.Bind(LShapedFrostedChrome.SidebarWidthProperty, new Binding("Bounds.Width") { Source = MainSidebar });
-            chrome.Bind(LShapedFrostedChrome.BlurRadiusProperty, new Binding("DataContext.SidebarBlurRadius") { Source = this });
-            chrome.Bind(LShapedFrostedChrome.TintOpacityProperty, new Binding("DataContext.SidebarTintOpacity") { Source = this });
+            chrome.BlurRadius = model.SidebarBlurRadius;
+            chrome.TintOpacity = model.SidebarTintOpacity;
+        }
+        else
+        {
+            chrome.ClearValue(LShapedFrostedChrome.BlurRadiusProperty);
+            chrome.ClearValue(LShapedFrostedChrome.TintOpacityProperty);
         }
     }
 

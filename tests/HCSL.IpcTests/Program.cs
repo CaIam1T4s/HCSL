@@ -50,6 +50,8 @@ if (args is ["--only", "workspace-json"])
     Check(library.Library.Pools is [] && library.Library.Assignments.Count == 0, "map pool library was not decoded");
     var pool = await instances.MapPoolAsync(new(MapPoolAction.Read, stub.InstanceId, Guid.NewGuid()));
     Check(pool.Pool.Maps is [], "preset map pool was not decoded");
+    var maps = await instances.MapCatalogAsync(stub.InstanceId);
+    Check(maps.Entries is [{ Name: "de_inferno" }], "map catalog was not decoded");
     var baseline = await new BaselineClient(stub).StatusAsync();
     Check(baseline.BuildId == "123", "baseline was not decoded");
     var server = await new ServerClient(stub).SendAsync(new(ServerAction.Status));
@@ -461,6 +463,14 @@ sealed class WorkspaceJsonDaemon : IDaemonClient
             return Task.FromResult(response with { InstanceId = InstanceId });
         if (request.Kind == RequestKind.ContentStatus)
             return Task.FromResult(response with { InstanceId = InstanceId, ContentStatusJson = """{"Installed":true,"BuildId":"123"}""" });
+
+        if (request.Kind == RequestKind.MapCatalog)
+        {
+            using var json = JsonDocument.Parse(request.MapCatalogJson!);
+            if (json.RootElement.GetProperty("InstanceId").GetGuid() != InstanceId)
+                throw new InvalidOperationException("Unexpected map catalog instance");
+            return Task.FromResult(response with { MapCatalogResultJson = """{"Entries":[{"Name":"de_inferno","Source":0}]}""" });
+        }
 
         using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson ?? request.BaselineJson ?? request.MapPoolLibraryJson ?? request.MapPoolJson!);
         var action = command.RootElement.GetProperty("Action").GetInt32();
