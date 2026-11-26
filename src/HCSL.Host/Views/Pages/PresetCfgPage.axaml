@@ -4,6 +4,7 @@
              x:Class="HCSL.Host.Views.Pages.PresetCfgPage">
   <Grid Margin="{DynamicResource ConsolePageInset}" RowDefinitions="Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space4}">
     <WrapPanel HorizontalAlignment="Right" ItemSpacing="{arc:ArcDesignTokenResource Space2}">
+      <arc:Button Content="从插件同步" Variant="Secondary" Click="SyncPlugins"/>
       <arc:Button Content="刷新" Variant="Secondary" Click="Refresh"/>
     </WrapPanel>
     <arc:SelectionToolbar Grid.Row="1" x:Name="Selection" Classes="selection-actions" ActionInvoked="Exec" SelectAllRequested="SelectAll" Cleared="ClearSelection">

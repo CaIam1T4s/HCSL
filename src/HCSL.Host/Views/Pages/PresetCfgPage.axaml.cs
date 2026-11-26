@@ -101,6 +101,51 @@ public partial class PresetCfgPage : UserControl
     private static IEnumerable<object> Keys(IEnumerable<Node> nodes) =>
         nodes.SelectMany(node => Keys(node.Children ?? []).Prepend(node.Path));
 
+    private bool syncingPlugins;
+
+    private async void SyncPlugins(object? sender, RoutedEventArgs e)
+    {
+        if (syncingPlugins || Scope() is not { } scope || Owner is not { } owner) return;
+        syncingPlugins = true;
+        try
+        {
+            var (model, instance, preset) = scope;
+            var result = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id, PackageMetadataOnly: true));
+            var enabled = result.Selected.Where(p => p.Enabled && p.Available).Select(p => new PluginSelection(p.Id, p.Version)).ToArray();
+            var preview = await model.PreviewPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabled, []);
+            var body = new StackPanel { Spacing = 8 };
+            body.Children.Add(new TextBlock { Text = $"新增 {preview.Import.Length} 个 · 相同 {preview.Identical.Length} 个 · 冲突 {preview.Conflicts.Length} 个" });
+            foreach (var file in preview.Import) body.Children.Add(new TextBlock { Text = file.Path, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+            var conflicts = preview.Conflicts.Select(file => (file.Path, Box: new TKCode.Arc.Checkbox
+                { Content = "覆盖 " + file.Path, IsChecked = false })).ToArray();
+            foreach (var conflict in conflicts) body.Children.Add(conflict.Box);
+            var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
+            actions.Classes.Add("dialog-actions");
+            var cancel = new TKCode.Arc.Button { Content = "关闭", Variant = ButtonVariant.Secondary };
+            Dialog.SetResult(cancel, false);
+            actions.Children.Add(cancel);
+            if (model.CanEditPlugins && (preview.Import.Length > 0 || conflicts.Length > 0))
+            {
+                var apply = new TKCode.Arc.Button { Content = "同步", Variant = ButtonVariant.Primary };
+                apply.Classes.Add("dialog-primary");
+                Dialog.SetResult(apply, true);
+                actions.Children.Add(apply);
+            }
+            var dialog = new Dialog { Title = "从插件同步 CFG", Content = new ScrollViewer { Content = body, MaxHeight = 360 }, Actions = actions };
+            if (await dialog.ShowAsync(this) is not true || Scope() is not { } active || active != scope) return;
+            var latest = await model.PluginsAsync(new(PluginAction.List, instance.Id, preset.Id, PackageMetadataOnly: true));
+            if (latest.Hash != result.Hash) throw new IOException("插件启用列表已变化，请重新预览。");
+            var applied = await model.ApplyPluginCfgAsync(instance.Id, preset.Id, instance.Revision, enabled,
+                conflicts.Where(c => c.Box.IsChecked == true).Select(c => c.Path).ToArray());
+            owner.ShowInstanceNotification("CFG 同步完成", $"新增 {applied.Imported} 个，覆盖 {applied.Overwritten} 个。", ToastKind.Success);
+            if (Scope() == scope) await LoadAsync();
+        }
+        catch (Exception ex) when (ex is IOException or InstanceException or InvalidOperationException)
+        { owner.ShowInstanceNotification("无法同步插件 CFG", ex.Message); }
+        finally { syncingPlugins = false; }
+    }
+
     private async void Refresh(object? sender, RoutedEventArgs e) => await LoadAsync();
 
     private async Task LoadAsync()
