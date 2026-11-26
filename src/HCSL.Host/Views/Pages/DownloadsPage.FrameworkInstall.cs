@@ -42,7 +42,8 @@ public partial class DownloadsPage
         var generation = catalogGeneration;
         try
         {
-            if (catalogPresetTarget is null || catalogPresetVersion is not { } current)
+            var current = catalogPresetVersion;
+            if (catalogPresetTarget is not { } presetTarget || current is null && !downloadedVersions.Contains(release.Version))
             {
                 await PrepareInstallAsync(id, release);
                 if (generation != catalogGeneration || !IsVisible) return;
@@ -58,23 +59,25 @@ public partial class DownloadsPage
             }
             var dialog = new Dialog
             {
-                Title = "更换版本",
+                Title = current is null ? "启用框架" : "更换版本",
                 Content = new TextBlock
                 {
-                    Text = $"将当前预设的 {FrameworkRules.Find(id)?.DisplayName ?? id} 从 {current} 更换为 {release.Version}？",
+                    Text = current is null
+                        ? $"在当前预设中启用 {FrameworkRules.Find(id)?.DisplayName ?? id} {release.Version}？"
+                        : $"将当前预设的 {FrameworkRules.Find(id)?.DisplayName ?? id} 从 {current} 更换为 {release.Version}？",
                     TextWrapping = Avalonia.Media.TextWrapping.Wrap
                 },
-                Actions = VersionConfirmationActions()
+                Actions = VersionConfirmationActions(current is null ? "启用" : "更换")
             };
-            if (await dialog.ShowAsync(this) is not true || generation != catalogGeneration) return;
+            if (await dialog.ShowAsync(this) is not true || generation != catalogGeneration || !IsVisible) return;
+            if (downloadedVersions.Contains(release.Version))
+            {
+                await AddFrameworkToPresetAsync(id, release.Version, presetTarget, current, verifyPresetVersion: true);
+                return;
+            }
             await PrepareInstallAsync(id, release);
             if (generation != catalogGeneration || !IsVisible || !InstallAddToPreset.IsEnabled || installPresetTarget is null) return;
             InstallAddToPreset.IsChecked = true;
-            if (downloadedVersions.Contains(release.Version))
-            {
-                await AddFrameworkToPresetAsync(id, release.Version, installPresetTarget.Value, current);
-                return;
-            }
             if (InstallConfirm.IsEnabled) await InstallAsync(current);
             else Owner?.ShowInstanceNotification("暂不能更换框架版本", InstallReason.Text, ToastKind.Warning);
         }
@@ -83,12 +86,12 @@ public partial class DownloadsPage
         finally { choosingRelease = false; }
     }
 
-    private static StackPanel VersionConfirmationActions()
+    private static StackPanel VersionConfirmationActions(string confirmLabel)
     {
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
         actions.Classes.Add("dialog-actions");
         var cancel = new TKCode.Arc.Button { Content = "取消", Variant = ButtonVariant.Secondary };
-        var confirm = new TKCode.Arc.Button { Content = "更换", Variant = ButtonVariant.Primary };
+        var confirm = new TKCode.Arc.Button { Content = confirmLabel, Variant = ButtonVariant.Primary };
         confirm.Classes.Add("dialog-primary");
         Dialog.SetResult(cancel, false);
         Dialog.SetResult(confirm, true);
@@ -399,7 +402,7 @@ public partial class DownloadsPage
     /// Enables the freshly installed framework in the selected preset through the shared plugin
     /// manifest path, so the preset keeps its old framework selectable instead of losing plugins.
     /// </summary>
-    private async Task AddFrameworkToPresetAsync(string id, string version, (Guid Instance, Guid Preset) target, string? expectedPresetVersion = null)
+    private async Task AddFrameworkToPresetAsync(string id, string version, (Guid Instance, Guid Preset) target, string? expectedPresetVersion = null, bool verifyPresetVersion = false)
     {
         if (Servers is not { } servers || servers.Instances.FirstOrDefault(item => item.Entry.Id == target.Instance)?.Entry
             is not { Definition: { } definition } entry) return;
@@ -407,7 +410,7 @@ public partial class DownloadsPage
         if (preset is null) return;
 
         var current = await servers.PluginsAsync(new(PluginAction.List, entry.Id, preset.Id));
-        if (expectedPresetVersion is not null && current.Selected.FirstOrDefault(s => s.Id == id && s.Enabled)?.Version != expectedPresetVersion)
+        if ((verifyPresetVersion || expectedPresetVersion is not null) && current.Selected.FirstOrDefault(s => s.Id == id && s.Enabled)?.Version != expectedPresetVersion)
             throw new IOException("预设框架已变更，请重新打开框架页确认。");
         var selections = current.Selected.Select(s => new PluginSelection(s.Id, s.Version, s.Enabled)).ToArray();
         var choice = FrameworkRules.Find(id)?.Kind == FrameworkKind.Base

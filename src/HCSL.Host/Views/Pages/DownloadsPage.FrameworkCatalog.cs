@@ -242,7 +242,7 @@ public partial class DownloadsPage
             badges.Children.Add(new Badge { Content = release.Prerelease ? "预发布版" : "正式版", Tone = release.Prerelease ? BadgeTone.Neutral : BadgeTone.Info, Size = BadgeSize.Small });
             Grid.SetColumn(badges, 1); row.Children.Add(badges);
             var current = catalogPresetTarget is not null && release.Version == catalogPresetVersion;
-            var canReuse = catalogPresetTarget is not null && catalogPresetVersion is not null && downloadedVersions.Contains(release.Version);
+            var canReuse = catalogPresetTarget is not null && downloadedVersions.Contains(release.Version);
             if (current) badges.Children.Add(new Badge { Content = "当前使用", Tone = BadgeTone.Info, Size = BadgeSize.Small });
             var install = new ArcButton
             {
@@ -253,7 +253,7 @@ public partial class DownloadsPage
                     canReuse ? LucideIconKind.ArrowRight : LucideIconKind.ArrowDownToLine, Size = 16 }
             };
             var action = catalogPresetTarget is null ? "安装" : current ? "当前使用" :
-                canReuse ? "切换到" : catalogPresetVersion is null ? "安装" : "下载并切换到";
+                canReuse ? (catalogPresetVersion is null ? "启用" : "切换到") : catalogPresetVersion is null ? "安装" : "下载并切换到";
             install.SetValue(AutomationProperties.NameProperty, action + " " + release.Version);
             var target = release;
             install.Click += async (_, _) => await ChooseReleaseAsync(target);
