@@ -133,7 +133,18 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
         var identity = new ServerPresetIdentity(preset.Id, preset.Revision, preset.Name, preset.Map);
         stop.ThrowIfCancellationRequested();
         events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING", Preset: identity));
+        using var job = WindowsServerJob.Create();
         using var process = Process.Start(start) ?? throw new ServerException("HCSL-SERVER-START", "Could not start cs2.exe.");
+        try { WindowsServerJob.Attach(job, process); }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            try { if (IsAlive(process)) process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) when (!IsAlive(process)) { }
+            catch (System.ComponentModel.Win32Exception) { return new("HCSL-SERVER-CLEANUP", null, false, false); }
+            try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (TimeoutException) { return new("HCSL-SERVER-CLEANUP", null, false, false); }
+            throw new ServerException("HCSL-SERVER-JOB", "Could not attach cs2.exe to its Windows Job Object: " + ex.Message);
+        }
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var session = new ConsoleSession(process, stop);
         var output = PumpAsync(process.StandardOutput);
@@ -152,12 +163,12 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
         if (!process.HasExited)
         {
             events.Report(new(ServerState.Stopping, "HCSL-SERVER-STOPPING"));
-            try { process.Kill(entireProcessTree: true); }
-            catch (InvalidOperationException) when (process.HasExited) { }
-            catch (System.ComponentModel.Win32Exception) { return new("HCSL-SERVER-CLEANUP", null, ready.Task.IsCompleted, false); }
+            job.Dispose();
         }
         try { await exited.WaitAsync(TimeSpan.FromSeconds(10)); }
         catch (TimeoutException) { return new("HCSL-SERVER-CLEANUP", null, ready.Task.IsCompleted, false); }
+        // A child may still hold the output handles after the main process exits.
+        job.Dispose();
         await Task.WhenAny(Task.WhenAll(output, errors), Task.Delay(TimeSpan.FromSeconds(2)));
         return new(timedOut ? "HCSL-SERVER-START-TIMEOUT" : stop.IsCancellationRequested ? "HCSL-SERVER-STOPPED" : "HCSL-SERVER-EXITED",
             process.ExitCode, ready.Task.IsCompleted, true);
