@@ -35,6 +35,7 @@ public partial class MainWindow
             }
 
             var body = new StackPanel { Spacing = 8 };
+            Action? MetadataChanged = null;
             var id = Metadata("ID", preview.Id);
             var name = Metadata("名称", preview.Name);
             var version = Metadata("版本", preview.Version);
@@ -53,31 +54,35 @@ public partial class MainWindow
                 AddRow("所需框架", Value(description));
             }
 
-            while (true)
             {
                 var actions = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal,
                     HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Spacing = 8 };
                 actions.Classes.Add("dialog-actions");
                 AddAction("取消", 0, false);
-                AddAction("导入", 2, true);
+                var submit = AddAction("导入", 2, true);
+                void UpdateSubmit() => submit.IsEnabled = !new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace)
+                    && (framework is null || framework.SelectedIndex > 0);
+                MetadataChanged += UpdateSubmit;
+                if (framework is not null) framework.SelectionChanged += (_, _) => UpdateSubmit();
+                UpdateSubmit();
                 var dialog = new Dialog
                 {
                     Title = "导入插件",
                     Description = Path.GetFileName(path),
                     Size = ControlSize.Small,
-                    Content = new ScrollViewer { Content = body, MaxHeight = 360 },
+                    Content = new Border { Padding = new Avalonia.Thickness(2), Child = body },
                     Actions = actions
                 };
                 var choice = await dialog.ShowAsync(this);
-                ((ScrollViewer)dialog.Content).Content = null;
                 if (choice is not 2) return null;
 
-                void AddAction(string label, int result, bool primary)
+                TKCode.Arc.Button AddAction(string label, int result, bool primary)
                 {
                     var button = new TKCode.Arc.Button { Content = label, Variant = primary ? ButtonVariant.Primary : ButtonVariant.Secondary };
                     if (primary) button.Classes.Add("dialog-primary");
                     Dialog.SetResult(button, result);
                     actions.Children.Add(button);
+                    return button;
                 }
                 var frameworkId = framework is null ? preview.Framework : framework.SelectedIndex switch { 1 => "swiftlys2", 2 => "modsharp", _ => null };
                 if (framework is not null && frameworkId is null || new[] { id(), name(), version() }.Any(string.IsNullOrWhiteSpace))
@@ -109,9 +114,20 @@ public partial class MainWindow
                     return () => value;
                 }
                 var input = new Input { Size = ControlSize.Small, Width = 136,
-                    TextAlignment = Avalonia.Media.TextAlignment.Right };
+                    TextAlignment = Avalonia.Media.TextAlignment.Left, IsVisible = false };
                 Avalonia.Automation.AutomationProperties.SetName(input, label);
-                AddRow(label, input);
+                input.TextChanged += (_, _) => MetadataChanged?.Invoke();
+                var fill = new TKCode.Arc.Button { Content = "填写" + label, Variant = ButtonVariant.Ghost, Size = ControlSize.Small };
+                fill.Click += (_, _) =>
+                {
+                    fill.IsVisible = false;
+                    input.IsVisible = true;
+                    input.Focus();
+                };
+                var editor = new Grid();
+                editor.Children.Add(fill);
+                editor.Children.Add(input);
+                AddRow(label, editor);
                 return () => (input.Text ?? "").Trim();
             }
 
@@ -121,9 +137,10 @@ public partial class MainWindow
             void AddRow(string label, Control value)
             {
                 var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 16,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+                    MinHeight = 36, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
                 row.Children.Add(new TextBlock { Text = label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
                 value.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+                value.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
                 Grid.SetColumn(value, 1);
                 row.Children.Add(value);
                 body.Children.Add(row);
