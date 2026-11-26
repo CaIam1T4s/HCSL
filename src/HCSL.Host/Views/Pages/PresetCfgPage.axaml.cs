@@ -16,7 +16,10 @@ namespace HCSL.Host.Views.Pages;
 public partial class PresetCfgPage : UserControl
 {
     private sealed record Node(PresetCfgFile File, string Path, Node[]? Children);
-    private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
+    internal (HostServerController Model, Guid Instance, Guid Preset, Guid Run)? ConsoleTarget { get; init; }
+    internal MainWindow? ConsoleOwner { get; init; }
+    private MainWindow? Owner => ConsoleOwner ?? TopLevel.GetTopLevel(this) as MainWindow;
+    internal Task LoadForConsoleAsync() => LoadAsync();
     private int generation;
     private HostServerController? subscribed;
     private readonly SemaphoreSlim loadGate = new(1, 1);
@@ -56,6 +59,13 @@ public partial class PresetCfgPage : UserControl
 
     private (HostServerController Servers, InstanceDefinition Instance, PresetDefinition Preset)? Scope()
     {
+        if (ConsoleTarget is { } target)
+        {
+            if (target.Model.Server.RunId == target.Run && target.Model.Instances.FirstOrDefault(i => i.Entry.Id == target.Instance)?.Entry is
+                { Definition: { } definition } active && active.Presets.FirstOrDefault(p => p.Id == target.Preset) is { } runningPreset)
+                return (target.Model, definition, runningPreset);
+            return null;
+        }
         if (DataContext is ShellViewModel { ManagedPresetId: { } id } shell &&
             shell.Servers.Selected?.Entry is { Definition: { } instance } entry &&
             entry.Presets.FirstOrDefault(p => p.Id == id) is { } preset)
@@ -66,7 +76,9 @@ public partial class PresetCfgPage : UserControl
     private void Subscribe()
     {
         Unsubscribe();
-        subscribed = (DataContext as ShellViewModel)?.Servers;
+        subscribed = ConsoleTarget?.Model ?? (DataContext as ShellViewModel)?.Servers;
+        SyncButton.IsVisible = ConsoleTarget is null;
+        CfgTree.IsSelectable = ConsoleTarget is not null;
         if (subscribed is not null) subscribed.PropertyChanged += ServerChanged;
         UpdateActions();
     }
@@ -81,6 +93,7 @@ public partial class PresetCfgPage : UserControl
 
     private void UpdateActions()
     {
+        if (ConsoleTarget is null) return;
         var action = Selection.Actions.FirstOrDefault(item => item.Key == "exec");
         var enabled = selected.Length > 0 && !executing && Scope() is { } scope
             && scope.Servers.CanExecCfg(scope.Instance.Id, scope.Preset.Id);
@@ -245,7 +258,7 @@ public partial class PresetCfgPage : UserControl
 
     private async void Exec(object? sender, SelectionToolbarActionEventArgs e)
     {
-        if (executing || selected.Length == 0 || Scope() is not { } scope || Owner is not { } owner) return;
+        if (ConsoleTarget is null || executing || selected.Length == 0 || Scope() is not { } scope || Owner is not { } owner) return;
         var files = selected;
         var written = 0;
         var submitted = false;
