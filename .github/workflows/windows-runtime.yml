@@ -20,7 +20,12 @@ jobs:
         run: dotnet restore tests/HCSL.ServerTests/HCSL.ServerTests.csproj
       - name: Build daemon and server tests
         run: dotnet build tests/HCSL.ServerTests/HCSL.ServerTests.csproj --no-restore -v:q
-      - name: Check Windows process ownership
-        run: dotnet run --project tests/HCSL.ServerTests --no-build -- --only windows-runtime
-      - name: Check framework rules
-        run: dotnet run --project tests/HCSL.ServerTests --no-build -- --only frameworks
+      - name: Run independent Windows sections and summarize
+        run: dotnet run --file build/TestSummary.cs -- windows
+      - name: Upload Windows test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-runtime-logs
+          path: ${{ runner.temp }}/**/hcsl-test-results-*/*.log
+          if-no-files-found: ignore

@@ -59,14 +59,7 @@ case "$mode" in
         ;;
     full)
         dotnet build Hello_Counter_Strike_Launcher.slnx --no-restore -v:q -nodeReuse:false
-        # Discover test projects so scaffold-only directories are never invoked and new
-        # tests are picked up automatically once they have a project file.
-        shopt -s nullglob
-        for project_file in tests/*/*.csproj; do
-            project="$(basename "$project_file" .csproj)"
-            echo "=== $project ==="
-            run_built "$project" </dev/null
-        done
+        dotnet run --file build/TestSummary.cs -- full
         ;;
     *)
         echo "Usage: $0 {server|host|tui|deployment|ipc|instance|integration|player|bootstrap|steamcmd|full} [section]" >&2
