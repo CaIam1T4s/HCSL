@@ -30,26 +30,26 @@
       <arc:Table x:Name="PoolChoices" Caption="图池列表" IsSelectable="False"
                  EmptyMessage="暂无图池" LoadingMessage="正在读取图池">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="图池名" Binding="{Binding Name}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="图池名" x:DataType="vm:MapPoolRow" Binding="{CompiledBinding Name}" Width="*" IsSortable="False"/>
           <arc:DataTableColumn Header="地图数量" Width="112" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="vm:MapPoolRow">
-                <arc:Badge Content="{Binding Count}" Tone="{Binding Tone}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <arc:Badge Content="{CompiledBinding Count}" Tone="{CompiledBinding Tone}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
           </arc:DataTableColumn>
-          <arc:DataTableColumn Header="预设引用" Binding="{Binding Presets}" Width="180" IsSortable="False">
+          <arc:DataTableColumn Header="预设引用" x:DataType="vm:MapPoolRow" Binding="{CompiledBinding Presets}" Width="180" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="vm:MapPoolRow">
-                <TextBlock Text="{Binding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                <TextBlock Text="{CompiledBinding Presets}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
           </arc:DataTableColumn>
-          <arc:DataTableColumn Header="轮换" Binding="{Binding RotationText}" Width="120" IsSortable="False">
+          <arc:DataTableColumn Header="轮换" x:DataType="vm:MapPoolRow" Binding="{CompiledBinding RotationText}" Width="120" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="vm:MapPoolRow">
-                <TextBlock Text="{Binding RotationText}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
+                <TextBlock Text="{CompiledBinding RotationText}" Foreground="{arc:ArcDesignTokenResource TextSecondary}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
@@ -59,7 +59,7 @@
               <DataTemplate x:DataType="vm:MapPoolRow">
                 <arc:Button Classes="pool-row-action" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPoolActions"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                            AutomationProperties.Name="{Binding Name, StringFormat='操作图池：{0}'}"/>
+                            AutomationProperties.Name="{CompiledBinding Name, StringFormat='操作图池：{0}'}"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
           </arc:DataTableColumn>

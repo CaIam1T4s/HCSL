@@ -17,12 +17,12 @@
       <arc:Table x:Name="PresetChoices" Caption="预设列表" IsSelectable="False"
                  EmptyMessage="暂无预设" LoadingMessage="正在读取预设">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="预设名" Binding="{Binding Definition.Name}" Width="*" IsSortable="False"/>
-          <arc:DataTableColumn Header="地图" Binding="{Binding Definition.Map}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="预设名" x:DataType="frontend:HostPresetItem" Binding="{CompiledBinding Definition.Name}" Width="*" IsSortable="False"/>
+          <arc:DataTableColumn Header="地图" x:DataType="frontend:HostPresetItem" Binding="{CompiledBinding Definition.Map}" Width="*" IsSortable="False"/>
           <arc:DataTableColumn Header="状态" Width="112" IsSortable="False">
             <arc:DataTableColumn.CellTemplate>
               <DataTemplate x:DataType="frontend:HostPresetItem">
-                <arc:Badge Size="Small" Tone="Success" Content="启动预设" IsVisible="{Binding Selected}"
+                <arc:Badge Size="Small" Tone="Success" Content="启动预设" IsVisible="{CompiledBinding Selected}"
                            HorizontalAlignment="Left" VerticalAlignment="Center"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
@@ -32,7 +32,7 @@
               <DataTemplate x:DataType="frontend:HostPresetItem">
                 <arc:Button Classes="preset-row-action" Content="⋯" Variant="Ghost" Size="Small" Click="OpenPresetActions"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                            AutomationProperties.Name="{Binding Definition.Name, StringFormat='操作预设：{0}'}"/>
+                            AutomationProperties.Name="{CompiledBinding Definition.Name, StringFormat='操作预设：{0}'}"/>
               </DataTemplate>
             </arc:DataTableColumn.CellTemplate>
           </arc:DataTableColumn>
