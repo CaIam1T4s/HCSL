@@ -128,7 +128,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     }
 
     internal Baseline ActiveBaseline(WorkspaceLayout layout, string buildId) =>
-        useLocalBaseline ? ReadLocalBaseline(layout, buildId) ?? baseline : baseline;
+        useLocalBaseline ? ReadLocalBaseline(layout, buildId) ?? (OperatingSystem.IsWindows()
+            ? throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Refresh the Windows startup baseline before deploying.")
+            : baseline) : baseline;
 
     /// <summary>Read-only report: which baseline deployment would use for the installed build.</summary>
     public static (string Source, string BuildId, string LocalBuildId) BaselineStatus(WorkspaceLayout layout, string installedBuildId)
@@ -143,8 +145,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         RefreshLocalBaseline(layout, buildId, operationId);
     private static void Platform()
     {
-        if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
-            throw new DeploymentException("HCSL-DEPLOY-PLATFORM", "Only the verified Linux x64 offline deployment baseline is supported.");
+        if ((!OperatingSystem.IsLinux() && !OperatingSystem.IsWindows()) || RuntimeInformation.ProcessArchitecture != Architecture.X64)
+            throw new DeploymentException("HCSL-DEPLOY-PLATFORM", "Offline deployment requires Linux or Windows x64.");
     }
     private static string Id(Guid id) => id == Guid.Empty ? throw new DeploymentException("HCSL-DEPLOY-ID", "Instance ID is required.") : id.ToString("D");
     private static string Journal(WorkspaceLayout l, Guid id) => Path.Combine(l.LibraryRoot, ".hcsl", "deployment-" + Id(id) + ".json");
@@ -245,8 +247,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
         }
         VerifyBaseline(l.ServerRoot, activeBaseline, ct);
-        var sdk = InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
-        if (!File.Exists(sdk) || new FileInfo(sdk).Length == 0) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
+        var windows = OperatingSystem.IsWindows();
+        if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
+            throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
+        var sdk = windows ? null : InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
+        if (sdk is not null && (!File.Exists(sdk) || new FileInfo(sdk).Length == 0)) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
         var mappings = new List<DeploymentMapping>
         {
             new("game/csgo/cfg", InRoot(preset, "cfg"), SeedDefaults: true),
@@ -273,8 +278,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         }
         foreach (var m in mappings) if (Directory.Exists(m.PersistentPath)) DeploymentFiles.Tree(m.PersistentPath, _ => { }, ct);
         // SDK ancestors may not exist yet; check their existing components before any seeding.
-        var existingSdk = InRoot(instance, "home/.steam/sdk64/steamclient.so");
-        if (File.Exists(existingSdk) && new FileInfo(existingSdk).Length == 0)
+        var existingSdk = windows ? null : InRoot(instance, "home/.steam/sdk64/steamclient.so");
+        if (existingSdk is not null && File.Exists(existingSdk) && new FileInfo(existingSdk).Length == 0)
             throw new DeploymentException("HCSL-DEPLOY-SDK", "Persistent Steam SDK file is empty; inspect it before deployment.");
         foreach (var reserved in new[] { "game/csgo/addons", "game/csgo/logs", "game/csgo/recordings" })
         {
@@ -282,7 +287,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             if (File.Exists(source) || (Directory.Exists(source) && Directory.EnumerateFileSystemEntries(source).Any()))
                 throw new DeploymentException("HCSL-DEPLOY-MAPPING", "Base installation contains content reserved for an instance; import must be handled explicitly.");
         }
-        int count = 0; long bytes = 0, seedBytes = new FileInfo(sdk).Length;
+        int count = 0; long bytes = 0, seedBytes = sdk is null ? 0 : new FileInfo(sdk).Length;
         DeploymentFiles.Tree(InRoot(l.ServerRoot, "game"), f =>
         {
             count++; bytes = checked(bytes + new FileInfo(f).Length);
@@ -902,7 +907,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     }
     internal void VerifyBaseline(string server, Baseline activeBaseline, CancellationToken ct)
     {
-        VerifyHash(InRoot(server, "game/cs2.sh"), activeBaseline.EntrypointSha256);
+        VerifyHash(InRoot(server, OperatingSystem.IsWindows() ? WindowsEntrypoint : "game/cs2.sh"), activeBaseline.EntrypointSha256);
         if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(InRoot(server, "game/cs2.sh")) & UnixFileMode.UserExecute) == 0)
             throw new DeploymentException("HCSL-DEPLOY-FILES", "cs2.sh is not executable.");
         foreach (var f in activeBaseline.Inventory)
@@ -937,6 +942,23 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         LocalPaths.RejectLink(target);
         if (File.Exists(Path.Combine(target, ".hcsl-running.json"))) throw new DeploymentException("HCSL-DEPLOY-RUNNING", "Runtime is marked as in use.");
         if (!Directory.Exists(target)) return;
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (var process in System.Diagnostics.Process.GetProcessesByName("cs2"))
+            {
+                using (process)
+                {
+                    string? executable;
+                    try { executable = process.MainModule?.FileName; }
+                    catch (InvalidOperationException) when (process.HasExited) { continue; }
+                    catch (System.ComponentModel.Win32Exception e)
+                    { throw new DeploymentException("HCSL-DEPLOY-RUNNING", "Could not verify that a CS2 process is outside the runtime: " + e.Message); }
+                    if (executable is null || LocalPaths.Contains(target, executable))
+                        throw new DeploymentException("HCSL-DEPLOY-RUNNING", "A CS2 process may be using this runtime; stop it before redeploying.");
+                }
+            }
+            return;
+        }
         foreach (var process in Directory.EnumerateDirectories("/proc"))
         {
             if (!int.TryParse(Path.GetFileName(process), out var pid) || pid == Environment.ProcessId) continue;
@@ -1103,8 +1125,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 Directory.CreateDirectory(destination);
         }
         var home = plan.PersistentMappings.Single(m => m.RuntimePath == "home").PersistentPath;
-        var sdk = InRoot(home, ".steam/sdk64/steamclient.so");
-        if (!File.Exists(sdk)) SeedFile(InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so"), sdk);
+        if (!OperatingSystem.IsWindows())
+        {
+            var sdk = InRoot(home, ".steam/sdk64/steamclient.so");
+            if (!File.Exists(sdk)) SeedFile(InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so"), sdk);
+        }
         var presetPath = Path.Combine(InRoot(l.InstancesRoot, Id(tx.InstanceId)), "presets", Id(plan.PresetId));
         var currentCollection = Collection(presetPath);
         if (!string.Equals(currentCollection, plan.RotationCollection, StringComparison.Ordinal))
