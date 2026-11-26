@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 
 namespace HCSL.Contracts;
@@ -39,15 +40,19 @@ public sealed record LocalRequest(int Version, Guid Id, RequestKind Kind, ProbeO
     string? FrameworkCheckJson = null, string? FrameworkInstallResultJson = null, string? PluginCfgResultJson = null, string? BaselineResultJson = null,
     string? ContentStatusJson = null, string? FrameworkCatalogJson = null, string? TransferJson = null, string? MapCatalogResultJson = null, string? MapPoolLibraryResultJson = null);
 
+[JsonSourceGenerationOptions(UseStringEnumConverter = true, MaxDepth = 16)]
+[JsonSerializable(typeof(LocalRequest))]
+[JsonSerializable(typeof(LocalResponse))]
+internal sealed partial class LocalProtocolJsonContext : JsonSerializerContext;
+
 public static class LocalProtocol
 {
     public const int Version = 4;
     public const int MaxFrameBytes = 64 * 1024;
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        Converters = { new JsonStringEnumConverter() }, MaxDepth = 16,
-        PropertyNameCaseInsensitive = false
-    };
+
+    private static JsonTypeInfo<T> TypeInfo<T>() =>
+        LocalProtocolJsonContext.Default.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>
+        ?? throw new NotSupportedException($"Unsupported local IPC message type: {typeof(T)}.");
     public static string DefaultPipeName
     {
         get
@@ -64,7 +69,7 @@ public static class LocalProtocol
     }
     public static async Task WriteAsync<T>(Stream stream, T message, CancellationToken ct)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, Json);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, TypeInfo<T>());
         try
         {
             if (bytes.Length > MaxFrameBytes) throw new InvalidDataException("IPC frame too large.");
@@ -86,7 +91,7 @@ public static class LocalProtocol
         try
         {
             await stream.ReadExactlyAsync(bytes, ct);
-            return JsonSerializer.Deserialize<T>(bytes, Json) ?? throw new InvalidDataException("Empty IPC message.");
+            return JsonSerializer.Deserialize(bytes, TypeInfo<T>()) ?? throw new InvalidDataException("Empty IPC message.");
         }
         finally { CryptographicOperations.ZeroMemory(bytes); }
     }

@@ -9,6 +9,32 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Infrastructure.Storage;
 
+if (args is ["--only", "wire-json"])
+{
+    var legacy = new JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }, MaxDepth = 16 };
+    var id = Guid.NewGuid();
+    await CheckWire(new LocalRequest(LocalProtocol.Version, id, RequestKind.Hello,
+        new ProbeOptions(new WorkspacePaths("settings", "data", "library"))));
+    await CheckWire(new LocalResponse(LocalProtocol.Version, id, true, Snapshot:
+        new OperationSnapshot(id, 1, true, ProbeStage.Ready, "ready", new Challenge(id, ChallengeKind.GuardCode),
+            null, [new OperationEvent(1, ProbeStage.Ready, "ready", Transfer: new TransferSnapshot(TransferPhase.Downloading))])));
+    Console.WriteLine("PASS source-generated IPC wire JSON matches legacy request and response");
+    return 0;
+
+    async Task CheckWire<T>(T message)
+    {
+        var expected = JsonSerializer.SerializeToUtf8Bytes(message, legacy);
+        using var stream = new MemoryStream();
+        await LocalProtocol.WriteAsync(stream, message, default);
+        var frame = stream.ToArray();
+        Check(BinaryPrimitives.ReadInt32LittleEndian(frame) == expected.Length && frame.AsSpan(4).SequenceEqual(expected),
+            "IPC wire format changed");
+        stream.Position = 0;
+        var decoded = await LocalProtocol.ReadAsync<T>(stream, default);
+        Check(JsonSerializer.SerializeToUtf8Bytes(decoded, legacy).AsSpan().SequenceEqual(expected), "IPC round-trip changed data");
+    }
+}
+
 var root = Path.Combine(Path.GetTempPath(), "hcsl-ipc-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var oldConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
