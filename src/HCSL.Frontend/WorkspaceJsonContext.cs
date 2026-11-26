@@ -6,6 +6,10 @@ namespace HCSL.Frontend;
 // These command bodies use the daemon's default JSON format (including numeric enums).
 [JsonSerializable(typeof(InstanceCommand))]
 [JsonSerializable(typeof(InstanceCatalog))]
+[JsonSerializable(typeof(MapPoolCommand))]
+[JsonSerializable(typeof(MapPoolResult))]
+[JsonSerializable(typeof(MapPoolLibraryCommand))]
+[JsonSerializable(typeof(MapPoolLibraryResult))]
 [JsonSerializable(typeof(ServerCommand))]
 [JsonSerializable(typeof(DeploymentPlan))]
 [JsonSerializable(typeof(Cs2ContentStatus))]

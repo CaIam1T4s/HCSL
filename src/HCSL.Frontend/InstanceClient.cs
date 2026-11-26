@@ -8,9 +8,9 @@ public sealed class InstanceClient(IDaemonClient client)
     {        var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapPool,
-            Options: new(hello.Defaults), MapPoolJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), MapPoolJson: JsonSerializer.Serialize(command, WorkspaceJsonContext.Default.MapPoolCommand)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<MapPoolResult>(response.MapPoolResultJson ?? "null") ?? throw new IOException("Missing map pool result.");
+        return JsonSerializer.Deserialize(response.MapPoolResultJson ?? "null", WorkspaceJsonContext.Default.MapPoolResult) ?? throw new IOException("Missing map pool result.");
     }
 
     /// <summary>Instance-level pool library: shared by every preset of that instance.</summary>
@@ -19,9 +19,9 @@ public sealed class InstanceClient(IDaemonClient client)
         var hello = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.Hello), ct);
         if (!hello.Success || hello.Defaults is null) throw new IOException(hello.Code + ": " + hello.Message);
         var response = await client.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.MapPoolLibrary,
-            Options: new(hello.Defaults), MapPoolLibraryJson: JsonSerializer.Serialize(command)), ct);
+            Options: new(hello.Defaults), MapPoolLibraryJson: JsonSerializer.Serialize(command, WorkspaceJsonContext.Default.MapPoolLibraryCommand)), ct);
         if (!response.Success) throw new IOException(response.Code + ": " + response.Message);
-        return JsonSerializer.Deserialize<MapPoolLibraryResult>(response.MapPoolLibraryResultJson ?? "null")
+        return JsonSerializer.Deserialize(response.MapPoolLibraryResultJson ?? "null", WorkspaceJsonContext.Default.MapPoolLibraryResult)
             ?? throw new IOException("Missing map pool library result.");
     }
 

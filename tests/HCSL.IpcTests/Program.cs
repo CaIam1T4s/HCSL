@@ -45,6 +45,11 @@ if (args is ["--only", "workspace-json"])
     var plan = await new ServerClient(stub).PlanDeploymentAsync(stub.InstanceId, WorkspaceJsonDaemon.Paths);
     Check(plan.InstanceId == stub.InstanceId && plan.CopyMode == DeploymentCopyMode.FullCopy &&
         plan.PersistentMappings is [{ RuntimePath: "cfg" }], "deployment plan was not decoded");
+    var instances = new InstanceClient(stub);
+    var library = await instances.MapPoolsAsync(new(MapPoolLibraryAction.List, stub.InstanceId));
+    Check(library.Library.Pools is [] && library.Library.Assignments.Count == 0, "map pool library was not decoded");
+    var pool = await instances.MapPoolAsync(new(MapPoolAction.Read, stub.InstanceId, Guid.NewGuid()));
+    Check(pool.Pool.Maps is [], "preset map pool was not decoded");
     var baseline = await new BaselineClient(stub).StatusAsync();
     Check(baseline.BuildId == "123", "baseline was not decoded");
     var server = await new ServerClient(stub).SendAsync(new(ServerAction.Status));
@@ -457,7 +462,7 @@ sealed class WorkspaceJsonDaemon : IDaemonClient
         if (request.Kind == RequestKind.ContentStatus)
             return Task.FromResult(response with { InstanceId = InstanceId, ContentStatusJson = """{"Installed":true,"BuildId":"123"}""" });
 
-        using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson ?? request.BaselineJson!);
+        using var command = JsonDocument.Parse(request.InstanceCommandJson ?? request.ServerCommandJson ?? request.BaselineJson ?? request.MapPoolLibraryJson ?? request.MapPoolJson!);
         var action = command.RootElement.GetProperty("Action").GetInt32();
         return Task.FromResult(request.Kind switch
         {
@@ -469,6 +474,14 @@ sealed class WorkspaceJsonDaemon : IDaemonClient
                 command.RootElement.GetProperty("InstanceId").GetGuid() == InstanceId => response with
             {
                 DeploymentPlanJson = $$"""{"InstanceId":"{{InstanceId}}","CopyMode":1,"PersistentMappings":[{"RuntimePath":"cfg","PersistentPath":"preset/cfg"}],"Notes":[]}"""
+            },
+            RequestKind.MapPoolLibrary when action == (int)MapPoolLibraryAction.List => response with
+            {
+                MapPoolLibraryResultJson = """{"Library":{"FormatVersion":1,"Revision":0,"Pools":[],"Assignments":{}}}"""
+            },
+            RequestKind.MapPool when action == (int)MapPoolAction.Read => response with
+            {
+                MapPoolResultJson = """{"Pool":{"FormatVersion":1,"Revision":0,"Maps":[]}}"""
             },
             RequestKind.Baseline when action == (int)BaselineAction.Status => response with
             {
