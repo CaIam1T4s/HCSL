@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Runtime.InteropServices;
 using HCSL.Contracts;
 using HCSL.Daemon.Ipc;
@@ -46,10 +45,10 @@ try
     if (!background || !OperatingSystem.IsWindows())
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
     using var term = OperatingSystem.IsLinux() ? PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; stop.Cancel(); }) : null;
-    await using var operations = new SteamCmdOperations(new SteamCmdService(Assembly.GetExecutingAssembly().Location));
+    await using var operations = new SteamCmdOperations(new SteamCmdService(DaemonBinary.Path));
     var sessionMarker = Path.Combine(LocalPaths.Defaults().LibraryRoot, ".hcsl", "server-session.json");
     await using var servers = new ServerOperations(OperatingSystem.IsWindows()
-        ? new WindowsServerRuntime() : new SystemdServerRuntime(Assembly.GetExecutingAssembly().Location), sessionMarker,
+        ? new WindowsServerRuntime() : new SystemdServerRuntime(DaemonBinary.Path), sessionMarker,
         Path.Combine(LocalPaths.Defaults().DataRoot, "instances"));
     Console.WriteLine("HCSL daemon ready: " + pipe);
     await new LocalDaemonServer(pipe, operations, TimeSpan.FromSeconds(idleSeconds), servers).RunAsync(stop.Token);

@@ -125,8 +125,12 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             {
                 if (windowsGateAssembly is null || !File.Exists(windowsGateAssembly))
                     throw new SteamCmdException("HCSL-STEAMCMD-PROCESS", "Windows requires the SteamCmdCheck process gate assembly.");
-                start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
-                start.ArgumentList.Add(windowsGateAssembly);
+                if (Path.GetExtension(windowsGateAssembly).Equals(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+                    start.ArgumentList.Add(windowsGateAssembly);
+                }
+                else start.FileName = windowsGateAssembly;
                 start.ArgumentList.Add("--process-gate");
             }
             process = new Process { StartInfo = start };

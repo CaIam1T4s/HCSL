@@ -6,6 +6,7 @@ using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Contracts;
 using HCSL.Daemon.Workers;
+using HCSL.Daemon.Lifecycle;
 using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
@@ -632,14 +633,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     /// launch, so an old process left over from a previous build can be replaced instead of silently used.</summary>
     private static readonly string? build = BuildStamp();
     /// <summary>
-    /// Identity of the running daemon: a hash of its own assembly. A rebuild that changes nothing produces the
+    /// Identity of the running daemon: a hash of its managed assembly or native executable. A rebuild that changes nothing produces the
     /// same hash, so a file timestamp is no longer mistaken for new code.
     /// </summary>
     private static string? BuildStamp()
     {
         try
         {
-            var path = typeof(LocalDaemonServer).Assembly.Location;
+            var path = DaemonBinary.Path;
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
             using var stream = File.OpenRead(path);
             return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
