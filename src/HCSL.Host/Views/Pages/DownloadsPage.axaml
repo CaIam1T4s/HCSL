@@ -36,7 +36,7 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
       <!-- Same surface fill as the instance rows: a solid window-derived panel colour instead of the
            transparent ghost background that let the wallpaper gradient show through. -->
-      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.78}"/>
+      <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.78}"/>
     </Style>
     <!-- Match InstancesPage expanding button group hover/focus styles -->
     <Style Selector="arc|ExpandingButtonGroup.downloads-actions /template/ Panel">
