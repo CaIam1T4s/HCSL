@@ -7,7 +7,8 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP: deployment baseline is Linux-only."); return 0; }
-var previewOnly = args is ["--only", "preview-json"];
+var previewBinary = args is ["--only", "preview-native", var binary] ? Path.GetFullPath(binary) : null;
+var previewOnly = previewBinary is not null || args is ["--only", "preview-json"];
 if (previewOnly) AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
 var root = Path.Combine(Environment.GetEnvironmentVariable("HCSL_DEPLOYMENT_TEST_ROOT") ?? Path.GetTempPath(), "hcsl-deployment-" + Guid.NewGuid().ToString("N"));
 var oldState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
@@ -80,6 +81,35 @@ try
     if (previewOnly)
     {
         Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+        if (previewBinary is not null)
+        {
+            var pipe = "hcsl-native-preview-" + Guid.NewGuid().ToString("N");
+            var start = new ProcessStartInfo(previewBinary) { UseShellExecute = false, RedirectStandardOutput = true };
+            start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
+            start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add("3");
+            start.Environment["XDG_CONFIG_HOME"] = Path.Combine(root, "daemon-config");
+            start.Environment["XDG_DATA_HOME"] = Path.Combine(root, "daemon-data");
+            start.Environment["HOME"] = root;
+            using var daemon = Process.Start(start) ?? throw new InvalidOperationException("Cannot launch native daemon.");
+            try
+            {
+                var ready = await daemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(ready == "HCSL daemon ready: " + pipe, "native daemon did not report readiness");
+                var client = new HCSL.Frontend.ServerClient(new HCSL.Frontend.DaemonClient(pipe));
+                var plan = await client.PlanDeploymentAsync(first.Id, new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot));
+                Check(plan.InstanceId == first.Id && plan.BuildId == "123" && plan.FileCount == sourceHashes.Count,
+                    "native IPC returned the wrong plan");
+                Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")) && !File.Exists(Journal(first)),
+                    "native preview wrote runtime or preset data");
+                await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
+                Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");
+            }
+            finally
+            {
+                if (!daemon.HasExited) { daemon.Kill(); await daemon.WaitForExitAsync(); }
+            }
+        }
         return 0;
     }
     Test("two instances deploy independent games and canonical writable directories", () =>
