@@ -23,6 +23,9 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private int activeRequests;
     private readonly bool traceTiming = Environment.GetEnvironmentVariable("HCSL_IPC_TIMING") == "1";
     private long traceSequence;
+    private readonly object timingLock = new();
+    private readonly List<string> timingEvents = new();
+    private int droppedTimingEvents;
     private long lastActivity = Stopwatch.GetTimestamp();
     private readonly Guid instance = Guid.NewGuid();
     public async Task RunAsync(CancellationToken ct)
@@ -34,6 +37,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         NamedPipeServerStream listener = CreateListener();
         HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "listening pipe=" + pipeName + " maxClients=8");
         var idle = WatchIdleAsync(lifetime);
+        var timingFlush = traceTiming ? FlushTimingPeriodicallyAsync(lifetime.Token) : Task.CompletedTask;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -69,7 +73,36 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             listener.Dispose();
             await Task.WhenAll(clients);
             await idle;
+            await timingFlush;
+            if (traceTiming) FlushTiming();
         }
+    }
+
+    private async Task FlushTimingPeriodicallyAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(12));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct)) FlushTiming();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    private void FlushTiming()
+    {
+        string[] batch;
+        int dropped;
+        lock (timingLock)
+        {
+            if (timingEvents.Count == 0) return;
+            batch = timingEvents.ToArray();
+            timingEvents.Clear();
+            dropped = droppedTimingEvents;
+            droppedTimingEvents = 0;
+        }
+        // Each buffered entry carries the event timestamp, not the time the batch reached disk.
+        HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc-timing", $"pid={Environment.ProcessId} batch={batch.Length} dropped={dropped}"
+            + Environment.NewLine + string.Join(Environment.NewLine, batch));
     }
     private async Task WatchIdleAsync(CancellationTokenSource lifetime)
     {
@@ -107,7 +140,15 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         long decoded = 0;
         RequestKind? kind = null;
         var outcome = "aborted";
-        void Trace(string text) => HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc-timing", $"pid={Environment.ProcessId} seq={traceId} {text}");
+        void Trace(string text)
+        {
+            var line = FormattableString.Invariant($"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} [ipc-timing] pid={Environment.ProcessId} seq={traceId} {text}");
+            lock (timingLock)
+            {
+                if (timingEvents.Count < 2048) timingEvents.Add(line);
+                else droppedTimingEvents++;
+            }
+        }
         if (traceTiming) Trace("accepted");
         using (pipe)
         using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(shutdown))

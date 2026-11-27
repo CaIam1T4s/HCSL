@@ -118,9 +118,10 @@ try
         var log = Path.Combine(root, "saved-data", "logs", "daemon.log");
         await Until(() => Task.FromResult(File.Exists(log) && File.ReadAllText(log).Contains("end kind=Hello outcome=ok total_ms=")));
         var lines = File.ReadAllText(log);
-        Check(lines.Contains("accepted") && lines.Contains("start kind=Hello read_ms=") &&
+        Check(lines.Contains(" batch=") && lines.Contains("dropped=0") &&
+            lines.Contains("accepted") && lines.Contains("start kind=Hello read_ms=") &&
             lines.Contains("handled kind=Hello handler_ms="), "request timing phases missing");
-        Console.WriteLine("PASS daemon IPC timing phases");
+        Console.WriteLine("PASS daemon IPC timing phases written in a batch");
         return 0;
     }
     await Until(async () => (await Send(RequestKind.Hello)).Success);
