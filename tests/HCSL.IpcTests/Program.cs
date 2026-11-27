@@ -53,7 +53,9 @@ if (args is ["--only", "instance-wire-json"])
     {
         var legacy = JsonSerializer.Serialize(value);
         Check(JsonSerializer.Serialize(value, type) == legacy, $"JSON format changed for {typeof(T).Name}");
-        Check(JsonSerializer.Serialize(JsonSerializer.Deserialize(legacy, type), type) == legacy, $"Legacy JSON did not round-trip for {typeof(T).Name}");
+        var decoded = JsonSerializer.Deserialize(legacy, type);
+        Check(decoded is not null && JsonSerializer.Serialize<T>(decoded, type) == legacy,
+            $"Legacy JSON did not round-trip for {typeof(T).Name}");
     }
 }
 
