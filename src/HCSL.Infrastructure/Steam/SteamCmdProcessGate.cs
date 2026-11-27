@@ -13,7 +13,7 @@ public static class SteamCmdProcessGate
         Console.Out.Flush();
         var line = Console.ReadLine();
         if (line is null || line.Length > 16384) return 125;
-        var command = JsonSerializer.Deserialize<SteamCmdGateCommand>(line);
+        var command = JsonSerializer.Deserialize(line, SteamCmdJsonContext.Default.SteamCmdGateCommand);
         if (command is null || !Path.IsPathFullyQualified(command.Executable)) return 125;
         var start = new ProcessStartInfo(command.Executable) { UseShellExecute = false };
         foreach (var argument in command.Arguments) start.ArgumentList.Add(argument);

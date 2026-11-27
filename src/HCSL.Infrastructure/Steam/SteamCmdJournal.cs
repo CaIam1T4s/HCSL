@@ -24,7 +24,7 @@ internal sealed record SteamCmdJournal(int Version, int OwnerPid, long OwnerStar
         LocalPaths.RejectLink(temporary);
         using (var file = LocalPaths.CreateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
-            JsonSerializer.Serialize(file, this);
+            JsonSerializer.Serialize(file, this, SteamCmdJsonContext.Default.SteamCmdJournal);
             file.Flush(true);
         }
         File.Move(temporary, path, overwrite: true);
@@ -49,7 +49,7 @@ internal sealed record SteamCmdJournal(int Version, int OwnerPid, long OwnerStar
             return;
         }
         SteamCmdJournal journal;
-        try { journal = JsonSerializer.Deserialize<SteamCmdJournal>(File.ReadAllText(path))!; }
+        try { journal = JsonSerializer.Deserialize(File.ReadAllText(path), SteamCmdJsonContext.Default.SteamCmdJournal)!; }
         catch (JsonException ex) { throw new SteamCmdException("HCSL-STEAMCMD-RECOVERY", "Invalid journal; nothing was removed.", ex); }
         if (journal is null || journal.Version != 1 || journal.OwnerPid <= 0 || journal.OwnerStartTicks <= 0 || journal.ProcessGroup is <= 1)
             throw new SteamCmdException("HCSL-STEAMCMD-RECOVERY", "Unknown journal; nothing was removed.");

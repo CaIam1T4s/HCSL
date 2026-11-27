@@ -149,7 +149,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
                 await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             }
             else
-                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray())).AsMemory(), ct);
+                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray()), SteamCmdJsonContext.Default.SteamCmdGateCommand).AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
             stdout = ReadOutputAsync(process.StandardOutput, false, parser);
             stderr = ReadOutputAsync(process.StandardError, true, parser);
