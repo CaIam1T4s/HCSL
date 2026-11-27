@@ -15,9 +15,8 @@
       <Border Classes="console-roster-frame">
         <Border Classes="console-roster-clip">
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <!-- Column bindings target row items, not this control's data context, so they stay reflection bindings;
-                 the cell templates keep their compiled x:DataType. -->
-            <arc:Table x:Name="Table" Classes="console-players" x:CompileBindings="False"
+            <!-- Arc evaluates column and sort bindings against each PlayerRow. -->
+            <arc:Table x:Name="Table" Classes="console-players" x:DataType="vm:PlayerRow" x:CompileBindings="True"
                        Caption="在线玩家" EmptyMessage="暂无玩家" LoadingMessage="正在读取玩家列表"
                        ItemNameOne="名玩家" ItemNameOther="名玩家"
                        HorizontalAlignment="Left" VerticalAlignment="Stretch">
