@@ -13,7 +13,7 @@ namespace HCSL.Host.Views.Pages;
 
 public partial class InstanceContentPage : UserControl
 {
-    private sealed record Row(FrameworkDefinition Framework, string Name, string State, string? PresetVersion)
+    public sealed record Row(FrameworkDefinition Framework, string Name, string State, string? PresetVersion)
     {
         public bool CanDisable => PresetVersion is not null;
     }

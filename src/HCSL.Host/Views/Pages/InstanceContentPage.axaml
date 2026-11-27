@@ -1,10 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc" xmlns:lucide="using:TKCode.Arc.Icons.Lucide"
+             xmlns:pages="using:HCSL.Host.Views.Pages"
              x:Class="HCSL.Host.Views.Pages.InstanceContentPage" x:CompileBindings="False">
   <ScrollViewer Margin="{DynamicResource ConsolePageInset}" HorizontalScrollBarVisibility="Disabled">
     <ItemsControl x:Name="Frameworks" AutomationProperties.Name="框架列表">
       <ItemsControl.ItemTemplate>
-        <DataTemplate>
+        <DataTemplate x:DataType="pages:InstanceContentPage+Row" x:CompileBindings="True">
           <Border BorderThickness="0,0,0,1" BorderBrush="{arc:ArcDesignTokenResource Border}"
                   MinHeight="{arc:ArcDesignTokenResource Space12}">
             <Grid>
