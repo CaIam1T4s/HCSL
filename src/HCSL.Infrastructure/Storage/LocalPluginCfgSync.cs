@@ -9,9 +9,11 @@ namespace HCSL.Infrastructure.Storage;
 /// Copies package-owned csgo/cfg files into the preset cfg tree with an explicit preview.
 /// Provenance lives beside the preset (never inside cfg) so cleanup only removes untouched imports.
 /// </summary>
-public sealed class LocalPluginCfgSync : IPluginCfgSync
+public sealed partial class LocalPluginCfgSync : IPluginCfgSync
 {
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
+    [System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
+    [System.Text.Json.Serialization.JsonSerializable(typeof(Ledger))]
+    private sealed partial class CfgLedgerJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
     private sealed record Ledger(int FormatVersion, LedgerEntry[] Files);
     private sealed record LedgerEntry(string PluginId, string Version, string Path, string Sha256);
 
@@ -261,7 +263,7 @@ public sealed class LocalPluginCfgSync : IPluginCfgSync
         if (!File.Exists(path)) return new(1, []);
         try
         {
-            var ledger = JsonSerializer.Deserialize<Ledger>(File.ReadAllText(path), Json)
+            var ledger = JsonSerializer.Deserialize(File.ReadAllText(path), CfgLedgerJsonContext.Default.Ledger)
                 ?? throw new InstanceException("HCSL-CFG-LEDGER", "CFG import ledger is empty.");
             if (ledger.FormatVersion != 1 || ledger.Files is null) throw new InstanceException("HCSL-CFG-LEDGER", "Unknown CFG import ledger format.");
             return ledger;
@@ -276,7 +278,7 @@ public sealed class LocalPluginCfgSync : IPluginCfgSync
         try
         {
             using (var stream = LocalPaths.CreateFile(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { JsonSerializer.Serialize(stream, ledger, Json); stream.Flush(true); }
+            { JsonSerializer.Serialize(stream, ledger, CfgLedgerJsonContext.Default.Ledger); stream.Flush(true); }
             File.Move(temp, path, overwrite: true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }

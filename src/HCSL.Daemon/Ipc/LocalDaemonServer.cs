@@ -559,52 +559,52 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse PluginImportProbe(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginImportProbeCommand>(request.PluginImportProbeJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginImportProbeJson ?? "null", InstancePayloadJsonContext.Default.PluginImportProbeCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin import probe command is required.");
         var preview = new LocalPluginImporter().Probe(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        return new(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(preview));
+        return new(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(preview, InstancePayloadJsonContext.Default.PluginImportPreview));
     }
     private LocalResponse PluginImport(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginImportCommand>(request.PluginImportJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginImportJson ?? "null", InstancePayloadJsonContext.Default.PluginImportCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin import command is required.");
         if (command.Enable &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before enabling an imported package.");
         var result = new LocalPluginImporter().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        return new(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PluginImportResult));
     }
     private LocalResponse PluginCfg(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginCfgCommand>(request.PluginCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginCfgJson ?? "null", InstancePayloadJsonContext.Default.PluginCfgCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin cfg command is required.");
         if (command.Action is PluginCfgAction.Apply or PluginCfgAction.CleanupApply &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before changing cfg files.");
         var sync = new HCSL.Infrastructure.Storage.LocalPluginCfgSync();
-        var result = command.Action switch
+        var workspace = new WorkspaceRequest(p.SettingsRoot, p.DataRoot, p.LibraryRoot);
+        var json = command.Action switch
         {
-            PluginCfgAction.Apply => sync.Apply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
-            PluginCfgAction.CleanupApply => sync.CleanupApply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
-            _ => (object)(command.Action == PluginCfgAction.Preview
-                ? sync.Preview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command)
-                : sync.CleanupPreview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command))
+            PluginCfgAction.Apply => JsonSerializer.Serialize(sync.Apply(workspace, command), InstancePayloadJsonContext.Default.PluginCfgResult),
+            PluginCfgAction.CleanupApply => JsonSerializer.Serialize(sync.CleanupApply(workspace, command), InstancePayloadJsonContext.Default.PluginCfgResult),
+            _ => JsonSerializer.Serialize(command.Action == PluginCfgAction.Preview
+                ? sync.Preview(workspace, command) : sync.CleanupPreview(workspace, command), InstancePayloadJsonContext.Default.PluginCfgPreview)
         };
-        return new(LocalProtocol.Version, request.Id, true, PluginCfgResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, PluginCfgResultJson: json);
     }
     private LocalResponse Plugin(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginCommand>(request.PluginJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginJson ?? "null", InstancePayloadJsonContext.Default.PluginCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin command is required.");
         if (command.Action != PluginAction.List &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before editing plugins.");
         var result = new LocalPluginStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PluginResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PluginResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PluginResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin response exceeds the IPC limit.");
         return response;
     }

@@ -27,4 +27,13 @@ namespace HCSL.Daemon.Ipc;
 [JsonSerializable(typeof(FrameworkInstallCommand))]
 [JsonSerializable(typeof(FrameworkInstallResult))]
 [JsonSerializable(typeof(TransferSnapshot))]
+[JsonSerializable(typeof(PluginCommand))]
+[JsonSerializable(typeof(PluginResult))]
+[JsonSerializable(typeof(PluginImportCommand))]
+[JsonSerializable(typeof(PluginImportResult))]
+[JsonSerializable(typeof(PluginImportProbeCommand))]
+[JsonSerializable(typeof(PluginImportPreview))]
+[JsonSerializable(typeof(PluginCfgCommand))]
+[JsonSerializable(typeof(PluginCfgPreview))]
+[JsonSerializable(typeof(PluginCfgResult))]
 internal sealed partial class InstancePayloadJsonContext : JsonSerializerContext;

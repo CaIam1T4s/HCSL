@@ -13,9 +13,11 @@ namespace HCSL.Infrastructure.Storage;
 /// &lt;library&gt;/plugin-packages/&lt;id&gt;/&lt;version&gt;. Platform-neutral: the same layout is accepted on
 /// Linux and Windows; missing binaries for the current OS are warnings, not errors.
 /// </summary>
-public sealed class LocalPluginImporter : IPluginImporter
+public sealed partial class LocalPluginImporter : IPluginImporter
 {
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
+    [System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
+    [System.Text.Json.Serialization.JsonSerializable(typeof(PackageManifest))]
+    private sealed partial class ImportJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
     private static readonly Regex VersionPattern = new(@"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:-git\d+)?(?:-(?:dev|beta|stable|rc\d*))?(?:\+[A-Za-z0-9.]+)?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex EmbeddedToken = new(@"(?<!\d)(\d+\.\d+(?:\.\d+)?(?:-(?:dev|beta|stable|rc\d*))?(?:\+[A-Za-z0-9.]+)?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex CompilerToken = new(@"(?i)clang|gcc|compiler|debian|ubuntu|glibc|openssl|libressl|curl|zlib|protobuf|python|cmake|boost");
@@ -616,7 +618,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         if (!File.Exists(path)) return null;
         try
         {
-            var manifest = JsonSerializer.Deserialize<PackageManifest>(File.ReadAllText(path), Json);
+            var manifest = JsonSerializer.Deserialize(File.ReadAllText(path), ImportJsonContext.Default.PackageManifest);
             if (manifest is null || manifest.FormatVersion != 1) return null;
             var id = manifest.Id is null ? null : Sanitize(manifest.Id);
             var version = manifest.Version is null ? null : VersionPattern.Match(manifest.Version) is { Success: true } m ? m.Groups[1].Value : null;
@@ -747,7 +749,7 @@ public sealed class LocalPluginImporter : IPluginImporter
         {
             using (var stream = LocalPaths.CreateFile(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(stream, manifest, Json);
+                JsonSerializer.Serialize(stream, manifest, ImportJsonContext.Default.PackageManifest);
                 stream.Flush(true);
             }
             File.Move(temp, path, true);
