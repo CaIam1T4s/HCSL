@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Data;
+using HCSL.Host.ViewModels;
 using HCSL.UI.Shared.Controls;
 using Avalonia.Layout;
 using Avalonia.VisualTree;
@@ -22,6 +22,7 @@ public sealed partial class ServerLogWindow
     private Vector consoleOffset;
     private MapsPage? mapsPage;
     private readonly List<IDisposable> shellBindings = new();
+    private Action? detachChrome;
 
     /// <summary>
     /// The chrome (sidebar, pages, title badges) is declared in ServerLogWindow.axaml; this only wires the console
@@ -38,7 +39,7 @@ public sealed partial class ServerLogWindow
         };
         shellBindings.Add(this.Bind(WindowBackdrop.ImageSourceProperty, owner.GetObservable(WindowBackdrop.ImageSourceProperty)));
         shellBindings.Add(this.Bind(WindowBackdrop.StrengthProperty, owner.GetObservable(WindowBackdrop.StrengthProperty)));
-        Closed += (_, _) => { foreach (var binding in shellBindings) binding.Dispose(); shellBindings.Clear(); };
+        Closed += (_, _) => { detachChrome?.Invoke(); detachChrome = null; foreach (var binding in shellBindings) binding.Dispose(); shellBindings.Clear(); };
         navigation.Background = null;
         // Arc's sidebar icons are geometry, so this one Lucide glyph is resolved here rather than as a control.
         foreach (var item in navigation.Sections.SelectMany(s => s.Items))
@@ -127,12 +128,47 @@ public sealed partial class ServerLogWindow
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
     {
         base.OnApplyTemplate(e);
-        if (e.NameScope.Find<LShapedFrostedChrome>("PART_ShellChrome") is { } chrome)
+        detachChrome?.Invoke();
+        detachChrome = null;
+        if (e.NameScope.Find<LShapedFrostedChrome>("PART_ShellChrome") is not { } chrome) return;
+
+        void UpdateWidth(object? sender, SizeChangedEventArgs args) => chrome.SidebarWidth = navigation.Bounds.Width;
+        void UpdateMaterial()
         {
-            chrome.Bind(LShapedFrostedChrome.SidebarWidthProperty, new Binding("Bounds.Width") { Source = navigation });
-            chrome.Bind(LShapedFrostedChrome.BlurRadiusProperty, new Binding("DataContext.SidebarBlurRadius") { Source = owner });
-            chrome.Bind(LShapedFrostedChrome.TintOpacityProperty, new Binding("DataContext.SidebarTintOpacity") { Source = owner });
+            if (owner.DataContext is ShellViewModel shell)
+            {
+                chrome.BlurRadius = shell.SidebarBlurRadius;
+                chrome.TintOpacity = shell.SidebarTintOpacity;
+            }
+            else
+            {
+                chrome.ClearValue(LShapedFrostedChrome.BlurRadiusProperty);
+                chrome.ClearValue(LShapedFrostedChrome.TintOpacityProperty);
+            }
         }
+        void MaterialChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName is null or "" or nameof(ShellViewModel.SidebarBlurRadius) or nameof(ShellViewModel.SidebarTintOpacity))
+                UpdateMaterial();
+        }
+        ShellViewModel? observed = null;
+        void OwnerContextChanged(object? sender, EventArgs args)
+        {
+            if (observed is not null) observed.PropertyChanged -= MaterialChanged;
+            observed = owner.DataContext as ShellViewModel;
+            if (observed is not null) observed.PropertyChanged += MaterialChanged;
+            UpdateMaterial();
+        }
+        chrome.SidebarWidth = navigation.Bounds.Width;
+        navigation.SizeChanged += UpdateWidth;
+        owner.DataContextChanged += OwnerContextChanged;
+        OwnerContextChanged(owner, EventArgs.Empty);
+        detachChrome = () =>
+        {
+            navigation.SizeChanged -= UpdateWidth;
+            owner.DataContextChanged -= OwnerContextChanged;
+            if (observed is not null) observed.PropertyChanged -= MaterialChanged;
+        };
     }
 
     /// <summary>Steam certificate acquisition for the active run; unknown means no evidence yet, not "ready".</summary>
