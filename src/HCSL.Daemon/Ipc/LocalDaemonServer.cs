@@ -479,14 +479,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse MapPool(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapPoolCommand>(request.MapPoolJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapPoolJson ?? "null", InstancePayloadJsonContext.Default.MapPoolCommand)
             ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool command is required.");
         if (command.Action != MapPoolAction.Read &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing maps.");
         var result = new LocalPresetMapPoolStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapPoolResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
         return response;
     }
@@ -494,15 +494,15 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse MapPoolLibrary(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapPoolLibraryCommand>(request.MapPoolLibraryJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapPoolLibraryJson ?? "null", InstancePayloadJsonContext.Default.MapPoolLibraryCommand)
             ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool library command is required.");
         if (command.Action != MapPoolLibraryAction.List &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing map pools.");
         var result = new LocalMapPoolLibraryStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true,
-            MapPoolLibraryResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            MapPoolLibraryResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapPoolLibraryResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool library response exceeds the IPC frame limit.");
         return response;
     }
@@ -621,11 +621,11 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private static LocalResponse Instances(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.InstanceCommandJson ?? "null", InstancePayloadJsonContext.Default.InstanceCommand)
             ?? throw new InstanceException("HCSL-INSTANCE-REQUEST", "Instance command is required.");
         var catalog = new InstanceService(new LocalInstanceStore()).Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(catalog));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(catalog, InstancePayloadJsonContext.Default.InstanceCatalog));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog exceeds the local IPC frame limit.");
         return response;
     }

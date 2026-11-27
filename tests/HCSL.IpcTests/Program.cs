@@ -35,6 +35,28 @@ if (args is ["--only", "wire-json"])
     }
 }
 
+if (args is ["--only", "instance-wire-json"])
+{
+    var json = HCSL.Daemon.Ipc.InstancePayloadJsonContext.Default;
+    var id = Guid.NewGuid();
+    CheckWire(new InstanceCommand(InstanceAction.CreatePreset, id, Name: "Example"), json.InstanceCommand);
+    CheckWire(new InstanceCatalog([new(id, null, [new(1, id, 1, "Example")])]), json.InstanceCatalog);
+    CheckWire(new MapPoolCommand(MapPoolAction.Read, id, id), json.MapPoolCommand);
+    CheckWire(new MapPoolResult(new(1, 0, [new(ServerMapKind.Standard, "de_inferno")]), null), json.MapPoolResult);
+    CheckWire(new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset, id, PoolId: id, PresetId: id), json.MapPoolLibraryCommand);
+    CheckWire(new MapPoolLibraryResult(new(1, 1, [new(id, "Example", [])], new() { [id] = id }), "hash"), json.MapPoolLibraryResult);
+    CheckWire(new LocalResponse(LocalProtocol.Version, id, true, InstanceCatalogJson: "{}"), json.LocalResponse);
+    Console.WriteLine("PASS daemon instance and map-pool IPC JSON matches legacy format");
+    return 0;
+
+    static void CheckWire<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)
+    {
+        var legacy = JsonSerializer.Serialize(value);
+        Check(JsonSerializer.Serialize(value, type) == legacy, $"JSON format changed for {typeof(T).Name}");
+        Check(JsonSerializer.Serialize(JsonSerializer.Deserialize(legacy, type), type) == legacy, $"Legacy JSON did not round-trip for {typeof(T).Name}");
+    }
+}
+
 if (args is ["--only", "workspace-json"])
 {
     AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
