@@ -179,8 +179,7 @@ public partial class DownloadsPage : UserControl
         if (snapshot.Running && operation == snapshot.Id)
         {
             TaskSteps.CurrentIndex = Math.Clamp(index, 0, TaskSteps.Steps.Count - 1);
-            foreach (var step in TaskSteps.Steps) { step.Error = null; step.Description = null; }
-            TaskSteps.Steps[2].Description = snapshot.Stage switch
+            var contentDescription = snapshot.Stage switch
             {
                 ProbeStage.ValidatingContent => "正在校验服务端文件",
                 ProbeStage.DownloadingContent => "正在下载服务端文件",
@@ -188,7 +187,14 @@ public partial class DownloadsPage : UserControl
                 ProbeStage.InstallingContent => "正在应用服务端文件",
                 _ => null
             };
-            if (snapshot.Stage == ProbeStage.Cancelling) TaskSteps.Steps[TaskSteps.CurrentIndex].Description = "正在取消，等待任务清理完成。";
+            for (var i = 0; i < TaskSteps.Steps.Count; i++)
+            {
+                var step = TaskSteps.Steps[i];
+                var description = snapshot.Stage == ProbeStage.Cancelling && i == TaskSteps.CurrentIndex
+                    ? "正在取消，等待任务清理完成。" : i == 2 ? contentDescription : null;
+                if (step.Error is not null) step.Error = null;
+                if (step.Description != description) step.Description = description;
+            }
             var known = snapshot.Stage != ProbeStage.Cancelling &&
                 snapshot.Percent is { } p && double.IsFinite(p) && p is >= 0 and <= 100;
             if (known) TaskProgress.Value = snapshot.Percent!.Value;
