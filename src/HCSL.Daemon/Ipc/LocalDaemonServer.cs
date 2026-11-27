@@ -346,7 +346,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.AdminJson ?? "null", InstancePayloadJsonContext.Default.AdminCommand)
             ?? throw new InstanceException("HCSL-ADMIN-REQUEST", "Admin command is required.");
         var workspace = new WorkspaceRequest(p.SettingsRoot, p.DataRoot, p.LibraryRoot);
         var store = new LocalAdminStore();
@@ -355,12 +355,12 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             var snapshot = store.Execute(workspace, command with { Action = AdminAction.List });
             var reload = await ReloadAdminsAsync(snapshot.Snapshot.SourceId, ct);
             var reloaded = new AdminResult(snapshot.Snapshot, "HCSL-ADMIN-RELOADED", [], reload);
-            return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded));
+            return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded, InstancePayloadJsonContext.Default.AdminResult));
         }
         var result = store.Execute(workspace, command);
         if (command.Action == AdminAction.Apply)
             result = result with { Reload = await ReloadAdminsAsync(result.Snapshot.SourceId, ct) };
-        return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.AdminResult));
     }
 
     /// <summary>Apply a written admin list: frameworks with a console command get it; native readers need a restart.</summary>

@@ -36,4 +36,6 @@ namespace HCSL.Daemon.Ipc;
 [JsonSerializable(typeof(PluginCfgCommand))]
 [JsonSerializable(typeof(PluginCfgPreview))]
 [JsonSerializable(typeof(PluginCfgResult))]
+[JsonSerializable(typeof(AdminCommand))]
+[JsonSerializable(typeof(AdminResult))]
 internal sealed partial class InstancePayloadJsonContext : JsonSerializerContext;
