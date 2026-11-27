@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:arc="https://github.com/AIDotNet/TKCode.Arc"
+             xmlns:pages="using:HCSL.Host.Views.Pages"
              x:Class="HCSL.Host.Views.Pages.InstanceAdminsPage" x:CompileBindings="False" Classes="instance-admins-page">
   <Border Padding="{DynamicResource ConsolePageInset}">
     <Grid RowDefinitions="Auto,Auto,*" RowSpacing="{arc:ArcDesignTokenResource Space3}">
@@ -14,9 +15,9 @@
                  EmptyMessage="还没有管理员" LoadingMessage="正在读取管理员"
                  ItemNameOne="名管理员" ItemNameOther="名管理员">
         <arc:Table.Columns>
-          <arc:DataTableColumn Header="名字" Binding="{Binding DisplayName}" Width="200"/>
-          <arc:DataTableColumn Header="SteamID" Binding="{Binding SteamId}" Width="220"/>
-          <arc:DataTableColumn Header="组" Binding="{Binding Groups}" Width="*"/>
+          <arc:DataTableColumn Header="名字" x:DataType="pages:InstanceAdminsPage+AdminRow" Binding="{CompiledBinding DisplayName}" Width="200"/>
+          <arc:DataTableColumn Header="SteamID" x:DataType="pages:InstanceAdminsPage+AdminRow" Binding="{CompiledBinding SteamId}" Width="220"/>
+          <arc:DataTableColumn Header="组" x:DataType="pages:InstanceAdminsPage+AdminRow" Binding="{CompiledBinding Groups}" Width="*"/>
         </arc:Table.Columns>
       </arc:Table>
     </Grid>
