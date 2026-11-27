@@ -88,6 +88,43 @@ if (args is ["--only", "workspace-json"])
     return 0;
 }
 
+if (args is ["--only", "instance-storage-json"])
+{
+    AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
+    Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+    var dir = Directory.CreateTempSubdirectory("hcsl-instance-json-");
+    try
+    {
+        var workspace = new HCSL.Application.Abstractions.WorkspaceRequest(
+            Path.Combine(dir.FullName, "settings"), Path.Combine(dir.FullName, "data"), Path.Combine(dir.FullName, "library"));
+        var store = new LocalInstanceStore();
+        var entry = store.Execute(workspace, new(InstanceAction.Create, Name: "Storage test")).Instances.Single();
+        entry = store.Execute(workspace, new(InstanceAction.CreatePreset, entry.Id,
+            Revision: entry.Definition!.Revision, Name: "AOT preset")).Instances.Single();
+        var preset = entry.Presets.Single(p => p.Name == "AOT preset");
+        var presetPools = new LocalPresetMapPoolStore();
+        var map = new ServerMapTarget(ServerMapKind.Standard, "de_inferno");
+        var legacy = presetPools.Execute(workspace, new(MapPoolAction.Read, entry.Id, preset.Id));
+        var saved = presetPools.Execute(workspace, new(MapPoolAction.Save, entry.Id, preset.Id,
+            entry.Definition!.Revision, legacy.Pool.Revision, legacy.Hash, [map]));
+        var libraries = new LocalMapPoolLibraryStore();
+        var initial = libraries.Execute(workspace, new(MapPoolLibraryAction.List, entry.Id));
+        var library = libraries.Execute(workspace, new(MapPoolLibraryAction.Create, entry.Id,
+            InstanceRevision: entry.Definition.Revision, Name: "AOT pool", Maps: [map],
+            ExpectedRevision: initial.Library.Revision, ExpectedHash: initial.Hash));
+        var reread = new LocalMapPoolLibraryStore().Execute(workspace, new(MapPoolLibraryAction.List, entry.Id));
+        Check(reread.Hash == library.Hash && reread.Library.Pools.Single(p => p.Name == "AOT pool").Maps is [{ Value: "de_inferno" }],
+            "map-pool library must survive reload with the same hash");
+        var path = Path.Combine(workspace.DataRoot, "instances", entry.Id.ToString(), "presets", preset.Id.ToString(), "maps.json");
+        using var file = JsonDocument.Parse(File.ReadAllText(path));
+        Check(file.RootElement.GetProperty("maps")[0].GetProperty("kind").GetString() == "standard" && saved.Hash is not null,
+            "legacy preset pool must retain camelCase names and enum strings");
+        Console.WriteLine("PASS instance, preset and map-pool storage without JSON reflection");
+        return 0;
+    }
+    finally { dir.Delete(recursive: true); }
+}
+
 if (args is ["--only", "workspace-storage-json"])
 {
     AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);

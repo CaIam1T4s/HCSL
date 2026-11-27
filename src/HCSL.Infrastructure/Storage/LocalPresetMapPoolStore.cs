@@ -1,14 +1,13 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 namespace HCSL.Infrastructure.Storage;
 
 public sealed class LocalPresetMapPoolStore : IPresetMapPoolStore
 {
-    private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) } };
+    private static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<PresetMapPool> Json =
+        MapPoolStorageJsonContext.CamelCase.PresetMapPool;
     public MapPoolResult Execute(WorkspaceRequest workspace, MapPoolCommand command)
     {
         if (!Enum.IsDefined(command.Action) || command.InstanceId == Guid.Empty || command.PresetId == Guid.Empty)
@@ -89,7 +88,7 @@ public sealed class LocalPresetMapPoolStore : IPresetMapPoolStore
         {
             Safe(libraryFile);
             if (new FileInfo(libraryFile).Length > 256 * 1024) return null;
-            var library = JsonSerializer.Deserialize<MapPoolLibrary>(File.ReadAllBytes(libraryFile), Json);
+            var library = JsonSerializer.Deserialize(File.ReadAllBytes(libraryFile), MapPoolStorageJsonContext.CamelCase.MapPoolLibrary);
             if (library is null) return null;
             MapPoolLibraryRules.Validate(library);
             var pool = library.PoolOf(presetId);
@@ -118,7 +117,7 @@ public sealed class LocalPresetMapPoolStore : IPresetMapPoolStore
             output.Write(buffer, 0, count);
         }
         var bytes = output.ToArray();
-        var pool = JsonSerializer.Deserialize<PresetMapPool>(bytes, Json) ?? throw new InstanceException("HCSL-MAPPOOL-INVALID", "Missing map pool.");
+        var pool = JsonSerializer.Deserialize(bytes, Json) ?? throw new InstanceException("HCSL-MAPPOOL-INVALID", "Missing map pool.");
         MapPoolRules.Validate(pool); return new(pool, Hash(bytes));
     }
 }

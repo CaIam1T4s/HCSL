@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Server;
@@ -10,7 +11,9 @@ namespace HCSL.Infrastructure.Storage;
 // lifetime, and the daemon must still be able to show the catalog it is serving.
 public sealed class LocalInstanceStore : IInstanceStore
 {
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    private static JsonTypeInfo<T> JsonType<T>() =>
+        InstanceStorageJsonContext.Default.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>
+        ?? throw new NotSupportedException($"Unsupported instance metadata type: {typeof(T)}.");
     public InstanceCatalog Execute(WorkspaceRequest workspace, InstanceCommand command)
     {
         if (!Enum.IsDefined(command.Action)) throw new InstanceException("HCSL-INSTANCE-REQUEST", "Unknown instance action.");
@@ -37,7 +40,7 @@ public sealed class LocalInstanceStore : IInstanceStore
         var root = lease.Layout.InstancesRoot;
         Safe(root);
         if (command.Action is InstanceAction.Create or InstanceAction.CreatePreset or InstanceAction.CopyPreset &&
-            JsonSerializer.SerializeToUtf8Bytes(Catalog(root)).Length > 16000)
+            JsonSerializer.SerializeToUtf8Bytes(Catalog(root), InstanceSizeJsonContext.Default.InstanceCatalog).Length > 16000)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog capacity reached; paginated management is not implemented yet.");
         Mutate(root, command);
         return Catalog(root) with { ConnectionAddresses = LocalServerAddresses.Discover() };
@@ -69,7 +72,7 @@ public sealed class LocalInstanceStore : IInstanceStore
     {
         Safe(file);
         if (new FileInfo(file).Length > 1024 * 1024) throw new IOException("Metadata too large.");
-        return JsonSerializer.Deserialize<T>(File.ReadAllText(file), Json) ?? throw new IOException("Empty metadata.");
+        return JsonSerializer.Deserialize(File.ReadAllText(file), JsonType<T>()) ?? throw new IOException("Empty metadata.");
     }
     private static void Write<T>(string file, T value)
     {
@@ -78,7 +81,7 @@ public sealed class LocalInstanceStore : IInstanceStore
         try
         {
             using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { JsonSerializer.Serialize(stream, value, Json); stream.Flush(true); }
+            { JsonSerializer.Serialize(stream, value, JsonType<T>()); stream.Flush(true); }
             File.Move(temp, file, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
@@ -144,8 +147,8 @@ public sealed class LocalInstanceStore : IInstanceStore
         }
         else
         {
-            Write(Path.Combine(stage, "plugins.json"), new { FormatVersion = 1, Plugins = Array.Empty<object>() });
-            Write(Path.Combine(stage, "authorization.json"), new { FormatVersion = 1, Rules = Array.Empty<object>() });
+            Write(Path.Combine(stage, "plugins.json"), new EmptyPluginSelection(1, []));
+            Write(Path.Combine(stage, "authorization.json"), new EmptyAuthorization(1, []));
         }
         Write(Path.Combine(stage, "preset.json"), preset);
         Directory.Move(stage, path);
