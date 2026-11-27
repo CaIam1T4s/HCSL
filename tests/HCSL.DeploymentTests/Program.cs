@@ -7,6 +7,8 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP: deployment baseline is Linux-only."); return 0; }
+var previewOnly = args is ["--only", "preview-json"];
+if (previewOnly) AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
 var root = Path.Combine(Environment.GetEnvironmentVariable("HCSL_DEPLOYMENT_TEST_ROOT") ?? Path.GetTempPath(), "hcsl-deployment-" + Guid.NewGuid().ToString("N"));
 var oldState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
 Environment.SetEnvironmentVariable("XDG_STATE_HOME", Path.Combine(root, "state"));
@@ -75,6 +77,11 @@ try
         Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")), "plan wrote deployment data");
         Reject("HCSL-DEPLOY-CONFLICT", () => service.Plan(workspace, Options(first) with { ExpectedRevision = 999 }));
     });
+    if (previewOnly)
+    {
+        Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+        return 0;
+    }
     Test("two instances deploy independent games and canonical writable directories", () =>
     {
         File.WriteAllText(Path.Combine(Preset(first), "cfg/server.cfg"), "hostname A\n");

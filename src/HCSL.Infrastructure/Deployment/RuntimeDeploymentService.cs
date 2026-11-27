@@ -16,12 +16,12 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
 {
     internal sealed record InventoryFile(string Path, long Bytes, string Sha256);
     internal sealed record Baseline(string BuildId, string EntrypointSha256, InventoryFile[] Inventory, string[] Configs);
-    private sealed record InstallState(int FormatVersion, int AppId, string Status, string? BuildId);
-    private sealed record LocalBaselineDocument(int FormatVersion, int AppId, string BuildId, string Source, string OperationId,
+    internal sealed record InstallState(int FormatVersion, int AppId, string Status, string? BuildId);
+    internal sealed record LocalBaselineDocument(int FormatVersion, int AppId, string BuildId, string Source, string OperationId,
         DateTimeOffset GeneratedAt, string EntrypointSha256, InventoryFile[] ConservativeCopyInventory, string[] IndependentConfigPaths);
     internal sealed record Transaction(int FormatVersion, Guid OperationId, Guid InstanceId, Guid DataId, Guid LibraryId);
-    private static readonly JsonSerializerOptions LocalBaselineJson = new()
-    { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
+    private static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<LocalBaselineDocument> LocalBaselineJson =
+        DeploymentBaselineJsonContext.Default.LocalBaselineDocument;
     private readonly Baseline baseline;
     private readonly Action<string>? checkpoint;
     private readonly bool useLocalBaseline;
@@ -50,7 +50,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (!File.Exists(path)) return null;
         try
         {
-            var document = JsonSerializer.Deserialize<LocalBaselineDocument>(File.ReadAllText(path), LocalBaselineJson);
+            var document = JsonSerializer.Deserialize(File.ReadAllText(path), LocalBaselineJson);
             if (document is not { FormatVersion: 1, AppId: 730, Source: "ManagedSteamCmd" }
                 || string.IsNullOrWhiteSpace(document.BuildId) || document.BuildId != buildId
                 || string.IsNullOrWhiteSpace(document.OperationId)
@@ -374,9 +374,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         { throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "The previous framework package cannot be read; its user modules were not moved."); }
     }
 
-    private sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
-    private sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
-    private sealed record PluginLedgerFile(string Path, string Sha256);
+    internal sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
+    internal sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
+    internal sealed record PluginLedgerFile(string Path, string Sha256);
     private static PluginLedger ReadPluginLedger(string path)
     {
         LocalPaths.RejectLink(path);
