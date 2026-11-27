@@ -44,8 +44,8 @@
           </Border>
           <!-- The modal plane is outside the layer manager: its scrim covers title chrome, menus, popovers and toasts. -->
           <ContentPresenter Name="PART_ModalPresenter" ZIndex="1"
-                            IsVisible="{Binding (controls:WindowModalLayer.IsOpen), RelativeSource={RelativeSource TemplatedParent}}"
-                            Content="{Binding (controls:WindowModalLayer.Content), RelativeSource={RelativeSource TemplatedParent}}"
+                            IsVisible="{CompiledBinding (controls:WindowModalLayer.IsOpen), RelativeSource={RelativeSource TemplatedParent}}"
+                            Content="{CompiledBinding (controls:WindowModalLayer.Content), RelativeSource={RelativeSource TemplatedParent}}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
         </Panel>
       </ControlTemplate>
