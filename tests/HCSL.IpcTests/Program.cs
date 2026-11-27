@@ -46,7 +46,12 @@ if (args is ["--only", "instance-wire-json"])
     CheckWire(new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset, id, PoolId: id, PresetId: id), json.MapPoolLibraryCommand);
     CheckWire(new MapPoolLibraryResult(new(1, 1, [new(id, "Example", [])], new() { [id] = id }), "hash"), json.MapPoolLibraryResult);
     CheckWire(new LocalResponse(LocalProtocol.Version, id, true, InstanceCatalogJson: "{}"), json.LocalResponse);
-    Console.WriteLine("PASS daemon instance and map-pool IPC JSON matches legacy format");
+    CheckWire(new ServerCommand(ServerAction.PlanDeployment, id), json.ServerCommand);
+    CheckWire(new ServerSnapshot(null, id, ServerState.Idle, false, "idle", false, true, null, 1, false,
+        [new(1, "example")]), json.ServerSnapshot);
+    CheckWire(new DeploymentPlan(id, 1, id, 1, "build", "runtime", DeploymentCopyMode.FullCopy,
+        1, 1, 1, 1, [new("cfg", "preset/cfg")], []), json.DeploymentPlan);
+    Console.WriteLine("PASS daemon instance, map-pool and server IPC JSON matches legacy format");
     return 0;
 
     static void CheckWire<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)

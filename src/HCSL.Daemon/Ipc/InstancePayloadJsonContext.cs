@@ -12,4 +12,7 @@ namespace HCSL.Daemon.Ipc;
 [JsonSerializable(typeof(MapPoolLibraryCommand))]
 [JsonSerializable(typeof(MapPoolLibraryResult))]
 [JsonSerializable(typeof(LocalResponse))]
+[JsonSerializable(typeof(ServerCommand))]
+[JsonSerializable(typeof(ServerSnapshot))]
+[JsonSerializable(typeof(DeploymentPlan))]
 internal sealed partial class InstancePayloadJsonContext : JsonSerializerContext;

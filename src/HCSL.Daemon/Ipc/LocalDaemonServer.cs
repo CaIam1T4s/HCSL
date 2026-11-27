@@ -217,18 +217,21 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     }
     private static ServerAction? DeserializeServerAction(LocalRequest request)
     {
-        try { return JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")?.Action; }
+        try { return ReadServerCommand(request)?.Action; }
         catch (JsonException) { return null; }
     }
+    private static ServerCommand? ReadServerCommand(LocalRequest request) =>
+        JsonSerializer.Deserialize(request.ServerCommandJson ?? "null", InstancePayloadJsonContext.Default.ServerCommand);
+
     private async Task<LocalResponse> PlanDeploymentAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+        var command = ReadServerCommand(request)
             ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
         var plan = await servers.PlanDeployment(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command.InstanceId);
-        return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan));
+        return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan, InstancePayloadJsonContext.Default.DeploymentPlan));
     }
     /// <summary>Startup baseline status/refresh. Refresh writes only the library-local baseline.</summary>
     private Task<LocalResponse> BaselineAsync(LocalRequest request, CancellationToken ct)
@@ -394,11 +397,11 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+        var command = ReadServerCommand(request)
             ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         var roster = await servers.PlayersAsync(command.InstanceId, ct);
         var snapshot = servers.Snapshot(hint: command.InstanceId == Guid.Empty ? null : command.InstanceId) with { PlayerRoster = roster };
-        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot, InstancePayloadJsonContext.Default.ServerSnapshot));
     }
 
     private async Task<LocalResponse> CfgBatchAsync(LocalRequest request, CancellationToken ct)
@@ -456,7 +459,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse Server(LocalRequest request)
     {
         if (servers == null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null") ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
+        var command = ReadServerCommand(request) ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         WorkspaceRequest Workspace()
         {
             var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
@@ -474,7 +477,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             ServerAction.Recover => servers.Recover(Workspace(), command.InstanceId, command.RunId),
             _ => throw new ServerException("HCSL-SERVER-OPTIONS", "Unknown server action.")
         };
-        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot, InstancePayloadJsonContext.Default.ServerSnapshot));
     }
     private LocalResponse MapPool(LocalRequest request)
     {
