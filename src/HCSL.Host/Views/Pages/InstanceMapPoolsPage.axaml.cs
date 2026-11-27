@@ -25,7 +25,7 @@ public partial class InstanceMapPoolsPage : UserControl
     private Guid? addTarget;
     private MapPoolRow? browsed;
     private MapsPage? maps;
-    private bool operating, loaded;
+    private bool operating;
     private HostServerController? Model => (DataContext as ShellViewModel)?.Servers;
     private MainWindow? Owner => TopLevel.GetTopLevel(this) as MainWindow;
     private InstanceDefinition? Instance => Model?.Selected?.Entry.Definition;
@@ -39,7 +39,7 @@ public partial class InstanceMapPoolsPage : UserControl
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
-        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) { loaded = false; _ = LoadAsync(); } };
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) _ = LoadAsync(); };
     }
 
     private void Subscribe()
@@ -54,7 +54,6 @@ public partial class InstanceMapPoolsPage : UserControl
     {
         if (subscribed is not null) subscribed.PropertyChanged -= Changed;
         subscribed = null;
-        loaded = false;
     }
 
     private void Changed(object? sender, PropertyChangedEventArgs e)
@@ -63,7 +62,7 @@ public partial class InstanceMapPoolsPage : UserControl
         Update();
         if (loading || operating || Model is not { } m || m.Busy || Instance is not { } instance) return;
         if (instance.Id == loadedInstance) return;
-        Dispatcher.UIThread.Post(() => { loaded = false; _ = LoadAsync(); });
+        Dispatcher.UIThread.Post(() => { _ = LoadAsync(); });
     }
 
     private Guid loadedInstance;
@@ -73,7 +72,6 @@ public partial class InstanceMapPoolsPage : UserControl
         if (loading) return;
         if (Model is not { } m || Instance is not { } instance || !m.Server.Connected || operating) return;
         loading = true;
-        loaded = true;
         loadedInstance = instance.Id;
         try
         {
@@ -82,7 +80,7 @@ public partial class InstanceMapPoolsPage : UserControl
             SetChoices(result);
             await RefreshMapsAsync();
         }
-        catch (IOException error) { Error("读取图池失败", error.Message); loaded = false; }
+        catch (IOException error) { Error("读取图池失败", error.Message); }
         finally { PoolChoices.IsLoading = false; loading = false; Update(); }
     }
 
@@ -298,7 +296,7 @@ public partial class InstanceMapPoolsPage : UserControl
             });
         }
         catch (Exception error) when (error is IOException or InstanceException) { Error("图池未保存", error.Message); }
-        finally { operating = false; loaded = false; Update(); await LoadAsync(); }
+        finally { operating = false; Update(); await LoadAsync(); }
     }
 
     private async void CreatePool(object? sender, RoutedEventArgs e)

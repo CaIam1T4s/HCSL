@@ -12,21 +12,21 @@
         <arc:TabItem x:Name="MapsTab" Header="地图管理"/>
       </arc:Tabs>
       <arc:Button x:Name="CreateButton" Grid.Column="1" Variant="Secondary" Click="CreatePool"
-                  IsVisible="{Binding #PoolTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="新建图池">
+                  IsVisible="{CompiledBinding #PoolTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="新建图池">
         <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
           <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
           <TextBlock Text="新建图池" VerticalAlignment="Center"/>
         </StackPanel>
       </arc:Button>
       <arc:Button Grid.Column="1" Variant="Secondary" Click="AddWorkshop"
-                  IsVisible="{Binding #MapsTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="添加地图">
+                  IsVisible="{CompiledBinding #MapsTab.IsSelected}" VerticalAlignment="Center" AutomationProperties.Name="添加地图">
         <StackPanel Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space2}">
           <lucide:LucideIcon Kind="Plus" VerticalAlignment="Center"/>
           <TextBlock Text="添加地图" VerticalAlignment="Center"/>
         </StackPanel>
       </arc:Button>
     </Grid>
-    <Grid Grid.Row="1" IsVisible="{Binding #PoolTab.IsSelected}">
+    <Grid Grid.Row="1" IsVisible="{CompiledBinding #PoolTab.IsSelected}">
       <arc:Table x:Name="PoolChoices" Caption="图池列表" IsSelectable="False"
                  EmptyMessage="暂无图池" LoadingMessage="正在读取图池">
         <arc:Table.Columns>
@@ -86,7 +86,7 @@
                            HoldDuration="0:0:1" Tone="Danger" Confirmed="DeletePool"/>
       </arc:Popover>
     </Grid>
-    <ContentControl x:Name="MapsHost" Grid.Row="1" IsVisible="{Binding #MapsTab.IsSelected}"
+    <ContentControl x:Name="MapsHost" Grid.Row="1" IsVisible="{CompiledBinding #MapsTab.IsSelected}"
                     HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
   </Grid>
 </UserControl>
