@@ -13,6 +13,9 @@ public sealed partial class FrameworkManager
     private const int MaxCatalogBytes = 8 * 1024 * 1024;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> catalogGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CatalogState> catalogs = new(StringComparer.Ordinal);
+    [System.Text.Json.Serialization.JsonSerializable(typeof(CatalogState))]
+    private sealed partial class CatalogJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
+
     private sealed record CatalogState(int FormatVersion, string Repository, ReleaseInfo[] Releases,
         int? NextPage, string? HeadETag = null, DateTimeOffset? CheckedAt = null, DateTimeOffset? RetryAt = null);
 
@@ -169,7 +172,7 @@ public sealed partial class FrameworkManager
         {
             if (new FileInfo(file) is { Exists: true, Length: <= MaxCatalogBytes })
             {
-                var state = JsonSerializer.Deserialize<CatalogState>(File.ReadAllText(file), Json);
+                var state = JsonSerializer.Deserialize(File.ReadAllText(file), CatalogJsonContext.Default.CatalogState);
                 if (state is { FormatVersion: 1 } && state.Repository == repository && state.Releases is not null && state.Releases.Length <= 10000 && state.Releases.All(r => r is not null && !string.IsNullOrWhiteSpace(r.Tag) && r.Assets is not null && r.Assets.All(a => a is not null && a.Name is not null && a.Url is not null)) && state.NextPage is null or >= 1)
                     return state;
             }
@@ -183,7 +186,7 @@ public sealed partial class FrameworkManager
         var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(state, Json);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(state, CatalogJsonContext.Default.CatalogState);
             if (bytes.Length > MaxCatalogBytes) throw new IOException("Catalog cache exceeds the size limit.");
             var directory = Path.GetDirectoryName(file)!;
             var parent = Path.GetDirectoryName(directory)!;
