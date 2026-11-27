@@ -35,7 +35,7 @@ public static class ServerLastRunStore
         {
             var info = new FileInfo(path);
             if (!info.Exists || info.LinkTarget is not null) return null;
-            var record = JsonSerializer.Deserialize<ServerLastRun>(File.ReadAllText(path));
+            var record = JsonSerializer.Deserialize(File.ReadAllText(path), DeploymentJsonContext.Default.ServerLastRun);
             if (record is null || record.InstanceId != instanceId || !IsMapName(record.Map)) return null;
             return record;
         }

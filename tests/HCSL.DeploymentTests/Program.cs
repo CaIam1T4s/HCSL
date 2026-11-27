@@ -143,6 +143,13 @@ try
                 var savedAdmins = await admins.ListAsync(first.Id, presetId);
                 Check(savedAdmins.Snapshot.Entries.Single().SteamId64 == steamId, "native daemon did not persist the admin edit");
                 Console.WriteLine("PASS native framework cache, plugin probe and admin write/read IPC");
+                File.WriteAllText(Path.Combine(Preset(first), "cfg", "aot-test.cfg"), "// fixture only\n");
+                var cfg = await maps.CfgAsync(new(PresetCfgAction.Read, first.Id, presetId, Name: "aot-test.cfg"));
+                Check(cfg.Content == "// fixture only\n", "native daemon did not read preset CFG over IPC");
+                var receipt = await client.SendConsoleAsync(new(Guid.NewGuid(), Guid.NewGuid(), "status", ConfirmMutation: true));
+                Check(receipt is { Delivery: ConsoleDelivery.Rejected, Code: "HCSL-CONSOLE-STALE" },
+                    "native daemon did not reject a console command for a stale run");
+                Console.WriteLine("PASS native preset CFG read and stale console rejection");
                 await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
                 Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");

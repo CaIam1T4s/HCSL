@@ -37,7 +37,7 @@ public static class ServerProcessGate
         using var control = new StreamReader(Console.OpenStandardInput());
         var first = await control.ReadLineAsync();
         if (first == null || first.Length > 16384) { Console.Error.WriteLine("HCSL_SERVER_GATE_INPUT_MISSING"); return 125; }
-        var command = JsonSerializer.Deserialize<ServerGateCommand>(first);
+        var command = JsonSerializer.Deserialize(first, ServerGateJsonContext.Default.ServerGateCommand);
         if (command == null || !Path.IsPathFullyQualified(command.Executable) || !OwnerAlive(command)) return 125;
         if (!LimitsMatch(command)) { Console.Error.WriteLine("HCSL_SERVER_GATE_LIMITS_MISMATCH"); return 125; }
         static string Quote(string text) => "'" + text.Replace("'", "'\"'\"'") + "'";
@@ -60,7 +60,7 @@ public static class ServerProcessGate
                     try
                     {
                         if (raw.Length > 65536) throw new JsonException();
-                        var query = JsonSerializer.Deserialize<ServerConsoleCommand>(raw);
+                        var query = JsonSerializer.Deserialize(raw, ServerGateJsonContext.Default.ServerConsoleCommand);
                         if (query is null || query.RunId != command.RunId || query.CommandId == Guid.Empty) throw new JsonException();
                         var text = ServerConsoleRules.ValidateConfirmed(query);
                         using var writeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));

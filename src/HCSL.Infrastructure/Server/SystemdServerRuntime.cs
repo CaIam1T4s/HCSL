@@ -244,7 +244,7 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                 {
                     launch.ReleasePorts();
                     var command = new ServerGateCommand(session.OwnerPid, session.OwnerStartTicks, session.PidNamespace, launch.Executable, launch.Arguments, Path.Combine(launch.Runtime, "game"), memoryMiB * 1024L * 1024, runId);
-                    await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command)); await process.StandardInput.FlushAsync(); released = true;
+                    await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command, ServerGateJsonContext.Default.ServerGateCommand)); await process.StandardInput.FlushAsync(); released = true;
                     // The RCON password is applied lazily on the first roster query, so startup never consumes
                     // the console rate-limit window that an operator command may need right after map load.
                 }

@@ -387,10 +387,10 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerKickCommand>(request.ServerKickJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.ServerKickJson ?? "null", InstancePayloadJsonContext.Default.ServerKickCommand)
             ?? throw new ServerException("HCSL-KICK-TARGET", "Kick command is required.");
         var result = await servers.KickAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.ServerKickResult));
     }
 
     private async Task<LocalResponse> PlayersAsync(LocalRequest request, CancellationToken ct)
@@ -408,20 +408,20 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
-        var command = JsonSerializer.Deserialize<CfgBatchCommand>(request.PresetCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PresetCfgJson ?? "null", InstancePayloadJsonContext.Default.CfgBatchCommand)
             ?? throw new ServerException("HCSL-CFG-REQUEST", "CFG batch required.");
         var receipts = await servers.SendCfgBatchAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipts));
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipts, InstancePayloadJsonContext.Default.ServerConsoleReceiptArray));
     }
 
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
-        var command = JsonSerializer.Deserialize<ServerConsoleCommand>(request.ServerConsoleJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.ServerConsoleJson ?? "null", InstancePayloadJsonContext.Default.ServerConsoleCommand)
             ?? throw new ServerException("HCSL-CONSOLE-INPUT", "Console query required.");
         var receipt = await servers.SendConsoleAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipt));
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipt, InstancePayloadJsonContext.Default.ServerConsoleReceipt));
     }
     private LocalResponse Dispatch(LocalRequest request)
     {
@@ -611,14 +611,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse PresetCfg(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PresetCfgCommand>(request.PresetCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PresetCfgJson ?? "null", InstancePayloadJsonContext.Default.PresetCfgCommand)
             ?? throw new InstanceException("HCSL-CFG-REQUEST", "CFG command is required.");
         if (command.Action is not (PresetCfgAction.List or PresetCfgAction.Read) &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-CFG-BUSY", "Stop the server/SteamCMD and complete recovery before editing CFG.");
         var result = new LocalPresetCfgStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PresetCfgResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PresetCfgResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PresetCfgResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-CFG-LIMIT", "CFG response exceeds the IPC limit.");
         return response;
     }
