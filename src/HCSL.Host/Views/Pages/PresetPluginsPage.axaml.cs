@@ -65,9 +65,10 @@ public partial class PresetPluginsPage : UserControl
     private static Control? RowControl(object? source) => (source as Avalonia.Visual)?.GetSelfAndVisualAncestors()
         .OfType<Control>().FirstOrDefault(control => control.GetType().Name == "TableRow");
 
-    // Arc reuses row containers; read the current item when handling a cell action.
-    private static readonly System.Reflection.PropertyInfo? TableRowItem = typeof(Table).Assembly
-        .GetType("TKCode.Arc.TableRow")?.GetProperty("Item",
+    // Arc reuses row containers. Keep the assembly-qualified type literal so the trimmer can
+    // retain the precise Item getter used to verify the row before tinting it or acting on it.
+    private static readonly System.Reflection.PropertyInfo? TableRowItem = Type.GetType("TKCode.Arc.TableRow, TKCode.Arc")
+        ?.GetProperty("Item",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly,
             binder: null, returnType: typeof(object), types: Type.EmptyTypes, modifiers: null);
 
