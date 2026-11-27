@@ -67,10 +67,10 @@
     <Setter Property="Opacity" Value="0"/>
   </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ThemeSwitcher /template/ arc|Button#PART_Button">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
+    <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.7}"/>
   </Style>
   <Style Selector="arc|ArcWindow.wallpaper-shell arc|ExpandingButtonGroup.launch-actions">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+    <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
   </Style>
   <!-- Expansion reveals the label; it is not a hover state. Tint the template body only on hover. -->
   <Style Selector="arc|ExpandingButtonGroupItem:expanded:not(:pointerover) /template/ Border#PART_Body">
@@ -321,7 +321,7 @@
     <Setter Property="Spacing" Value="{arc:ArcDesignTokenResource Space3}"/>
   </Style>
   <Style Selector="StackPanel.instance-editor arc|Input /template/ arc|FieldFrame#PART_Frame">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+    <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
     <Setter Property="BorderThickness" Value="0"/>
     <Setter Property="BorderBrush" Value="Transparent"/>
   </Style>
@@ -333,7 +333,7 @@
     <Setter Property="BorderBrush" Value="Transparent"/>
   </Style>
   <Style Selector="StackPanel.instance-editor arc|Button[Variant=Secondary]">
-    <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+    <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
   </Style>
   <Style Selector="StackPanel.instance-editor arc|Button.instance-save">
     <Setter Property="Background" Value="{arc:ArcDesignTokenResource Accent}"/>
