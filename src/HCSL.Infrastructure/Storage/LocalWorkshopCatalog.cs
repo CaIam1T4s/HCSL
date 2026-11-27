@@ -46,7 +46,7 @@ public static class LocalWorkshopCatalog
                 throw new InstanceException("HCSL-WORKSHOP-INSTANCE", "实例不存在。");
             }
             var path = Path.Combine(instanceDirectory, "workshop-maps.json");
-            var existing = File.Exists(path) ? JsonSerializer.Deserialize<WorkshopItem[]>(File.ReadAllBytes(path)) ?? [] : [];
+            var existing = File.Exists(path) ? JsonSerializer.Deserialize(File.ReadAllBytes(path), WorkshopStorageJsonContext.Default.WorkshopItemArray) ?? [] : [];
             if (add is null) return existing;
             if (add.Length > 100 || add.Any(x => x is null || !ServerMapRules.TryValidateWorkshopId(x.Id) ||
                 x.Children is not null || x.Title is not { Length: > 0 and <= 200 } || x.Title.Any(char.IsControl)))
@@ -64,7 +64,7 @@ public static class LocalWorkshopCatalog
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(items));
+            File.WriteAllBytes(temp, JsonSerializer.SerializeToUtf8Bytes(items, WorkshopStorageJsonContext.Default.WorkshopItemArray));
             File.Move(temp, path, overwrite: true);
         }
         finally { File.Delete(temp); }

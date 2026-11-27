@@ -13,7 +13,8 @@ if (previewOnly) AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflect
 var root = Path.Combine(Environment.GetEnvironmentVariable("HCSL_DEPLOYMENT_TEST_ROOT") ?? Path.GetTempPath(), "hcsl-deployment-" + Guid.NewGuid().ToString("N"));
 var oldState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
 Environment.SetEnvironmentVariable("XDG_STATE_HOME", Path.Combine(root, "state"));
-var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
+var settings = previewBinary is null ? Path.Combine(root, "settings") : Path.Combine(root, "daemon-config", "hcsl");
+var workspace = new WorkspaceRequest(settings, Path.Combine(root, "data"), Path.Combine(root, "library"));
 int passed = 0;
 void Check(bool value, string message) { if (!value) throw new Exception(message); }
 void Test(string name, Action action) { action(); Console.WriteLine("PASS " + name); passed++; }
@@ -95,12 +96,27 @@ try
             {
                 var ready = await daemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 Check(ready == "HCSL daemon ready: " + pipe, "native daemon did not report readiness");
-                var client = new HCSL.Frontend.ServerClient(new HCSL.Frontend.DaemonClient(pipe));
-                var plan = await client.PlanDeploymentAsync(first.Id, new(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot));
+                var daemonClient = new HCSL.Frontend.DaemonClient(pipe);
+                var paths = new HCSL.Contracts.WorkspacePaths(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+                var client = new HCSL.Frontend.ServerClient(daemonClient);
+                var plan = await client.PlanDeploymentAsync(first.Id, paths);
                 Check(plan.InstanceId == first.Id && plan.BuildId == "123" && plan.FileCount == sourceHashes.Count,
                     "native IPC returned the wrong plan");
                 Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")) && !File.Exists(Journal(first)),
                     "native preview wrote runtime or preset data");
+                var baselineStatus = await new HCSL.Frontend.BaselineClient(daemonClient, () => paths).StatusAsync();
+                Check(baselineStatus is { BuildId: "123", Source: "Local" }, "native baseline status did not use the local baseline");
+                var content = await daemonClient.SendAsync(new(HCSL.Contracts.LocalProtocol.Version, Guid.NewGuid(),
+                    HCSL.Contracts.RequestKind.ContentStatus, new(paths)));
+                using var status = JsonDocument.Parse(content.ContentStatusJson ?? "null");
+                Check(content.Success && status.RootElement.GetProperty("Installed").GetBoolean() &&
+                    status.RootElement.GetProperty("BuildId").GetString() == "123", "native content status was wrong");
+                // Use the isolated fixture workspace: InstanceClient obtains its workspace from Hello.
+                var maps = new HCSL.Frontend.InstanceClient(daemonClient);
+                await maps.MapCatalogAsync(new MapCatalogCommand(first.Id, Register: [new("3070244462", "Fixture workshop map")]));
+                var catalog = await maps.MapCatalogAsync(first.Id);
+                Check(catalog.Entries.Any(map => map.WorkshopId == "3070244462" && map.Name == "Fixture workshop map"),
+                    "native map catalog did not reload the registered workshop map");
                 await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
                 Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");

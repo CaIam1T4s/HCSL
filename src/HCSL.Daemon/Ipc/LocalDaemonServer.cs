@@ -238,7 +238,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION"));
         var workspace = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<BaselineCommand>(request.BaselineJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.BaselineJson ?? "null", InstancePayloadJsonContext.Default.BaselineCommand)
             ?? throw new InstanceException("HCSL-BASELINE-REQUEST", "Baseline action is required.");
         if (!Enum.IsDefined(command.Action))
             throw new InstanceException("HCSL-BASELINE-REQUEST", "Unknown baseline action.");
@@ -258,7 +258,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             var (source, installed, localBuild) = RuntimeDeploymentService.BaselineStatus(layout, buildId);
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
                 BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(installed, source, localBuild.Length == 0 ? null : localBuild,
-                    Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
+                    Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")), InstancePayloadJsonContext.Default.BaselineResult)));
         }
         if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
             throw new InstanceException("HCSL-BASELINE-BUSY", "Stop the server/SteamCMD and complete recovery before refreshing the baseline.");
@@ -267,7 +267,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var result = RuntimeDeploymentService.BaselineStatus(layout, buildId);
         return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
             BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(result.BuildId, result.Source, result.LocalBuildId,
-                Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
+                Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")), InstancePayloadJsonContext.Default.BaselineResult)));
     }
     private async Task<LocalResponse> FrameworkCatalogAsync(LocalRequest request, CancellationToken ct)
     {
@@ -431,7 +431,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         {
             RequestKind.Hello => Hello(request),
             RequestKind.ContentStatus => new(LocalProtocol.Version, request.Id, true,
-                ContentStatusJson: JsonSerializer.Serialize(HCSL.Infrastructure.Steam.Cs2ContentStatusReader.Read(RequiredOptions(request).Workspace.LibraryRoot))),
+                ContentStatusJson: JsonSerializer.Serialize(HCSL.Infrastructure.Steam.Cs2ContentStatusReader.Read(RequiredOptions(request).Workspace.LibraryRoot),
+                    InstancePayloadJsonContext.Default.Cs2ContentStatus)),
             RequestKind.Instances => Instances(request),
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),
@@ -516,7 +517,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private async Task<LocalResponse> MapCatalogAsync(LocalRequest request, CancellationTokenSource deadline)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapCatalogCommand>(request.MapCatalogJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapCatalogJson ?? "null", InstancePayloadJsonContext.Default.MapCatalogCommand)
             ?? throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "Map catalog request is required.");
         if (command.InstanceId == Guid.Empty) throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "An instance id is required.");
         var game = Path.Combine(p.LibraryRoot, "runtime", command.InstanceId.ToString("D"), "game");
@@ -550,8 +551,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             };
         }
         MapCatalogRules.Validate(result);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapCatalogResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPCATALOG-LIMIT", "Map catalog response exceeds the IPC frame limit.");
         return response;
     }
