@@ -57,7 +57,16 @@ public sealed partial class MapsPage : UserControl
                 if (ManagePools) return label;
                 var mark = new Badge { Content = "已选", IsVisible = row.IsSelected,
                     VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-                mark.Bind(IsVisibleProperty, new Avalonia.Data.Binding(nameof(MapRow.IsSelected)) { Source = row });
+                void SelectionChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+                {
+                    if (e.PropertyName == nameof(MapRow.IsSelected)) mark.IsVisible = row.IsSelected;
+                }
+                mark.AttachedToVisualTree += (_, _) =>
+                {
+                    row.PropertyChanged += SelectionChanged;
+                    mark.IsVisible = row.IsSelected;
+                };
+                mark.DetachedFromVisualTree += (_, _) => row.PropertyChanged -= SelectionChanged;
                 var cell = new DockPanel { LastChildFill = true };
                 DockPanel.SetDock(mark, Dock.Right);
                 cell.Children.Add(mark);

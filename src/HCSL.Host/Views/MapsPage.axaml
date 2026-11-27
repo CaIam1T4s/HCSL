@@ -8,7 +8,7 @@
              x:Name="Root"
              x:DataType="vm:MapRow">
 
-  <Border Classes.catalog-frame="True" Classes.embedded="{ReflectionBinding #Root.ManagePools}">
+  <Border Classes.catalog-frame="True" Classes.embedded="{CompiledBinding #Root.ManagePools}">
     <Border.Styles>
       <Style Selector="Border.catalog-frame">
         <Setter Property="Padding" Value="{DynamicResource ConsolePageInset}"/>
@@ -21,14 +21,14 @@
     <arc:FilterToolbar x:Name="Filters" IsSearchVisible="True"
                        SearchPlaceholder="搜索地图名或工坊 ID" Label="地图筛选"
                        EmptyText="没有已应用的筛选" AddFilterLabel="筛选" ClearAllLabel="清除筛选"
-                       Classes.embedded="{ReflectionBinding #Root.ManagePools}" FiltersChanged="FiltersChanged">
+                       Classes.embedded="{CompiledBinding #Root.ManagePools}" FiltersChanged="FiltersChanged">
       <arc:FilterToolbar.Styles>
         <Style Selector="arc|FilterToolbar.embedded /template/ ContentPresenter#PART_ExtraActions">
           <Setter Property="IsVisible" Value="False"/>
         </Style>
       </arc:FilterToolbar.Styles>
       <arc:FilterToolbar.Actions>
-        <StackPanel x:Name="CatalogActions" IsVisible="{ReflectionBinding !#Root.ManagePools}" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
+        <StackPanel x:Name="CatalogActions" IsVisible="{CompiledBinding !#Root.ManagePools}" Orientation="Horizontal" Spacing="{arc:ArcDesignTokenResource Space1}">
           <!-- Icon-only actions use a 28 px target with no padding of their own, so they sit as close as the
                toolbar's own controls instead of widening the row. -->
           <arc:Button x:Name="RulesButton" Variant="Ghost" Size="Small" Click="ShowRules"
