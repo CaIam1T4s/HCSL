@@ -13,12 +13,12 @@
       <Setter Property="BorderBrush" Value="Transparent"/>
     </Style>
     <Style Selector=".instance-list-page arc|Button:not(.instance-back)">
-      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+      <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
     </Style>
     <Style Selector=".instance-list-page arc|SearchField /template/ arc|FieldFrame#PART_Frame">
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="BorderBrush" Value="Transparent"/>
-      <Setter Property="Background" Value="{ReflectionBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
+      <Setter Property="Background" Value="{CompiledBinding $parent[Window].Background, Converter={x:Static ui:SurfaceBrushConverter.Instance}, ConverterParameter=0.72}"/>
     </Style>
     <Style Selector=".instance-list-page arc|SearchField /template/ arc|FieldFrame#PART_Frame:pointerover:not(:invalid)">
       <Setter Property="BorderBrush" Value="Transparent"/>

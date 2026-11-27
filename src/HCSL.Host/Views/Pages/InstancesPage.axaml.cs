@@ -288,11 +288,17 @@ public partial class InstancesPage : UserControl
                 menuOrigin = PropertyAnchorLayer.PointToClient(menu.PointToScreen(default));
         }
         menu.LayoutUpdated += (_, _) => { if (menu.IsOpen) CaptureMenuOrigin(); };
-        void Entry(string title, LucideIconKind icon, string? enabled, Action action, bool separator = false, bool danger = false)
+        void Entry(string title, LucideIconKind icon, Func<bool>? enabled, Action action, bool separator = false, bool danger = false)
         {
             if (separator) menu.Items.Add(new GlassMenuSeparator());
             var entry = new GlassMenuItem { Content = title, Icon = Lucide.Geometry(icon), IsDestructive = danger };
-            if (enabled is not null) entry.Bind(IsEnabledProperty, new Binding(enabled) { Source = row, Mode = BindingMode.OneWay });
+            if (enabled is not null)
+            {
+                entry.IsEnabled = enabled();
+                void UpdateEnabled(object? sender, System.ComponentModel.PropertyChangedEventArgs args) => entry.IsEnabled = enabled();
+                entry.AttachedToVisualTree += (_, _) => { row.PropertyChanged += UpdateEnabled; entry.IsEnabled = enabled(); };
+                entry.DetachedFromVisualTree += (_, _) => row.PropertyChanged -= UpdateEnabled;
+            }
             entry.Click += (_, _) =>
             {
                 if (!entry.IsEnabled) return;
@@ -302,20 +308,20 @@ public partial class InstancesPage : UserControl
             };
             menu.Items.Add(entry);
         }
-        Entry("启动实例", LucideIconKind.Play, nameof(row.CanStart), async () => await StartAsync(row));
-        Entry("查看日志", LucideIconKind.ScrollText, nameof(row.CanViewLogs), () =>
+        Entry("启动实例", LucideIconKind.Play, () => row.CanStart, async () => await StartAsync(row));
+        Entry("查看日志", LucideIconKind.ScrollText, () => row.CanViewLogs, () =>
         {
             if (row.CanViewLogs && Model?.Server.Snapshot?.InstanceId == row.Id && Browse(row)) Owner?.OpenSelectedInstanceLogs();
         });
-        Entry("实例管理", LucideIconKind.Settings, nameof(row.CanSelect), () =>
+        Entry("实例管理", LucideIconKind.Settings, () => row.CanSelect, () =>
         {
             // Opens the row that was invoked; the list's startup choice stays where it was.
             if (!Browse(row) || Model?.Selected is not { } item) return;
             shell!.OpenInstanceScope(item);
         });
-        Entry("重命名实例", LucideIconKind.PencilLine, nameof(row.CanEdit), async () => await EditAsync(row));
+        Entry("重命名实例", LucideIconKind.PencilLine, () => row.CanEdit, async () => await EditAsync(row));
         if (row.Item.Entry.Definition?.LayoutVersion < InstanceRules.CurrentLayoutVersion)
-            Entry("迁移布局", LucideIconKind.FolderSync, nameof(row.CanMigrate), async () => await MigrateAsync(row));
+            Entry("迁移布局", LucideIconKind.FolderSync, () => row.CanMigrate, async () => await MigrateAsync(row));
         Entry("属性", LucideIconKind.Info, null, () => Dispatcher.UIThread.Post(() =>
         {
             if (!IsVisible || !rows.TryGetValue(row.Id, out var current) || !container.IsAttachedToVisualTree()) return;
@@ -323,7 +329,7 @@ public partial class InstancesPage : UserControl
             PropertiesCard.DataContext = current;
             ShowAtMenuOrigin(PropertiesPopover, PropertiesAnchor, container, menuOrigin);
         }), true);
-        Entry("删除实例", LucideIconKind.Trash, nameof(row.CanEdit), () => Dispatcher.UIThread.Post(() =>
+        Entry("删除实例", LucideIconKind.Trash, () => row.CanEdit, () => Dispatcher.UIThread.Post(() =>
         {
             if (!IsVisible || !container.IsAttachedToVisualTree() || operating || Model?.CanCreate != true || Current(row.Id) is not { } target) return;
             if (row.Item.Entry.Definition?.Revision != target.Revision)
