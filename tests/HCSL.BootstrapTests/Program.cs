@@ -40,6 +40,30 @@ try
         if (OperatingSystem.IsLinux()) File.SetUnixFileMode(target, File.GetUnixFileMode(file));
     }
     var pipe = "hcsl-auto-" + Guid.NewGuid().ToString("N");
+    if (args is ["--only", "native-upgrade", var image])
+    {
+        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("This isolated fixture uses Linux XDG paths.");
+        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.Combine(root, "config"));
+        Environment.SetEnvironmentVariable("XDG_DATA_HOME", Path.Combine(root, "data"));
+        await new DaemonBootstrapper(pipe, payload).EnsureRunningAsync();
+        var managed = await Hello(pipe);
+        daemons.Add(managed.ProcessId);
+        var nativeDir = Directory.CreateDirectory(Path.Combine(root, "native payload with spaces")).FullName;
+        var executable = Path.Combine(nativeDir, "HCSL.Daemon");
+        File.Copy(image, executable);
+        File.SetUnixFileMode(executable, File.GetUnixFileMode(image));
+        File.WriteAllText(Path.Combine(nativeDir, DaemonPayload.NativeMarker), "native-aot");
+        var bootstrap = new DaemonBootstrapper(pipe, nativeDir);
+        await bootstrap.EnsureRunningAsync();
+        var native = await Hello(pipe);
+        daemons.Add(native.ProcessId);
+        Check(native.ProcessId != managed.ProcessId && native.InstanceId != managed.InstanceId &&
+            native.DaemonBuild == DaemonPayload.BundledHash(nativeDir), "native daemon did not replace managed daemon with matching identity");
+        await bootstrap.EnsureRunningAsync();
+        Check((await Hello(pipe)).InstanceId == native.InstanceId, "current native daemon was replaced unnecessarily");
+        Console.WriteLine("PASS managed-to-native bootstrap replacement and native reuse");
+        return 0;
+    }
     await Run("two frontend processes automatically start one reusable detached daemon", async () =>
     {
         var a = StartWorker(pipe, payload);

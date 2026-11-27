@@ -8,6 +8,17 @@ namespace HCSL.Frontend;
 public static class DaemonPayload
 {
     public const string RelativeDirectory = "daemon";
+    public const string NativeMarker = "daemon.native-aot";
+
+    internal static bool IsNative(string directory) => File.Exists(Path.Combine(directory, NativeMarker));
+    internal static string Executable(string directory) => Path.Combine(directory,
+        OperatingSystem.IsWindows() ? "HCSL.Daemon.exe" : "HCSL.Daemon");
+
+    private static string IdentityFile(string? payloadDirectory)
+    {
+        var directory = Directory(payloadDirectory);
+        return IsNative(directory) ? Executable(directory) : Path.Combine(directory, "HCSL.Daemon.dll");
+    }
 
     public static string Directory(string? payloadDirectory = null) =>
         Path.GetFullPath(payloadDirectory ?? Path.Combine(AppContext.BaseDirectory, RelativeDirectory));
@@ -17,8 +28,8 @@ public static class DaemonPayload
     {
         try
         {
-            var assembly = Path.Combine(Directory(payloadDirectory), "HCSL.Daemon.dll");
-            return File.Exists(assembly) ? File.GetLastWriteTimeUtc(assembly) : null;
+            var image = IdentityFile(payloadDirectory);
+            return File.Exists(image) ? File.GetLastWriteTimeUtc(image) : null;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
     }
@@ -31,9 +42,9 @@ public static class DaemonPayload
     {
         try
         {
-            var assembly = Path.Combine(Directory(payloadDirectory), "HCSL.Daemon.dll");
-            if (!File.Exists(assembly)) return null;
-            using var stream = File.OpenRead(assembly);
+            var image = IdentityFile(payloadDirectory);
+            if (!File.Exists(image)) return null;
+            using var stream = File.OpenRead(image);
             return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException) { return null; }
