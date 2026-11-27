@@ -216,12 +216,11 @@ public partial class PresetCfgPage : UserControl
 
     private static void SuppressSelectionFill(TreeTable table)
     {
-        // Arc 1.1 keeps its row type internal; preserve the check mark without the accent fill.
-        if (typeof(TreeTable).Assembly.GetType("TKCode.Arc.TreeTableRow") is { } rowType)
-            table.Styles.Add(new Style(selector => selector.OfType(rowType).Class(":selected"))
-            {
-                Setters = { new Setter(Panel.BackgroundProperty, Brushes.Transparent) }
-            });
+        // Arc 1.1's internal row is a Grid with :selected; keep its check mark without the accent fill.
+        table.Styles.Add(new Style(selector => selector.Is<Grid>().Class(":selected"))
+        {
+            Setters = { new Setter(Panel.BackgroundProperty, Brushes.Transparent) }
+        });
     }
 
     private async void Refresh(object? sender, RoutedEventArgs e) => await LoadAsync();
