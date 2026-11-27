@@ -117,6 +117,32 @@ try
                 var catalog = await maps.MapCatalogAsync(first.Id);
                 Check(catalog.Entries.Any(map => map.WorkshopId == "3070244462" && map.Name == "Fixture workshop map"),
                     "native map catalog did not reload the registered workshop map");
+                var frameworks = new HCSL.Frontend.FrameworkClient(daemonClient);
+                var releases = await frameworks.CatalogAsync(new("counterstrikesharp", CacheOnly: true), paths);
+                Check(releases.Id == "counterstrikesharp" && releases.FromCache,
+                    "native daemon did not return a cache-only framework result");
+                Check(await frameworks.ProgressAsync(Guid.NewGuid()) is null, "unknown download must not have progress");
+
+                var presetId = first.Definition!.SelectedPresetId;
+                var plugins = await maps.PluginAsync(new(PluginAction.List, first.Id, presetId));
+                Check(plugins.Selected.Length == 0, "isolated preset should not have plugins selected");
+                var pluginPath = Path.Combine(root, "fixture.smx");
+                File.WriteAllText(pluginPath, "SourcePawn fixture");
+                var probe = await maps.PluginImportProbeAsync(new(pluginPath));
+                Check(probe is not null, "native daemon did not return a plugin probe");
+
+                // Reproduce the installed framework's config directory in the fixture; no plugin is loaded.
+                Directory.CreateDirectory(Path.Combine(Preset(first), "addons", "counterstrikesharp", "configs"));
+                File.WriteAllText(Path.Combine(Preset(first), "plugins.json"),
+                    """{"FormatVersion":1,"Revision":1,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+                var admins = new HCSL.Frontend.AdminClient(daemonClient);
+                var empty = await admins.ListAsync(first.Id, presetId);
+                const string steamId = "76561198000000000";
+                await admins.ApplyAsync(new(AdminAction.Apply, first.Id, presetId, empty.Snapshot.Hash,
+                    [new(AdminMutationKind.Upsert, steamId, "Fixture admin", [AdminRules.DefaultGroupName])], InitGroups: true));
+                var savedAdmins = await admins.ListAsync(first.Id, presetId);
+                Check(savedAdmins.Snapshot.Entries.Single().SteamId64 == steamId, "native daemon did not persist the admin edit");
+                Console.WriteLine("PASS native framework cache, plugin probe and admin write/read IPC");
                 await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
                 Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");
