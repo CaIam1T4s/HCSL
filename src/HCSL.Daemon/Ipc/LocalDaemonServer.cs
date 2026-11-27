@@ -21,6 +21,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, TransferSnapshot> frameworkTransfers = new();
     private readonly object activity = new();
     private int activeRequests;
+    internal Action? BeforeFrameworkCatalog { get; init; }
     private readonly bool traceTiming = Environment.GetEnvironmentVariable("HCSL_IPC_TIMING") == "1";
     private long traceSequence;
     private readonly object timingLock = new();
@@ -59,7 +60,9 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                     // Otherwise Unix's shared socket can disappear and reset queued connections.
                     listener = CreateListener();
                     lock (activity) activeRequests++;
-                    clients.Add(ServeAsync(accepted, slots, ct));
+                    // A buffered read and synchronous handler work must never run on the accept loop.
+                    // Do not cancel scheduling: ServeAsync owns the connection and releases its slot.
+                    clients.Add(Task.Run(() => ServeAsync(accepted, slots, ct)));
                     handedOff = true;
                     clients.RemoveAll(t => t.IsCompleted);
                 }
@@ -268,6 +271,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
         var command = JsonSerializer.Deserialize<FrameworkCatalogCommand>(request.FrameworkCatalogJson ?? "null")
             ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework catalog command is required.");
+        BeforeFrameworkCatalog?.Invoke();
         var result = await Frameworks.CatalogAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
         return new(LocalProtocol.Version, request.Id, true, FrameworkCatalogJson: JsonSerializer.Serialize(result));
     }

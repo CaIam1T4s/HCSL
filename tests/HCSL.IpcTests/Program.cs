@@ -85,6 +85,46 @@ if (args is ["--only", "workspace-storage-json"])
     finally { dir.Delete(recursive: true); }
 }
 
+if (args is ["--only", "accept-concurrency"])
+{
+    using var shutdown = new CancellationTokenSource();
+    using var release = new ManualResetEventSlim();
+    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var testPipe = "hcsl-accept-test-" + Guid.NewGuid().ToString("N");
+    await using var operations = new HCSL.Daemon.Workers.SteamCmdOperations(
+        new HCSL.Infrastructure.Steam.SteamCmdService(typeof(DaemonEntry).Assembly.Location));
+    var server = new HCSL.Daemon.Ipc.LocalDaemonServer(testPipe, operations, TimeSpan.Zero)
+    {
+        BeforeFrameworkCatalog = () =>
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test did not release catalog handler");
+            throw new InstanceException("TEST-CATALOG-RELEASED", "Catalog test complete");
+        }
+    };
+    var serving = server.RunAsync(shutdown.Token);
+    var testClient = new DaemonClient(testPipe);
+    var catalog = testClient.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), RequestKind.FrameworkCatalog,
+        Options: new(new WorkspacePaths("settings", "data", "library")), FrameworkCatalogJson: "{}"), TimeSpan.FromSeconds(20));
+    try
+    {
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var fast = await Task.WhenAll(new[] { RequestKind.Hello, RequestKind.Status }.Select(kind =>
+            testClient.SendAsync(new(LocalProtocol.Version, Guid.NewGuid(), kind), TimeSpan.FromSeconds(3))));
+        Check(fast.All(response => response.Success) && !catalog.IsCompleted, "fast IPC must finish while catalog is blocked");
+        release.Set();
+        Check((await catalog).Code == "TEST-CATALOG-RELEASED", "catalog did not exit through test gate");
+        Console.WriteLine("PASS slow framework catalog does not block Hello or Status");
+        return 0;
+    }
+    finally
+    {
+        release.Set();
+        shutdown.Cancel();
+        await serving;
+    }
+}
+
 var timingOnly = args is ["--only", "timing"];
 if (timingOnly && !OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("The timing fixture uses isolated XDG paths.");
 var root = Path.Combine(Path.GetTempPath(), "hcsl-ipc-" + Guid.NewGuid().ToString("N"));
