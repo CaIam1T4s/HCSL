@@ -21,6 +21,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, TransferSnapshot> frameworkTransfers = new();
     private readonly object activity = new();
     private int activeRequests;
+    private readonly bool traceTiming = Environment.GetEnvironmentVariable("HCSL_IPC_TIMING") == "1";
+    private long traceSequence;
     private long lastActivity = Stopwatch.GetTimestamp();
     private readonly Guid instance = Guid.NewGuid();
     public async Task RunAsync(CancellationToken ct)
@@ -100,6 +102,13 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         : new(pipeName, PipeDirection.InOut, 16, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
     private async Task ServeAsync(NamedPipeServerStream pipe, SemaphoreSlim slots, CancellationToken shutdown)
     {
+        var traceId = traceTiming ? Interlocked.Increment(ref traceSequence) : 0;
+        var accepted = traceTiming ? Stopwatch.GetTimestamp() : 0;
+        long decoded = 0;
+        RequestKind? kind = null;
+        var outcome = "aborted";
+        void Trace(string text) => HCSL.Application.Diagnostics.DiagnosticsLog.Write("ipc-timing", $"pid={Environment.ProcessId} seq={traceId} {text}");
+        if (traceTiming) Trace("accepted");
         using (pipe)
         using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(shutdown))
         {
@@ -107,6 +116,12 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             try
             {
                 var request = await LocalProtocol.ReadAsync<LocalRequest>(pipe, deadline.Token);
+                if (traceTiming)
+                {
+                    decoded = Stopwatch.GetTimestamp();
+                    kind = request.Kind;
+                    Trace(FormattableString.Invariant($"start kind={kind} read_ms={Stopwatch.GetElapsedTime(accepted, decoded).TotalMilliseconds:F1}"));
+                }
                 if (request.Kind == RequestKind.Baseline)
                     deadline.CancelAfter(TimeSpan.FromMinutes(10));
                 else if (request.Kind is RequestKind.FrameworkCheck or RequestKind.FrameworkInstall or RequestKind.FrameworkCatalog)
@@ -135,15 +150,21 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
                 catch (OperationRejected ex) { response = new(LocalProtocol.Version, request.Id, false, ex.Code, ex.Message); }
                 catch (Exception) { response = new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-ERROR", "Local request failed."); HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "request failed kind=" + request.Kind); }
                 response = response with { InstanceId = instance, ProcessId = Environment.ProcessId, DaemonBuild = build };
+                if (traceTiming)
+                    Trace(FormattableString.Invariant($"handled kind={kind} handler_ms={Stopwatch.GetElapsedTime(decoded).TotalMilliseconds:F1}"));
                 await LocalProtocol.WriteAsync(pipe, response, deadline.Token);
+                outcome = response.Success ? "ok" : "rejected";
             }
             catch (Exception ex) when (ex is IOException or OperationCanceledException or JsonException or InvalidDataException or ArgumentException)
             {
+                outcome = deadline.IsCancellationRequested ? "cancelled" : "connection-error";
                 // Broken/oversized clients are closed; request contents, especially secrets, are never logged.
                 HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "client closed: " + ex.GetType().Name + (deadline.IsCancellationRequested ? " (request deadline)" : ""));
             }
             finally
             {
+                if (traceTiming)
+                    Trace(FormattableString.Invariant($"end kind={kind?.ToString() ?? "unread"} outcome={outcome} total_ms={Stopwatch.GetElapsedTime(accepted).TotalMilliseconds:F1}"));
                 lock (activity) { activeRequests--; lastActivity = Stopwatch.GetTimestamp(); }
                 slots.Release();
             }

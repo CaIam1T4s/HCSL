@@ -85,6 +85,8 @@ if (args is ["--only", "workspace-storage-json"])
     finally { dir.Delete(recursive: true); }
 }
 
+var timingOnly = args is ["--only", "timing"];
+if (timingOnly && !OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("The timing fixture uses isolated XDG paths.");
 var root = Path.Combine(Path.GetTempPath(), "hcsl-ipc-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var oldConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
@@ -110,6 +112,17 @@ var daemon = StartDaemon();
 var count = 0;
 try
 {
+    if (timingOnly)
+    {
+        Check((await Send(RequestKind.Hello)).Success, "timed Hello failed");
+        var log = Path.Combine(root, "saved-data", "logs", "daemon.log");
+        await Until(() => Task.FromResult(File.Exists(log) && File.ReadAllText(log).Contains("end kind=Hello outcome=ok total_ms=")));
+        var lines = File.ReadAllText(log);
+        Check(lines.Contains("accepted") && lines.Contains("start kind=Hello read_ms=") &&
+            lines.Contains("handled kind=Hello handler_ms="), "request timing phases missing");
+        Console.WriteLine("PASS daemon IPC timing phases");
+        return 0;
+    }
     await Until(async () => (await Send(RequestKind.Hello)).Success);
     await Run("hello/defaults and incompatible protocol version", async () =>
     {
@@ -384,6 +397,7 @@ Process StartDaemon(int? idleSeconds = null)
 {
     var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
     { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+    if (timingOnly) start.Environment["HCSL_IPC_TIMING"] = "1";
     start.ArgumentList.Add(typeof(DaemonEntry).Assembly.Location);
     start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
     if (idleSeconds is { } seconds) { start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add(seconds.ToString()); }
