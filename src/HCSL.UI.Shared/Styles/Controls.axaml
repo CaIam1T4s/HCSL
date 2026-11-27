@@ -24,8 +24,8 @@
           <Border Name="PART_Root" Background="{TemplateBinding Background}">
             <Grid>
               <controls:BackgroundScene Name="PART_WindowBackdrop"
-                  ImageSource="{Binding (controls:WindowBackdrop.ImageSource), RelativeSource={RelativeSource TemplatedParent}}"
-                  Strength="{Binding (controls:WindowBackdrop.Strength), RelativeSource={RelativeSource TemplatedParent}}"/>
+                  ImageSource="{CompiledBinding (controls:WindowBackdrop.ImageSource), RelativeSource={RelativeSource TemplatedParent}}"
+                  Strength="{CompiledBinding (controls:WindowBackdrop.Strength), RelativeSource={RelativeSource TemplatedParent}}"/>
               <controls:LShapedFrostedChrome Name="PART_ShellChrome" Source="{CompiledBinding #PART_WindowBackdrop}"
                   TitleBarHeight="{CompiledBinding #PART_TitleBarPresenter.Bounds.Height}"
                   IsTitleBarVisible="{TemplateBinding IsTitleBarVisible}"/>
