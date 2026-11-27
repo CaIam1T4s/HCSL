@@ -9,6 +9,57 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Infrastructure.Storage;
 
+if (args is ["--only", "native-windows", var nativeBinary])
+{
+    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows native daemon fixture only.");
+    var executable = Path.GetFullPath(nativeBinary);
+    var pipeName = "hcsl-native-windows-" + Guid.NewGuid().ToString("N");
+    var start = new ProcessStartInfo(executable) { UseShellExecute = false, RedirectStandardOutput = true };
+    start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipeName);
+    start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add("3");
+    using (var nativeDaemon = Process.Start(start) ?? throw new InvalidOperationException("Cannot start native daemon."))
+    {
+        try
+        {
+            Check(await nativeDaemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)) ==
+                "HCSL daemon ready: " + pipeName, "native daemon did not report readiness");
+            var nativeClient = new DaemonClient(pipeName);
+            await using var image = File.OpenRead(executable);
+            var expectedBuild = "sha256:" + Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(image)).ToLowerInvariant();
+            foreach (var kind in new[] { RequestKind.Hello, RequestKind.Status })
+            {
+                var request = new LocalRequest(LocalProtocol.Version, Guid.NewGuid(), kind);
+                var response = await nativeClient.SendAsync(request);
+                Check(response.Success && response.Id == request.Id && response.ProcessId == nativeDaemon.Id &&
+                    response.DaemonBuild == expectedBuild && response.Snapshot is not null, $"native {kind} or executable hash mismatch");
+                if (kind == RequestKind.Hello) Check(response.Defaults is not null, "native Hello omitted defaults");
+            }
+            await nativeDaemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Check(nativeDaemon.ExitCode == 0, "native daemon did not exit cleanly");
+        }
+        finally { if (!nativeDaemon.HasExited) { nativeDaemon.Kill(); await nativeDaemon.WaitForExitAsync(); } }
+    }
+    Console.WriteLine("PASS Windows native daemon Hello, Status, executable hash and idle exit");
+
+    var gateStart = new ProcessStartInfo(executable)
+    { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true };
+    gateStart.ArgumentList.Add("--process-gate");
+    using var gate = Process.Start(gateStart) ?? throw new InvalidOperationException("Cannot start native process gate.");
+    try
+    {
+        Check(await gate.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)) == $"HCSL_GATE:{gate.Id}",
+            "native gate did not report readiness");
+        var child = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        await gate.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Executable = child, Arguments = new[] { "/d", "/c", "exit", "37" } }));
+        gate.StandardInput.Close();
+        await gate.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Check(gate.ExitCode == 37, "native gate did not propagate the fixture child's exit code");
+    }
+    finally { if (!gate.HasExited) { gate.Kill(entireProcessTree: true); await gate.WaitForExitAsync(); } }
+    Console.WriteLine("PASS Windows native process gate starts a fixture child and propagates its exit code");
+    return 0;
+}
+
 if (args is ["--only", "wire-json"])
 {
     var legacy = new JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }, MaxDepth = 16 };
