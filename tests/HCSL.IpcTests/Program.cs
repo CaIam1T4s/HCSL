@@ -9,6 +9,57 @@ using HCSL.Core;
 using HCSL.Frontend;
 using HCSL.Infrastructure.Storage;
 
+if (args is ["--only", "native-windows", var nativeBinary])
+{
+    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows native daemon fixture only.");
+    var executable = Path.GetFullPath(nativeBinary);
+    var pipeName = "hcsl-native-windows-" + Guid.NewGuid().ToString("N");
+    var start = new ProcessStartInfo(executable) { UseShellExecute = false, RedirectStandardOutput = true };
+    start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipeName);
+    start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add("3");
+    using (var nativeDaemon = Process.Start(start) ?? throw new InvalidOperationException("Cannot start native daemon."))
+    {
+        try
+        {
+            Check(await nativeDaemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)) ==
+                "HCSL daemon ready: " + pipeName, "native daemon did not report readiness");
+            var nativeClient = new DaemonClient(pipeName);
+            await using var image = File.OpenRead(executable);
+            var expectedBuild = "sha256:" + Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(image)).ToLowerInvariant();
+            foreach (var kind in new[] { RequestKind.Hello, RequestKind.Status })
+            {
+                var request = new LocalRequest(LocalProtocol.Version, Guid.NewGuid(), kind);
+                var response = await nativeClient.SendAsync(request);
+                Check(response.Success && response.Id == request.Id && response.ProcessId == nativeDaemon.Id &&
+                    response.DaemonBuild == expectedBuild && response.Snapshot is not null, $"native {kind} or executable hash mismatch");
+                if (kind == RequestKind.Hello) Check(response.Defaults is not null, "native Hello omitted defaults");
+            }
+            await nativeDaemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            Check(nativeDaemon.ExitCode == 0, "native daemon did not exit cleanly");
+        }
+        finally { if (!nativeDaemon.HasExited) { nativeDaemon.Kill(); await nativeDaemon.WaitForExitAsync(); } }
+    }
+    Console.WriteLine("PASS Windows native daemon Hello, Status, executable hash and idle exit");
+
+    var gateStart = new ProcessStartInfo(executable)
+    { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true };
+    gateStart.ArgumentList.Add("--process-gate");
+    using var gate = Process.Start(gateStart) ?? throw new InvalidOperationException("Cannot start native process gate.");
+    try
+    {
+        Check(await gate.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)) == $"HCSL_GATE:{gate.Id}",
+            "native gate did not report readiness");
+        var child = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        await gate.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Executable = child, Arguments = new[] { "/d", "/c", "exit", "37" } }));
+        gate.StandardInput.Close();
+        await gate.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Check(gate.ExitCode == 37, "native gate did not propagate the fixture child's exit code");
+    }
+    finally { if (!gate.HasExited) { gate.Kill(entireProcessTree: true); await gate.WaitForExitAsync(); } }
+    Console.WriteLine("PASS Windows native process gate starts a fixture child and propagates its exit code");
+    return 0;
+}
+
 if (args is ["--only", "wire-json"])
 {
     var legacy = new JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }, MaxDepth = 16 };
@@ -32,6 +83,35 @@ if (args is ["--only", "wire-json"])
         stream.Position = 0;
         var decoded = await LocalProtocol.ReadAsync<T>(stream, default);
         Check(JsonSerializer.SerializeToUtf8Bytes(decoded, legacy).AsSpan().SequenceEqual(expected), "IPC round-trip changed data");
+    }
+}
+
+if (args is ["--only", "instance-wire-json"])
+{
+    var json = HCSL.Daemon.Ipc.InstancePayloadJsonContext.Default;
+    var id = Guid.NewGuid();
+    CheckWire(new InstanceCommand(InstanceAction.CreatePreset, id, Name: "Example"), json.InstanceCommand);
+    CheckWire(new InstanceCatalog([new(id, null, [new(1, id, 1, "Example")])]), json.InstanceCatalog);
+    CheckWire(new MapPoolCommand(MapPoolAction.Read, id, id), json.MapPoolCommand);
+    CheckWire(new MapPoolResult(new(1, 0, [new(ServerMapKind.Standard, "de_inferno")]), null), json.MapPoolResult);
+    CheckWire(new MapPoolLibraryCommand(MapPoolLibraryAction.AssignPreset, id, PoolId: id, PresetId: id), json.MapPoolLibraryCommand);
+    CheckWire(new MapPoolLibraryResult(new(1, 1, [new(id, "Example", [])], new() { [id] = id }), "hash"), json.MapPoolLibraryResult);
+    CheckWire(new LocalResponse(LocalProtocol.Version, id, true, InstanceCatalogJson: "{}"), json.LocalResponse);
+    CheckWire(new ServerCommand(ServerAction.PlanDeployment, id), json.ServerCommand);
+    CheckWire(new ServerSnapshot(null, id, ServerState.Idle, false, "idle", false, true, null, 1, false,
+        [new(1, "example")]), json.ServerSnapshot);
+    CheckWire(new DeploymentPlan(id, 1, id, 1, "build", "runtime", DeploymentCopyMode.FullCopy,
+        1, 1, 1, 1, [new("cfg", "preset/cfg")], []), json.DeploymentPlan);
+    Console.WriteLine("PASS daemon instance, map-pool and server IPC JSON matches legacy format");
+    return 0;
+
+    static void CheckWire<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)
+    {
+        var legacy = JsonSerializer.Serialize(value);
+        Check(JsonSerializer.Serialize(value, type) == legacy, $"JSON format changed for {typeof(T).Name}");
+        var decoded = JsonSerializer.Deserialize(legacy, type);
+        Check(decoded is not null && JsonSerializer.Serialize<T>(decoded, type) == legacy,
+            $"Legacy JSON did not round-trip for {typeof(T).Name}");
     }
 }
 
@@ -62,6 +142,43 @@ if (args is ["--only", "workspace-json"])
     Check(steam.ContentInstalled == true && steam.ContentBuildId == "123", "content status was not decoded");
     Console.WriteLine("PASS workspace and startup JSON with reflection disabled");
     return 0;
+}
+
+if (args is ["--only", "instance-storage-json"])
+{
+    AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
+    Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+    var dir = Directory.CreateTempSubdirectory("hcsl-instance-json-");
+    try
+    {
+        var workspace = new HCSL.Application.Abstractions.WorkspaceRequest(
+            Path.Combine(dir.FullName, "settings"), Path.Combine(dir.FullName, "data"), Path.Combine(dir.FullName, "library"));
+        var store = new LocalInstanceStore();
+        var entry = store.Execute(workspace, new(InstanceAction.Create, Name: "Storage test")).Instances.Single();
+        entry = store.Execute(workspace, new(InstanceAction.CreatePreset, entry.Id,
+            Revision: entry.Definition!.Revision, Name: "AOT preset")).Instances.Single();
+        var preset = entry.Presets.Single(p => p.Name == "AOT preset");
+        var presetPools = new LocalPresetMapPoolStore();
+        var map = new ServerMapTarget(ServerMapKind.Standard, "de_inferno");
+        var legacy = presetPools.Execute(workspace, new(MapPoolAction.Read, entry.Id, preset.Id));
+        var saved = presetPools.Execute(workspace, new(MapPoolAction.Save, entry.Id, preset.Id,
+            entry.Definition!.Revision, legacy.Pool.Revision, legacy.Hash, [map]));
+        var libraries = new LocalMapPoolLibraryStore();
+        var initial = libraries.Execute(workspace, new(MapPoolLibraryAction.List, entry.Id));
+        var library = libraries.Execute(workspace, new(MapPoolLibraryAction.Create, entry.Id,
+            InstanceRevision: entry.Definition.Revision, Name: "AOT pool", Maps: [map],
+            ExpectedRevision: initial.Library.Revision, ExpectedHash: initial.Hash));
+        var reread = new LocalMapPoolLibraryStore().Execute(workspace, new(MapPoolLibraryAction.List, entry.Id));
+        Check(reread.Hash == library.Hash && reread.Library.Pools.Single(p => p.Name == "AOT pool").Maps is [{ Value: "de_inferno" }],
+            "map-pool library must survive reload with the same hash");
+        var path = Path.Combine(workspace.DataRoot, "instances", entry.Id.ToString(), "presets", preset.Id.ToString(), "maps.json");
+        using var file = JsonDocument.Parse(File.ReadAllText(path));
+        Check(file.RootElement.GetProperty("maps")[0].GetProperty("kind").GetString() == "standard" && saved.Hash is not null,
+            "legacy preset pool must retain camelCase names and enum strings");
+        Console.WriteLine("PASS instance, preset and map-pool storage without JSON reflection");
+        return 0;
+    }
+    finally { dir.Delete(recursive: true); }
 }
 
 if (args is ["--only", "workspace-storage-json"])

@@ -127,7 +127,7 @@ public partial class MainWindow
             {
                 // A rejected start already carries the daemon's code and next step; show it in full, not as a toast.
                 watchingStart = false;
-                if (m.Server.DetailText is { Length: > 0 } detail) await ChooseAsync("服务器启动失败", detail, "返回");
+                if (m.Server.DetailText is { Length: > 0 } detail) ShowStartFailure(m.Server.Code, detail);
                 else ShowInstanceNotification("启动未提交", m.Error);
             }
         }
@@ -174,9 +174,21 @@ public partial class MainWindow
                     if (!await m.StartAsync(allowLowMemory: true)) watchingStart = false;
                 }
             }
-            else await ChooseAsync("服务器启动失败", failure.Value.Detail, "返回");
+            else ShowStartFailure(failure.Value.Code, failure.Value.Detail);
         }
         finally { handlingOutcome = false; }
+    }
+
+    private void ShowStartFailure(string code, string detail)
+    {
+        var message = code switch
+        {
+            "HCSL-DEPLOY-VALIDATION-INTERRUPTED" => "服务端校验未完成。请到「下载中心」完成校验后再部署。",
+            "HCSL-DEPLOY-INSTALL-STATE" => "安装记录缺少有效版本。请到「下载中心」校验服务端文件。",
+            "HCSL-DEPLOY-BASELINE" => "启动基线校验失败。请到「设置 → 启动基线」校验并重建。",
+            _ => detail
+        };
+        ShowInstanceNotification("服务器启动失败", message);
     }
 
     private async Task WarnManualPoolAsync(HostServerController model, Guid instanceId, Guid presetId)

@@ -7,10 +7,14 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP: deployment baseline is Linux-only."); return 0; }
+var previewBinary = args is ["--only", "preview-native", var binary] ? Path.GetFullPath(binary) : null;
+var previewOnly = previewBinary is not null || args is ["--only", "preview-json"];
+if (previewOnly) AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
 var root = Path.Combine(Environment.GetEnvironmentVariable("HCSL_DEPLOYMENT_TEST_ROOT") ?? Path.GetTempPath(), "hcsl-deployment-" + Guid.NewGuid().ToString("N"));
 var oldState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
 Environment.SetEnvironmentVariable("XDG_STATE_HOME", Path.Combine(root, "state"));
-var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
+var settings = previewBinary is null ? Path.Combine(root, "settings") : Path.Combine(root, "daemon-config", "hcsl");
+var workspace = new WorkspaceRequest(settings, Path.Combine(root, "data"), Path.Combine(root, "library"));
 int passed = 0;
 void Check(bool value, string message) { if (!value) throw new Exception(message); }
 void Test(string name, Action action) { action(); Console.WriteLine("PASS " + name); passed++; }
@@ -45,10 +49,201 @@ try
     var baseline = new RuntimeDeploymentService.Baseline("123", Hash(entrypoint), [new("game/bin/linuxsteamrt64/cs2", new FileInfo(native).Length, Hash(native))], ["game/csgo/gameinfo.gi", "game/csgo/steam.inf"]);
     var service = new RuntimeDeploymentService(baseline);
     DeploymentOptions Options(InstanceEntry e) => new(e.Id, DeploymentCopyMode.FullCopy);
+    if (args is ["--only", "install-state"])
+    {
+        File.WriteAllText(state, """{"FormatVersion":1,"AppId":730,"Status":"Ready"}""");
+        Reject("HCSL-DEPLOY-INSTALL-STATE", () => service.Plan(workspace, Options(first)));
+        File.WriteAllText(state, """{"FormatVersion":1,"AppId":730,"Status":"Ready","BuildId":"456"}""");
+        Reject("HCSL-DEPLOY-BASELINE", () => service.Plan(workspace, Options(first)));
+        Console.WriteLine("PASS invalid installation state and stale baseline have distinct codes");
+        return 0;
+    }
     string Runtime(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, "runtime", e.Id.ToString());
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    if (args is ["--only", "plugin-sync"])
+    {
+        var plugins = new LocalPluginStore();
+        var definition = first.Definition!;
+        const string relative = "csgo/addons/example-plugin/bin/plugin.so";
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "example-plugin", version);
+            var file = Path.Combine(package, "files", relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, version);
+            File.WriteAllText(Path.Combine(package, "plugin.json"), $$"""{"FormatVersion":1,"Id":"example-plugin","Name":"Example","Version":"{{version}}"}""");
+        }
+        void Select(string? version)
+        {
+            var list = plugins.Execute(workspace, new(PluginAction.List, first.Id, definition.SelectedPresetId));
+            plugins.Execute(workspace, new(PluginAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+                list.Hash, version is null ? [] : [new("example-plugin", version)]));
+        }
+        var initialReceipt = service.Deploy(workspace, Options(first));
+        var sentinel = Path.Combine(Runtime(first), "keep-in-current-runtime.txt");
+        File.WriteAllText(sentinel, "original runtime");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.None, "An unchanged verified deployment should not require deployment.");
+        var target = Path.Combine(Runtime(first), "game", relative);
+        var incremental = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "Cloned") throw new Exception("Plugin sync cloned the runtime.");
+        });
+        Check(incremental.Deploy(workspace, Options(first)).OperationId == initialReceipt.OperationId,
+            "Deploy cloned an unchanged runtime instead of returning the existing receipt.");
+        Select("1.0.0");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Plugins, "Preview did not classify plugin sync.");
+        incremental.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(target) == "1.0.0", "Plugin was not added.");
+        Select("2.0.0");
+        var pools = new LocalPresetMapPoolStore();
+        var pool = pools.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+        pools.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            pool.Pool.Revision, pool.Hash, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_inferno")]));
+        var rotationFile = Path.Combine(Runtime(first), "game/csgo", ServerMapGroupRules.FileName);
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.PluginsAndRotation, "Preview did not classify combined sync.");
+        File.WriteAllText(target, "user edit");
+        Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
+        Check(File.ReadAllText(target) == "user edit", "Plugin sync overwrote a user edit.");
+        File.WriteAllText(target, "1.0.0");
+        var failing = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "IncrementalPluginsApplied") throw new IOException("injected sync failure");
+        });
+        try { failing.Deploy(workspace, Options(first)); throw new Exception("Expected plugin sync failure."); }
+        catch (IOException e) when (e.Message == "injected sync failure") { }
+        Check(File.ReadAllText(target) == "1.0.0" && !File.Exists(rotationFile), "Failed sync did not roll back both changes.");
+        var updated = incremental.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(target) == "2.0.0" && updated.RotationHash is not null &&
+            RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Plugin and rotation were not published together.");
+        using (var lease = new LocalWorkspaceManager().Acquire(workspace))
+        {
+            var installation = new HCSL.Infrastructure.Steam.Cs2Installation(lease.Layout);
+            installation.Begin(validation: true);
+            installation.Finish(cancelled: true);
+        }
+        File.WriteAllText(native, "shared file being repaired");
+        var interrupted = File.ReadAllText(state);
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Plan(workspace, Options(second)));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => incremental.Deploy(workspace, Options(second)));
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.None &&
+            incremental.Deploy(workspace, Options(first)).OperationId == updated.OperationId,
+            "An unchanged deployment must remain usable after cancellation.");
+        Select(null);
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Plugins, "Cancellation blocked a pure plugin removal.");
+        File.WriteAllText(target, "user edit");
+        Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
+        File.WriteAllText(target, "2.0.0");
+        incremental.Deploy(workspace, Options(first));
+        Check(!File.Exists(target) && File.Exists(sentinel) && File.ReadAllText(state) == interrupted,
+            "Plugin removal failed, replaced the runtime, or altered shared validation state.");
+        var changedPool = pools.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+        pools.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            changedPool.Pool.Revision, changedPool.Hash, []));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => incremental.Deploy(workspace, Options(first)));
+        Console.WriteLine("PASS addon sync adds, upgrades and removes plugins without replacing the runtime");
+        return 0;
+    }
+    if (args is ["--only", "plugin-manifest"])
+    {
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0");
+        var overlay = Path.Combine(package, "files", "csgo", "gameinfo.gi");
+        Directory.CreateDirectory(Path.GetDirectoryName(overlay)!);
+        File.WriteAllText(overlay, "patched gameinfo");
+        File.WriteAllText(Path.Combine(package, "plugin.json"), """{"FormatVersion":1,"Id":"metamod","Name":"Metamod","Version":"1.0.0"}""");
+        var plugins = new LocalPluginStore();
+        var definition = first.Definition!;
+        var list = plugins.Execute(workspace, new(PluginAction.List, first.Id, definition.SelectedPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            list.Hash, [new("metamod", "1.0.0")]));
+        service.Deploy(workspace, Options(first));
+        var receipt = DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json"));
+        var deployed = receipt.PluginManifest?.Single();
+        Check(deployed is { Id: "metamod", Version: "1.0.0" } &&
+            deployed.Files.Contains(new("csgo/gameinfo.gi", Hash(overlay))), "Receipt omitted a non-addon plugin overlay.");
+        Console.WriteLine("PASS deployment receipt records plugin files outside persistent addons");
+        return 0;
+    }
+    if (args is ["--only", "rotation-update"])
+    {
+        var rotationStore = new LocalPresetMapPoolStore();
+        var definition = first.Definition!;
+        void Save(params string[] maps)
+        {
+            var current = rotationStore.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+            rotationStore.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+                current.Pool.Revision, current.Hash, maps.Select(map => new ServerMapTarget(ServerMapKind.Standard, map)).ToArray()));
+        }
+        var initial = service.Deploy(workspace, Options(first));
+        Save("de_inferno", "de_mirage");
+        Reject("HCSL-MAPGROUP-STARTUP", () => service.Plan(workspace, Options(first)));
+        Save("de_dust2", "de_inferno");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Rotation, "Preview did not classify rotation sync.");
+        var prior = service.Deploy(workspace, Options(first));
+        Check(prior.OperationId == initial.OperationId && prior.RotationHash is not null &&
+            RuntimeDeploymentService.RotationFileMatches(prior, Runtime(first)), "Adding the first rotation replaced the runtime or did not write the map group.");
+        Save("de_inferno", "de_dust2");
+        var fail = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "Cloned") throw new InvalidOperationException("Rotation update cloned the runtime.");
+            if (phase == "RotationWritten") throw new IOException("injected receipt publication failure");
+        });
+        try { fail.Deploy(workspace, Options(first)); throw new InvalidOperationException("Expected publication failure."); }
+        catch (IOException e) when (e.Message == "injected receipt publication failure") { }
+        Check(RuntimeDeploymentService.RotationFileMatches(prior, Runtime(first)), "Failed update did not restore the old rotation.");
+        var updated = service.Deploy(workspace, Options(first));
+        Check(updated.OperationId == prior.OperationId && updated.RotationHash != prior.RotationHash &&
+            RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Rotation update replaced the runtime or did not publish the new rotation.");
+        Save();
+        try { fail.Deploy(workspace, Options(first)); throw new InvalidOperationException("Expected publication failure."); }
+        catch (IOException e) when (e.Message == "injected receipt publication failure") { }
+        Check(RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Failed removal did not restore the map group.");
+        var removed = service.Deploy(workspace, Options(first));
+        Check(removed.OperationId == initial.OperationId && removed.RotationHash is null &&
+            !File.Exists(Path.Combine(Runtime(first), "game/csgo", ServerMapGroupRules.FileName)), "Removing the rotation replaced the runtime or left the map group behind.");
+        Console.WriteLine("PASS adding, editing and removing a rotation avoids cloning and rolls back a failed publication");
+        return 0;
+    }
+    if (args is ["--only", "cancel-validation"])
+    {
+        var deployed = service.Deploy(workspace, Options(first));
+        var instanceFile = Path.Combine(workspace.DataRoot, "instances", first.Id.ToString("D"), "instance.json");
+        var presetFile = Path.Combine(Preset(first), "preset.json");
+        void Rename(string path)
+        {
+            var document = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+            document["Name"] = "Renamed after deployment";
+            document["Revision"] = document["Revision"]!.GetValue<long>() + 1;
+            File.WriteAllText(path, document.ToJsonString());
+        }
+        Rename(instanceFile);
+        Rename(presetFile);
+        using var lease = new LocalWorkspaceManager().Acquire(workspace);
+        var installation = new HCSL.Infrastructure.Steam.Cs2Installation(lease.Layout);
+        var ready = File.ReadAllText(state);
+        installation.Finish(cancelled: true);
+        Check(File.ReadAllText(state) == ready, "cancellation before SteamCMD release must not alter the record");
+        installation.Begin(validation: true);
+        installation.Finish(cancelled: true);
+        using (var record = JsonDocument.Parse(File.ReadAllText(state)))
+            Check(record.RootElement.GetProperty("Status").GetString() == "ValidationInterrupted" &&
+                record.RootElement.GetProperty("BuildId").GetString() == "123", "cancelled validation lost the last verified build");
+        File.WriteAllText(native, "unfinished repair in shared content");
+        var plan = service.PrepareForStart(lease, Options(first), default);
+        Check(plan.Scope == DeploymentScope.None, "Startup must reuse the verified runtime even when automatic deployment is permitted.");
+        Check(plan.BuildId == deployed.BuildId && plan.RuntimePath == Runtime(first) &&
+            plan.InstanceRevision > deployed.InstanceRevision && plan.PresetRevision > deployed.PresetRevision,
+            "A verified deployment must remain startable after instance and preset renames.");
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Prepare(lease, Options(first), default));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(second), default));
+        Check(DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json")).OperationId == deployed.OperationId,
+            "start eligibility must not silently redeploy");
+        File.WriteAllText(Path.Combine(Runtime(first), "game/bin/linuxsteamrt64/cs2"), "damaged deployed binary");
+        Reject("HCSL-DEPLOY-BASELINE", () => service.PrepareForStart(lease, Options(first), default));
+        Console.WriteLine("PASS cancelled validation preserves only an independently verified deployment");
+        return 0;
+    }
     Test("managed update writes a local baseline that deployment can resolve", () =>
     {
         using var lease = new LocalWorkspaceManager().Acquire(workspace);
@@ -75,6 +270,88 @@ try
         Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")), "plan wrote deployment data");
         Reject("HCSL-DEPLOY-CONFLICT", () => service.Plan(workspace, Options(first) with { ExpectedRevision = 999 }));
     });
+    if (previewOnly)
+    {
+        Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+        if (previewBinary is not null)
+        {
+            var pipe = "hcsl-native-preview-" + Guid.NewGuid().ToString("N");
+            var start = new ProcessStartInfo(previewBinary) { UseShellExecute = false, RedirectStandardOutput = true };
+            start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
+            start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add("3");
+            start.Environment["XDG_CONFIG_HOME"] = Path.Combine(root, "daemon-config");
+            start.Environment["XDG_DATA_HOME"] = Path.Combine(root, "daemon-data");
+            start.Environment["HOME"] = root;
+            using var daemon = Process.Start(start) ?? throw new InvalidOperationException("Cannot launch native daemon.");
+            try
+            {
+                var ready = await daemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(ready == "HCSL daemon ready: " + pipe, "native daemon did not report readiness");
+                var daemonClient = new HCSL.Frontend.DaemonClient(pipe);
+                var paths = new HCSL.Contracts.WorkspacePaths(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+                var client = new HCSL.Frontend.ServerClient(daemonClient);
+                var plan = await client.PlanDeploymentAsync(first.Id, paths);
+                Check(plan.InstanceId == first.Id && plan.BuildId == "123" && plan.FileCount == sourceHashes.Count,
+                    "native IPC returned the wrong plan");
+                Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")) && !File.Exists(Journal(first)),
+                    "native preview wrote runtime or preset data");
+                var baselineStatus = await new HCSL.Frontend.BaselineClient(daemonClient, () => paths).StatusAsync();
+                Check(baselineStatus is { BuildId: "123", Source: "Local" }, "native baseline status did not use the local baseline");
+                var content = await daemonClient.SendAsync(new(HCSL.Contracts.LocalProtocol.Version, Guid.NewGuid(),
+                    HCSL.Contracts.RequestKind.ContentStatus, new(paths)));
+                using var status = JsonDocument.Parse(content.ContentStatusJson ?? "null");
+                Check(content.Success && status.RootElement.GetProperty("Installed").GetBoolean() &&
+                    status.RootElement.GetProperty("BuildId").GetString() == "123", "native content status was wrong");
+                // Use the isolated fixture workspace: InstanceClient obtains its workspace from Hello.
+                var maps = new HCSL.Frontend.InstanceClient(daemonClient);
+                await maps.MapCatalogAsync(new MapCatalogCommand(first.Id, Register: [new("3070244462", "Fixture workshop map")]));
+                var catalog = await maps.MapCatalogAsync(first.Id);
+                Check(catalog.Entries.Any(map => map.WorkshopId == "3070244462" && map.Name == "Fixture workshop map"),
+                    "native map catalog did not reload the registered workshop map");
+                var frameworks = new HCSL.Frontend.FrameworkClient(daemonClient);
+                var releases = await frameworks.CatalogAsync(new("counterstrikesharp", CacheOnly: true), paths);
+                Check(releases.Id == "counterstrikesharp" && releases.FromCache,
+                    "native daemon did not return a cache-only framework result");
+                Check(await frameworks.ProgressAsync(Guid.NewGuid()) is null, "unknown download must not have progress");
+
+                var presetId = first.Definition!.SelectedPresetId;
+                var plugins = await maps.PluginAsync(new(PluginAction.List, first.Id, presetId));
+                Check(plugins.Selected.Length == 0, "isolated preset should not have plugins selected");
+                var pluginPath = Path.Combine(root, "fixture.smx");
+                File.WriteAllText(pluginPath, "SourcePawn fixture");
+                var probe = await maps.PluginImportProbeAsync(new(pluginPath));
+                Check(probe is not null, "native daemon did not return a plugin probe");
+
+                // Reproduce the installed framework's config directory in the fixture; no plugin is loaded.
+                Directory.CreateDirectory(Path.Combine(Preset(first), "addons", "counterstrikesharp", "configs"));
+                File.WriteAllText(Path.Combine(Preset(first), "plugins.json"),
+                    """{"FormatVersion":1,"Revision":1,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+                var admins = new HCSL.Frontend.AdminClient(daemonClient);
+                var empty = await admins.ListAsync(first.Id, presetId);
+                const string steamId = "76561198000000000";
+                await admins.ApplyAsync(new(AdminAction.Apply, first.Id, presetId, empty.Snapshot.Hash,
+                    [new(AdminMutationKind.Upsert, steamId, "Fixture admin", [AdminRules.DefaultGroupName])], InitGroups: true));
+                var savedAdmins = await admins.ListAsync(first.Id, presetId);
+                Check(savedAdmins.Snapshot.Entries.Single().SteamId64 == steamId, "native daemon did not persist the admin edit");
+                Console.WriteLine("PASS native framework cache, plugin probe and admin write/read IPC");
+                File.WriteAllText(Path.Combine(Preset(first), "cfg", "aot-test.cfg"), "// fixture only\n");
+                var cfg = await maps.CfgAsync(new(PresetCfgAction.Read, first.Id, presetId, Name: "aot-test.cfg"));
+                Check(cfg.Content == "// fixture only\n", "native daemon did not read preset CFG over IPC");
+                var receipt = await client.SendConsoleAsync(new(Guid.NewGuid(), Guid.NewGuid(), "status", ConfirmMutation: true));
+                Check(receipt is { Delivery: ConsoleDelivery.Rejected, Code: "HCSL-CONSOLE-STALE" },
+                    "native daemon did not reject a console command for a stale run");
+                Console.WriteLine("PASS native preset CFG read and stale console rejection");
+                await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
+                Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");
+            }
+            finally
+            {
+                if (!daemon.HasExited) { daemon.Kill(); await daemon.WaitForExitAsync(); }
+            }
+        }
+        return 0;
+    }
     Test("two instances deploy independent games and canonical writable directories", () =>
     {
         File.WriteAllText(Path.Combine(Preset(first), "cfg/server.cfg"), "hostname A\n");
@@ -111,10 +388,19 @@ try
         Check(File.Exists(Path.Combine(Runtime(first), "home", "instance-home.marker")), "instance home lost across preset switch");
         Check(File.Exists(Path.Combine(Runtime(first), "userdata", "instance-userdata.marker")), "instance userdata lost across preset switch");
     });
+    void SelectOtherPreset()
+    {
+        var definition = first.Definition!;
+        var other = first.Presets.Single(p => p.Id != definition.SelectedPresetId);
+        first = store.Execute(workspace, new(InstanceAction.SelectPreset, first.Id, other.Id, definition.Revision))
+            .Instances.Single(e => e.Id == first.Id);
+    }
     foreach (var phase in new[] { "Journaled", "Cloned", "Prepared", "PluginsApplied", "PreviousMoved", "Published" })
         Test("interruption recovery at " + phase, () =>
         {
             var original = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+            if (first.Definition!.SelectedPresetId == original.PresetId) SelectOtherPreset();
+            Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Full, "Recovery fixture must trigger a full deployment.");
             var interrupted = new RuntimeDeploymentService(baseline, p => { if (p == phase) throw new IOException("injected interruption"); });
             try { interrupted.Deploy(workspace, Options(first)); throw new Exception("injection not reached"); } catch (IOException) { }
             Check(File.Exists(Journal(first)), "recovery owner missing");
@@ -127,11 +413,18 @@ try
         });
     Test("cancelled deployment retains old runtime and can recover", () =>
     {
+        SelectOtherPreset(); // The preceding Published test left the selected preset deployed.
         using var stop = new CancellationTokenSource();
         var cancelService = new RuntimeDeploymentService(baseline, p => { if (p == "Cloned") stop.Cancel(); });
         try { cancelService.Deploy(workspace, Options(first), cancellationToken: stop.Token); throw new Exception("not cancelled"); } catch (OperationCanceledException) { }
         service.Recover(workspace, first.Id); Check(File.Exists(Path.Combine(Runtime(first), "deployment.json")), "old runtime lost");
+        SelectOtherPreset(); // Restore the selection to the deployment preserved by recovery.
     });
+    if (args is ["--only", "deployment-recovery"])
+    {
+        Test("failed plugin application restores preset addons and ledger", VerifyFullPluginRollback);
+        return 0;
+    }
     Test("source corruption, unfinished SteamCMD and nonempty plugin manifests fail closed", () =>
     {
         File.WriteAllText(native, "tampered"); Reject("HCSL-DEPLOY-BASELINE", () => service.Plan(workspace, Options(first))); File.WriteAllText(native, "fixture native");
@@ -214,7 +507,7 @@ try
         service.Deploy(workspace, Options(first));
         Check(File.ReadAllText(rotation).Contains("de_inferno", StringComparison.Ordinal), "Redeploy did not repair the map group.");
         Save([new(ServerMapKind.Standard, "de_mirage")]);
-        Reject("HCSL-DEPLOY-ROTATION", () => service.Plan(workspace, Options(first)));
+        Reject("HCSL-MAPGROUP-STARTUP", () => service.Plan(workspace, Options(first)));
         Save([new(ServerMapKind.Workshop, "3070244462")]);
         Check(service.Plan(workspace, Options(first)).RotationGroup is null, "Workshop pool produced a native map group.");
         service.Deploy(workspace, Options(first));
@@ -266,15 +559,14 @@ try
         Check(File.Exists(ledger) && File.ReadAllText(ledger).Contains("csgo/addons/metamod/metamod.vdf"), "Plugin ledger missing.");
         // A ledger left inside addons by an older build is migrated out of the game-visible tree.
         var legacyLedger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
-        File.Copy(ledger, legacyLedger, true);
-        service.Deploy(workspace, Options(first));
-        Check(!File.Exists(legacyLedger) && File.Exists(ledger), "Legacy ledger was not migrated out of addons.");
+        File.Move(ledger, legacyLedger);
         var disabled = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, saved.Hash, []));
         var disabledPlan = service.Plan(workspace, Options(first));
         Check(disabledPlan.PluginSetHash is null && disabledPlan.PluginSetHash != plan.PluginSetHash, "Disabling did not change hash.");
         service.Deploy(workspace, Options(first));
         Check(!File.Exists(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")), "Disabled package file remained.");
         Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/gameinfo.gi")) == "fixture gameinfo", "Disabled overlay retained gameinfo.");
+        Check(!File.Exists(legacyLedger) && File.Exists(ledger), "Legacy ledger was not migrated out of addons.");
         Check(!File.ReadAllText(ledger).Contains("metamod.vdf"), "Ledger retained removed file.");
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, disabled.Hash, [new("metamod", "1.0.0")]));
         service.Deploy(workspace, Options(first));
@@ -313,7 +605,8 @@ try
         Check(service.Plan(workspace, Options(first)).PluginSetHash is not null, "Valid Source2Mod selection failed to plan.");
         File.WriteAllText(file, """{"FormatVersion":1,"Revision":1,"Plugins":[]}""");
     });
-    Test("failed plugin application restores preset addons and ledger", () =>
+    Test("failed plugin application restores preset addons and ledger", VerifyFullPluginRollback);
+    void VerifyFullPluginRollback()
     {
         var presetId = first.Definition!.SelectedPresetId;
         var plugins = new LocalPluginStore();
@@ -323,12 +616,14 @@ try
         Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "rollback"));
         File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"rollback\",\"Name\":\"Rollback\",\"Version\":\"1.0.0\"}");
         File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "rollback", "rollback.vdf"), "package content");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "rollback-overlay.txt"), "Requires full deployment");
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, empty.Hash, [new("rollback", "1.0.0")]));
         var addon = Path.Combine(Preset(first), "addons", "rollback", "rollback.vdf");
         Directory.CreateDirectory(Path.GetDirectoryName(addon)!); File.WriteAllText(addon, "preexisting user file");
         var ledger = Path.Combine(Preset(first), ".hcsl-plugin-ledger.json");
         var beforeLedger = File.Exists(ledger) ? File.ReadAllText(ledger) : null;
         var before = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Full, "Plugin rollback fixture must trigger a full deployment.");
         var failing = new RuntimeDeploymentService(baseline, p => { if (p == "PluginsApplied") throw new IOException("injected publication failure"); });
         try { failing.Deploy(workspace, Options(first)); throw new Exception("injection not reached"); } catch (IOException) { }
         Check(File.ReadAllText(addon) == "preexisting user file", "Failed deploy did not restore the preset addon file.");
@@ -338,7 +633,7 @@ try
         Check(after.OperationId == before.OperationId, "Failed plugin publication replaced the runtime.");
         service.Recover(workspace, first.Id);
         Check(!File.Exists(Journal(first)), "Recovery did not finish after the plugin failure.");
-    });
+    }
     Test("plugin packages cannot write reserved or mapped paths", () =>
     {
         var presetId = first.Definition!.SelectedPresetId;

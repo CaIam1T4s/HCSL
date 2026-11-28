@@ -181,10 +181,12 @@ public sealed class DaemonBootstrapper(string? pipeName = null, string? payloadD
     }
     private void Launch()
     {
-        var appHost = Path.Combine(payload, OperatingSystem.IsWindows() ? "HCSL.Daemon.exe" : "HCSL.Daemon");
+        var appHost = DaemonPayload.Executable(payload);
         var assembly = Path.Combine(payload, "HCSL.Daemon.dll");
-        if (!File.Exists(assembly) || !File.Exists(Path.Combine(payload, "HCSL.Daemon.runtimeconfig.json")) ||
-            !File.Exists(Path.Combine(payload, "HCSL.Daemon.deps.json")))
+        var valid = DaemonPayload.IsNative(payload) ? File.Exists(appHost) :
+            File.Exists(assembly) && File.Exists(Path.Combine(payload, "HCSL.Daemon.runtimeconfig.json")) &&
+            File.Exists(Path.Combine(payload, "HCSL.Daemon.deps.json"));
+        if (!valid)
             throw new DaemonStartupException("HCSL-DAEMON-MISSING", "The bundled daemon is missing. Rebuild or reinstall the complete application.");
         var start = new ProcessStartInfo { UseShellExecute = false, CreateNoWindow = true,
             WorkingDirectory = payload, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };

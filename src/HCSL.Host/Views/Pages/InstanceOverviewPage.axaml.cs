@@ -34,12 +34,61 @@ public partial class InstanceOverviewPage : UserControl
         PortInput.KeyDown += (_, e) => FieldKey(e, ResetPort, () => _ = SavePortAsync());
         PortInput.LostFocus += (_, _) => _ = SavePortAsync();
         PasswordInput.KeyDown += (_, e) => FieldKey(e, ResetPassword, () => _ = SavePasswordAsync());
-        Tooltip.SetTip(DeployHelpButton, "插件或游戏更新时实例不会自动更新，需要部署以更新运行目录");
+        Tooltip.SetTip(DeployHelpButton, "当前部署范围待检查");
+        DeployHelpButton.PointerEntered += async (_, _) => await RefreshDeployHelpAsync();
+        DeployHelpButton.GotFocus += async (_, _) => await RefreshDeployHelpAsync();
         Tooltip.SetTip(RecoverHelpButton, "清理先前部署留下的无用文件，运行目录不受影响");
         DataContextChanged += (_, _) => Subscribe();
         AttachedToVisualTree += (_, _) => Subscribe();
         DetachedFromVisualTree += (_, _) => Unsubscribe();
         PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty && IsVisible) Update(); };
+    }
+
+    private int deployHelpRequest;
+    private readonly SemaphoreSlim deployPreviewGate = new(1, 1);
+
+    private async Task<DeploymentPlan?> GetDeployPreviewAsync(HostServerController model, Guid instance, Guid preset)
+    {
+        await deployPreviewGate.WaitAsync();
+        try
+        {
+            if (Model != model || model.Selected?.Entry.Definition is not { } current ||
+                current.Id != instance || current.SelectedPresetId != preset) return null;
+            return await model.DeployPreviewAsync(instance, preset);
+        }
+        finally { deployPreviewGate.Release(); }
+    }
+
+    private async Task RefreshDeployHelpAsync()
+    {
+        if (operating || deployPreviewGate.CurrentCount == 0) return;
+        var request = ++deployHelpRequest;
+        Tooltip.SetTip(DeployHelpButton, "当前正在检查部署范围");
+        if (Model is not { } model || model.Selected?.Entry.Definition is not { } definition || !model.CanDeploy)
+        {
+            Tooltip.SetTip(DeployHelpButton, "当前无法检查部署范围");
+            return;
+        }
+        try
+        {
+            var plan = await GetDeployPreviewAsync(model, definition.Id, definition.SelectedPresetId);
+            if (request != deployHelpRequest || Model != model || model.Selected?.Entry.Definition != definition) return;
+            Tooltip.SetTip(DeployHelpButton, plan?.Scope switch
+            {
+                DeploymentScope.Plugins => "当前仅同步插件",
+                DeploymentScope.Rotation => "当前仅更新地图轮换",
+                DeploymentScope.PluginsAndRotation => "当前仅同步插件和地图轮换",
+                DeploymentScope.None => "当前无需部署",
+                DeploymentScope.Full => "当前需要完整部署",
+                _ => "当前无法检查部署范围"
+            });
+        }
+        catch (Exception e)
+        {
+            if (request == deployHelpRequest && Model == model && model.Selected?.Entry.Definition == definition)
+                Tooltip.SetTip(DeployHelpButton, e is IOException && e.Message.StartsWith("HCSL-MAPGROUP-STARTUP:", StringComparison.Ordinal)
+                    ? "当前图池缺少启动地图" : "当前无法检查部署范围");
+        }
     }
 
     private void Subscribe()
@@ -146,15 +195,32 @@ public partial class InstanceOverviewPage : UserControl
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
         var preset = m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == d.SelectedPresetId);
-        var plan = await m.DeployPreviewAsync(d.Id, d.SelectedPresetId);
+        DeploymentPlan? plan;
+        try { plan = await GetDeployPreviewAsync(m, d.Id, d.SelectedPresetId); }
+        catch (IOException e) { Error("无法获取部署预览", e.Message); return; }
         if (plan is null) { Error("无法获取部署预览", "宿主未连接或已有操作。"); return; }
+        if (plan.Scope == DeploymentScope.None)
+        {
+            owner.ShowInstanceNotification("当前无需部署", "现有部署已匹配当前配置。", ToastKind.Success);
+            return;
+        }
         if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "确认部署") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
+        var previousRun = m.Server.RunId;
         if (!await m.DeployAsync()) { Error("部署未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
-        for (var waited = 0; m.Server.Active && waited < 1800; waited++) await Task.Delay(500);
-        var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
-        Owner?.ShowInstanceNotification(done ? "部署完成" : "部署未完成", m.Server.DetailText,
-            done ? ToastKind.Success : ToastKind.Error);
+        for (var waited = 0; waited < 1800; waited++)
+        {
+            if (m.Server.Snapshot is { RunId: { } run, InstanceId: { } instance } status &&
+                instance == d.Id && run != previousRun && (!status.Active || status.State == ServerState.RecoveryRequired))
+            {
+                var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
+                Owner?.ShowInstanceNotification(done ? "部署完成" : "部署未完成", m.Server.DetailText,
+                    done ? ToastKind.Success : ToastKind.Error);
+                return;
+            }
+            if (m.Selected?.Entry.Id != d.Id || !m.Server.Connected) return;
+            await Task.Delay(500);
+        }
     });
 
     private async void RecoverDeployment(object? sender, RoutedEventArgs e) => await RunAsync(async () =>

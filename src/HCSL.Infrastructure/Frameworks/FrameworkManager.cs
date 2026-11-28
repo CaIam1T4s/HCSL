@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
-using System.Text.Json;
 using HCSL.Application.Abstractions;
+using System.Text.Json;
 using HCSL.Core;
 using HCSL.Infrastructure.Storage;
 using HCSL.Infrastructure.Transfer;
@@ -15,7 +15,6 @@ namespace HCSL.Infrastructure.Frameworks;
 /// </summary>
 public sealed partial class FrameworkManager : IFrameworkManager, IFrameworkCatalog
 {
-    private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = false };
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, ReleaseInfo[] Releases)> cache = new(StringComparer.Ordinal);
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(15);
     private readonly HttpMessageHandler? handler;

@@ -89,7 +89,6 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             if (installMode is not null)
             {
                 installation = new Cs2Installation(lease.Layout, baselineRefresh);
-                installation.Begin();
             }
             // Publish before launch: a crash at any later point fails closed until explicit recovery.
             if (OperatingSystem.IsWindows()) job = new WindowsProcessJob();
@@ -125,8 +124,12 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             {
                 if (windowsGateAssembly is null || !File.Exists(windowsGateAssembly))
                     throw new SteamCmdException("HCSL-STEAMCMD-PROCESS", "Windows requires the SteamCmdCheck process gate assembly.");
-                start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
-                start.ArgumentList.Add(windowsGateAssembly);
+                if (Path.GetExtension(windowsGateAssembly).Equals(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+                    start.ArgumentList.Add(windowsGateAssembly);
+                }
+                else start.FileName = windowsGateAssembly;
                 start.ArgumentList.Add("--process-gate");
             }
             process = new Process { StartInfo = start };
@@ -142,10 +145,13 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
                 var groupJournal = SteamCmdJournal.New(group);
                 groupJournal.Save(userDirectory);
                 groupJournal.Save(directory);
-                await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             }
+            ct.ThrowIfCancellationRequested();
+            installation?.Begin(installMode == SteamCmdInstallMode.Validate);
+            if (OperatingSystem.IsLinux())
+                await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             else
-                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray())).AsMemory(), ct);
+                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray()), SteamCmdJsonContext.Default.SteamCmdGateCommand).AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
             stdout = ReadOutputAsync(process.StandardOutput, false, parser);
             stderr = ReadOutputAsync(process.StandardError, true, parser);
@@ -211,7 +217,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
         }
         finally
         {
-            installation?.Finish();
+            installation?.Finish(cancellationToken.IsCancellationRequested);
             inputStop.Cancel();
             job?.Dispose();
             process?.Dispose();

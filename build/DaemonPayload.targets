@@ -20,8 +20,11 @@
     <MSBuild Projects="$(MSBuildThisFileDirectory)../src/HCSL.Daemon/HCSL.Daemon.csproj" Targets="Publish"
              Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=$(SelfContained);PublishSingleFile=false;PublishDir=$(_DaemonPublishDir)">
     </MSBuild>
+    <WriteLinesToFile Condition="'$(BundledDaemonAot)' == 'true'" File="$(_DaemonPublishDir)daemon.native-aot"
+                      Lines="native-aot" Overwrite="true" />
     <ItemGroup>
       <_DaemonPublishFiles Include="$(_DaemonPublishDir)**/*" />
+      <_DaemonPublishFiles Remove="$(_DaemonPublishDir)**/*.dbg;$(_DaemonPublishDir)**/*.pdb" Condition="'$(BundledDaemonAot)' == 'true'" />
       <ResolvedFileToPublish Include="@(_DaemonPublishFiles)">
         <RelativePath>daemon/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

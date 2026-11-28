@@ -219,10 +219,12 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
         try
         {
             DeploymentFiles.AtomicJson(journal, session); journaled = true; DeploymentFiles.AtomicJson(marker, session);
-            var start = Command("/usr/bin/systemd-run", "--user", "--wait", "--pipe", "--collect", "--unit=" + unit, "--service-type=exec", "--working-directory=" + Path.Combine(launch.Runtime, "game"),
+            string[] gate = Path.GetExtension(assembly).Equals(".dll", StringComparison.OrdinalIgnoreCase)
+                ? ["/usr/bin/dotnet", assembly, "--server-gate"] : [assembly, "--server-gate"];
+            var start = Command("/usr/bin/systemd-run", ["--user", "--wait", "--pipe", "--collect", "--unit=" + unit, "--service-type=exec", "--working-directory=" + Path.Combine(launch.Runtime, "game"),
                 "-p", "KillMode=control-group", "-p", "KillSignal=SIGINT", "-p", "TimeoutStopSec=5", "-p", "SendSIGKILL=yes", "-p", "MemoryAccounting=yes",
                 "-p", "MemoryHigh=" + Math.Max(32, memoryMiB * 4 / 5) + "M", "-p", "MemoryMax=" + memoryMiB + "M", "-p", "MemorySwapMax=0", "-p", "TasksMax=128", "-p", "CPUQuota=100%", "-p", "LimitCORE=0", "-p", "OOMPolicy=stop",
-                "/usr/bin/env", "-i", "HOME=" + Path.Combine(launch.Runtime, "home"), "USRLOCALcsgo=" + Path.Combine(launch.Runtime, "userdata"), "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "/usr/bin/dotnet", assembly, "--server-gate");
+                "/usr/bin/env", "-i", "HOME=" + Path.Combine(launch.Runtime, "home"), "USRLOCALcsgo=" + Path.Combine(launch.Runtime, "userdata"), "PATH=/usr/bin:/bin", "LANG=C.UTF-8", .. gate]);
             events.Report(new(ServerState.Starting, "HCSL-SERVER-STARTING", Preset: launch.Preset));
             process = Process.Start(start)!;
             console = new ConsoleSession(process, stop, launch.Redact)
@@ -242,7 +244,7 @@ public sealed partial class SystemdServerRuntime : IServerRuntimeService
                 {
                     launch.ReleasePorts();
                     var command = new ServerGateCommand(session.OwnerPid, session.OwnerStartTicks, session.PidNamespace, launch.Executable, launch.Arguments, Path.Combine(launch.Runtime, "game"), memoryMiB * 1024L * 1024, runId);
-                    await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command)); await process.StandardInput.FlushAsync(); released = true;
+                    await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command, ServerGateJsonContext.Default.ServerGateCommand)); await process.StandardInput.FlushAsync(); released = true;
                     // The RCON password is applied lazily on the first roster query, so startup never consumes
                     // the console rate-limit window that an operator command may need right after map load.
                 }

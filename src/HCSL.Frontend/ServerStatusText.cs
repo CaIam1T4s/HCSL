@@ -117,6 +117,12 @@ public static class ServerStatusText
         "HCSL-DEPLOY-STALE" => english
             ? "Deployment is stale: hcsl deploy"
             : "部署已过期：hcsl deploy",
+        "HCSL-DEPLOY-VALIDATION-INTERRUPTED" => english
+            ? "Complete server file validation before creating or rebuilding a deployment."
+            : "请完成服务端文件校验后再部署。",
+        "HCSL-DEPLOY-INSTALL-STATE" => english
+            ? "Validate the CS2 server files to restore the installation record."
+            : "请校验服务端文件以恢复安装记录。",
         "HCSL-DEPLOY-BASELINE" or "HCSL-DEPLOY-FILES" => english
             ? "The shared CS2 installation changed after an update; re-verify it with `hcsl baseline refresh --yes` before deploying."
             : "共享 CS2 安装因更新发生变化；请先执行 `hcsl baseline refresh --yes` 重新验证并记录本地基线，再部署。",

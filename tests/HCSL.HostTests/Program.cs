@@ -990,7 +990,31 @@ if (only is null or "errors")
     WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("HCSL-DEPLOY-PLUGINS") == true));
     Check(owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("hcsl doctor") == true),
         "Deployment failure dialog must include the actionable hint.");
-    Click(owner, "返回"); Layout();
+    var notifications = owner.FindControl<ToastStack>("InstanceNotifications")!;
+    Check(notifications.VisibleToasts > 0 && !WindowModalLayer.GetIsOpen(owner), "Start failure must use ToastStack, not a modal");
+    var shell = (ShellViewModel)owner.DataContext!;
+    foreach (var (code, path) in new[]
+    {
+        ("HCSL-DEPLOY-INSTALL-STATE", "安装记录缺少有效版本"),
+        ("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "服务端校验未完成"),
+        ("HCSL-DEPLOY-BASELINE", "「设置 → 启动基线」")
+    })
+    {
+        daemon.StartFailureCode = code;
+        PumpUntil(server.RefreshAsync()); Layout();
+        shell.NavigateCommand.Execute("instance"); Layout();
+        ((MainWindow)owner).InvokeInstanceScopeAction("start");
+        WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "启动")));
+        Click(owner, "启动");
+        WaitUntil(() => notifications.GetVisualDescendants().OfType<TextBlock>()
+            .Any(t => t.IsEffectivelyVisible && t.Text?.Contains(path, StringComparison.Ordinal) == true));
+        Check(!WindowModalLayer.GetIsOpen(owner) && shell.SelectedPage.Id == "instance",
+            "Recovery notice must not block the window or navigate");
+        Check(!notifications.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Any(b => b.IsEffectivelyVisible && b.Content is string label && label.StartsWith("前往", StringComparison.Ordinal)),
+            "Recovery toast must not have navigation actions");
+    }
+    shell.NavigateCommand.Execute("instance"); Layout();
     daemon.StartFailureCode = null;
     // Deploy-only and journal cleanup stay reachable from the advanced rows; their daemon calls are exercised directly
     // so the fixture's request ordering cannot hide the outcome.

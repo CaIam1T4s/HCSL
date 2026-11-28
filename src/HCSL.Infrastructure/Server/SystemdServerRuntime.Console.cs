@@ -138,7 +138,7 @@ public sealed partial class SystemdServerRuntime
                 {
                     timeout.Token.ThrowIfCancellationRequested();
                     attempted = true;
-                    await session.Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command with { Text = query }).AsMemory(), timeout.Token);
+                    await session.Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(command with { Text = query }, ServerGateJsonContext.Default.ServerConsoleCommand).AsMemory(), timeout.Token);
                     await session.Process.StandardInput.FlushAsync(timeout.Token);
                 }
                 finally { session.Writer.Release(); }

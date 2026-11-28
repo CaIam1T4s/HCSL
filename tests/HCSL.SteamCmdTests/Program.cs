@@ -8,6 +8,24 @@ using System.Threading.Channels;
 using HCSL.Application.Abstractions;
 using HCSL.Infrastructure.Steam;
 
+if (args is ["--only", "wire-json"])
+{
+    var json = SteamCmdJsonContext.Default;
+    CheckWire(new SteamCmdGateCommand("steamcmd", ["+quit"]), json.SteamCmdGateCommand);
+    CheckWire(new SteamCmdJournal(1, 123, 456, 789), json.SteamCmdJournal);
+    CheckWire(new Cs2Installation.State(1, 730, "Ready", "123"), json.State);
+    Console.WriteLine("PASS SteamCMD gate, journal and install state JSON match legacy format");
+    return 0;
+
+    static void CheckWire<T>(T value, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)
+    {
+        var legacy = JsonSerializer.Serialize(value);
+        var decoded = JsonSerializer.Deserialize(legacy, type);
+        if (decoded is null || JsonSerializer.Serialize<T>(decoded, type) != legacy || JsonSerializer.Serialize(value, type) != legacy)
+            throw new InvalidOperationException($"JSON format changed for {typeof(T).Name}");
+    }
+}
+
 var root = Path.Combine(Path.GetTempPath(), "hcsl-steam-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var oldStateHome = Environment.GetEnvironmentVariable("XDG_STATE_HOME");

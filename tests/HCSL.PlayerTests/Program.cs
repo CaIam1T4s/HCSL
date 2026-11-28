@@ -10,6 +10,25 @@ void Reject(Action action)
     throw new Exception("invalid input accepted");
 }
 PlayerServer Server(string host, int port = 27015) => new(Guid.NewGuid(), "Test", host, port);
+if (args is ["--only", "catalog-json"])
+{
+    AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
+    Check(!System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+    var directory = Directory.CreateTempSubdirectory("hcsl-player-json-");
+    try
+    {
+        File.WriteAllText(Path.Combine(directory.FullName, "servers.json"),
+            """[{"Id":"11111111-1111-1111-1111-111111111111","Name":"Legacy","Host":"localhost","Port":27015,"HasPassword":false}]""");
+        var catalog = new PlayerServerStore(directory.FullName, new FakeSecrets());
+        Check((await catalog.LoadAsync()).Single().Name == "Legacy", "legacy catalog must load");
+        await catalog.SaveAsync(Server("example.com"), null);
+        Check((await catalog.LoadAsync()).Any(row => row.Host == "example.com"), "saved catalog must reload");
+        Console.WriteLine("PASS player catalog read/write without JSON reflection");
+        return;
+    }
+    finally { directory.Delete(recursive: true); }
+}
+
 foreach (var host in new[] { "127.0.0.1", "203.0.113.99", "::1", "[2001:db8::1]", "example.com", "localhost", "例子.测试" })
     Check(PlayerServerRules.Normalize(Server(host)).Host.Length > 0, "valid host rejected");
 foreach (var host in new[] { "", "https://example.com", "example.com:27015", "127.1", "999.1.1.1", "1.2.3.04", "x;quit", "-evil", "x/path", "fe80::1%eth0" })

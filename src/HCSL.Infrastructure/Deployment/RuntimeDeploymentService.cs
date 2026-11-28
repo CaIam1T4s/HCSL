@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Storage;
+using HCSL.Infrastructure.Server;
 namespace HCSL.Infrastructure.Deployment;
 
 /// <summary>Offline only. Every operation holds the same cross-process leases as SteamCMD and instance editing.</summary>
@@ -16,12 +17,12 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
 {
     internal sealed record InventoryFile(string Path, long Bytes, string Sha256);
     internal sealed record Baseline(string BuildId, string EntrypointSha256, InventoryFile[] Inventory, string[] Configs);
-    private sealed record InstallState(int FormatVersion, int AppId, string Status, string? BuildId);
-    private sealed record LocalBaselineDocument(int FormatVersion, int AppId, string BuildId, string Source, string OperationId,
+    internal sealed record InstallState(int FormatVersion, int AppId, string Status, string? BuildId);
+    internal sealed record LocalBaselineDocument(int FormatVersion, int AppId, string BuildId, string Source, string OperationId,
         DateTimeOffset GeneratedAt, string EntrypointSha256, InventoryFile[] ConservativeCopyInventory, string[] IndependentConfigPaths);
     internal sealed record Transaction(int FormatVersion, Guid OperationId, Guid InstanceId, Guid DataId, Guid LibraryId);
-    private static readonly JsonSerializerOptions LocalBaselineJson = new()
-    { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true, WriteIndented = true };
+    private static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<LocalBaselineDocument> LocalBaselineJson =
+        DeploymentBaselineJsonContext.Default.LocalBaselineDocument;
     private readonly Baseline baseline;
     private readonly Action<string>? checkpoint;
     private readonly bool useLocalBaseline;
@@ -50,7 +51,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (!File.Exists(path)) return null;
         try
         {
-            var document = JsonSerializer.Deserialize<LocalBaselineDocument>(File.ReadAllText(path), LocalBaselineJson);
+            var document = JsonSerializer.Deserialize(File.ReadAllText(path), LocalBaselineJson);
             if (document is not { FormatVersion: 1, AppId: 730, Source: "ManagedSteamCmd" }
                 || string.IsNullOrWhiteSpace(document.BuildId) || document.BuildId != buildId
                 || string.IsNullOrWhiteSpace(document.OperationId)
@@ -167,9 +168,55 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     public DeploymentPlan Plan(WorkspaceRequest workspace, DeploymentOptions options, CancellationToken cancellationToken = default)
     {
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
-        return Prepare(lease, options, cancellationToken);
+        var (plan, retainedOnly) = PrepareManualDeployment(lease, options, cancellationToken);
+        if (UnchangedDeployment(lease, plan, cancellationToken) is not null)
+            return plan with { Scope = DeploymentScope.None };
+        var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
+        if (prior is not null)
+            return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
+                ? DeploymentScope.PluginsAndRotation : DeploymentScope.Plugins };
+        if (retainedOnly) throw InterruptedValidation();
+        return TryUpdateRotation(lease, plan, cancellationToken, preview: true) is null
+            ? plan : plan with { Scope = DeploymentScope.Rotation };
     }
-    internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct)
+
+    private DeploymentReceipt? UnchangedDeployment(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken cancellationToken)
+    {
+        var existing = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
+        if (existing is { FormatVersion: 2 } && existing.CopyMode == plan.CopyMode &&
+            existing.Framework == plan.Framework && existing.FrameworkReadiness == plan.FrameworkReadiness &&
+            existing.PersistentMappings.SequenceEqual(plan.PersistentMappings) && !ServerPreparation.IsStale(existing, plan) &&
+            RotationFileMatches(existing, plan.RuntimePath))
+        {
+            try
+            {
+                VerifyBaseline(plan.RuntimePath, ActiveBaseline(lease.Layout, plan.BuildId), cancellationToken);
+                return HasPendingModuleLayout(lease.Layout, plan, existing) ? null : existing;
+            }
+            catch (Exception e) when (e is DeploymentException or IOException) { /* Keep the repair path available. */ }
+        }
+        return null;
+    }
+    internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
+        PrepareCore(lease, options, ct, allowInterruptedValidation: false);
+
+    internal DeploymentPlan PrepareForStart(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
+        PrepareCore(lease, options, ct, allowInterruptedValidation: true);
+
+    private (DeploymentPlan Plan, bool RetainedOnly) PrepareManualDeployment(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct)
+    {
+        try { return (Prepare(lease, options, ct), false); }
+        catch (DeploymentException e) when (e.Code == "HCSL-DEPLOY-VALIDATION-INTERRUPTED")
+        {
+            return (PrepareCore(lease, options, ct, allowInterruptedValidation: true, allowPluginChanges: true), true);
+        }
+    }
+
+    private static DeploymentException InterruptedValidation() => new("HCSL-DEPLOY-VALIDATION-INTERRUPTED",
+        "Complete server file validation before deploying or redeploying.");
+
+    private DeploymentPlan PrepareCore(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct,
+        bool allowInterruptedValidation, bool allowPluginChanges = false)
     {
         ct.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(options.CopyMode)) throw new DeploymentException("HCSL-DEPLOY-MODE", "Unknown copy policy.");
@@ -199,7 +246,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             collection = MapPoolRules.CollectionId(mapPool);
             rotation = collection is null ? ServerMapGroupRules.Create(p.Id, p.Map, mapPool) : null;
         }
-        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+        catch (InstanceException e) { throw new DeploymentException(e.Code == "HCSL-MAPGROUP-STARTUP" ? e.Code : "HCSL-DEPLOY-ROTATION", e.Message); }
         var pluginSet = PluginSet(preset, l.LibraryRoot);
         var framework = FrameworkOf(pluginSet.Packages);
         var authorization = DeploymentFiles.Read<JsonElement>(InRoot(preset, "authorization.json"));
@@ -207,24 +254,38 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             !authorization.TryGetProperty("Rules", out var rules) || rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() != 0)
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Access rules are not deployable yet; nonempty or unknown manifests are refused.");
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
-        if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
-            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must have a valid BuildId before deployment.");
+        var target = Target(l, id);
+        DeploymentReceipt? retained = null;
+        if (state is { FormatVersion: 1, AppId: 730, Status: "ValidationInterrupted" } && !string.IsNullOrWhiteSpace(state.BuildId))
+        {
+            if (allowInterruptedValidation) retained = ValidateExisting(lease, id, target);
+            if (retained is null)
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "Complete server file validation before deploying or redeploying.");
+            if (retained.BuildId != state.BuildId)
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment does not match the last verified build.");
+        }
+        else if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
+            throw new DeploymentException("HCSL-DEPLOY-INSTALL-STATE", "Ready installation must have a valid BuildId before deployment.");
         if (pluginSet.Packages.Count(package => package.FrameworkPayload &&
                 FrameworkRules.Find(package.Framework)?.Kind == FrameworkKind.ScriptFramework) > 1 && state.BuildId != "26879581")
             throw new DeploymentException("HCSL-DEPLOY-FRAMEWORK-BUILD", "多框架组合仅在 CS2 构建 26879581 上通过验证。");
         var activeBaseline = ActiveBaseline(l, state.BuildId!);
         if (state.BuildId != activeBaseline.BuildId)
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must match the verified deployment baseline. Update the baseline after a new game build.");
-        var manifest = SmallText(InRoot(l.ServerRoot, "steamapps/appmanifest_730.acf"));
-        if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase) ||
-            !Regex.IsMatch(manifest, "\"StateFlags\"\\s*\"4\"", RegexOptions.IgnoreCase) ||
-            !Regex.IsMatch(manifest, "\"buildid\"\\s*\"" + Regex.Escape(state.BuildId!) + "\"", RegexOptions.IgnoreCase))
-            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest and installation state disagree.");
-        var info = SmallText(InRoot(l.ServerRoot, "game/csgo/steam.inf"));
+        if (retained is null)
+        {
+            var manifest = SmallText(InRoot(l.ServerRoot, "steamapps/appmanifest_730.acf"));
+            if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase) ||
+                !Regex.IsMatch(manifest, "\"StateFlags\"\\s*\"4\"", RegexOptions.IgnoreCase) ||
+                !Regex.IsMatch(manifest, "\"buildid\"\\s*\"" + Regex.Escape(state.BuildId!) + "\"", RegexOptions.IgnoreCase))
+                throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest and installation state disagree.");
+        }
+        var contentRoot = retained is null ? l.ServerRoot : target;
+        var info = SmallText(InRoot(contentRoot, "game/csgo/steam.inf"));
         if (!Regex.IsMatch(info, @"(?im)^\s*appid\s*=\s*730\s*$")) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Invalid steam.inf.");
         if (collection is null)
         {
-            var map = InRoot(l.ServerRoot, "game/csgo/maps/" + p.Map + ".vpk");
+            var map = InRoot(contentRoot, "game/csgo/maps/" + p.Map + ".vpk");
             if (!File.Exists(map) || new FileInfo(map).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "Selected map is not present as a built-in map package; Workshop deployment is not implemented.");
         }
@@ -232,26 +293,21 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         {
             foreach (var pooledMap in mapPool.Maps)
             {
-                var package = InRoot(l.ServerRoot, "game/csgo/maps/" + pooledMap.Value + ".vpk");
+                var package = InRoot(contentRoot, "game/csgo/maps/" + pooledMap.Value + ".vpk");
                 if (!File.Exists(package) || new FileInfo(package).Length == 0)
                     throw new DeploymentException("HCSL-DEPLOY-ROTATION", "Every standard map in the pool must be installed as a built-in map package.");
             }
-            var existingRotation = InRoot(l.ServerRoot, "game/csgo/" + ServerMapGroupRules.FileName);
-            if (File.Exists(existingRotation) && new FileInfo(existingRotation).Length != 0)
+            var existingRotation = InRoot(contentRoot, "game/csgo/" + ServerMapGroupRules.FileName);
+            if (retained is null && File.Exists(existingRotation) && new FileInfo(existingRotation).Length != 0)
                 throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The base installation already has a nonempty gamemodes_server.txt; merge it manually before enabling a managed map group.");
         }
         if (collection is not null)
         {
-            var seed = InRoot(l.ServerRoot, "game/csgo/maps/" + ServerMapRules.CollectionSeedMap + ".vpk");
+            var seed = InRoot(contentRoot, "game/csgo/maps/" + ServerMapRules.CollectionSeedMap + ".vpk");
             if (!File.Exists(seed) || new FileInfo(seed).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
         }
-        VerifyBaseline(l.ServerRoot, activeBaseline, ct);
-        var windows = OperatingSystem.IsWindows();
-        if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
-            throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
-        var sdk = windows ? null : InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
-        if (sdk is not null && (!File.Exists(sdk) || new FileInfo(sdk).Length == 0)) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
+        VerifyBaseline(contentRoot, activeBaseline, ct);
         var mappings = new List<DeploymentMapping>
         {
             new("game/csgo/cfg", InRoot(preset, "cfg"), SeedDefaults: true),
@@ -276,6 +332,22 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "A framework persistent path overlaps an already mapped runtime path.");
             mappings.Add(new("game/" + persistent.RuntimePath, persistentTarget, SeedDefaults: persistent.SeedPackageDefaults));
         }
+        if (retained is not null)
+        {
+            EnsureStopped(target);
+            var existingPlan = new DeploymentPlan(id, d.Revision, p.Id, p.Revision, retained.BuildId, target, retained.CopyMode,
+                0, 0, 0, 0, [.. mappings], [], rotation?.Name, rotation?.Hash, collection,
+                pluginSet.Hash, framework, FrameworkRules.ReadinessProfileFor(framework));
+            var comparison = allowPluginChanges ? retained with { PluginSetHash = existingPlan.PluginSetHash } : retained;
+            if (ServerPreparation.IsStale(comparison, existingPlan) || !RotationFileMatches(retained, target))
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
+            return existingPlan with { Scope = DeploymentScope.None };
+        }
+        var windows = OperatingSystem.IsWindows();
+        if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
+            throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
+        var sdk = windows ? null : InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
+        if (sdk is not null && (!File.Exists(sdk) || new FileInfo(sdk).Length == 0)) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
         foreach (var m in mappings) if (Directory.Exists(m.PersistentPath)) DeploymentFiles.Tree(m.PersistentPath, _ => { }, ct);
         // SDK ancestors may not exist yet; check their existing components before any seeding.
         var existingSdk = windows ? null : InRoot(instance, "home/.steam/sdk64/steamclient.so");
@@ -299,7 +371,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (lease.Capacity.LibraryAvailableBytes < minimum || lease.Capacity.DataAvailableBytes < seedBytes + 64L * 1024 * 1024 ||
             (Path.GetPathRoot(l.LibraryRoot) == Path.GetPathRoot(l.DataRoot) && lease.Capacity.LibraryAvailableBytes < minimum + seedBytes + 64L * 1024 * 1024))
             throw new DeploymentException("HCSL-DEPLOY-SPACE", "Insufficient free space for the selected deployment policy and persistent seeds.");
-        var target = Target(l, id); ValidateExisting(lease, id, target, verifyRotation: false, allowLegacy: true); EnsureStopped(target);
+        ValidateExisting(lease, id, target, verifyRotation: false, allowLegacy: true); EnsureStopped(target);
         var notes = new List<string>
         {
             "Offline deployment only; no server is launched.", "No resource links are approved; the entire game tree is independently cloned.",
@@ -374,9 +446,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         { throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "The previous framework package cannot be read; its user modules were not moved."); }
     }
 
-    private sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
-    private sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
-    private sealed record PluginLedgerFile(string Path, string Sha256);
+    internal sealed record PluginLedger(int FormatVersion, PluginLedgerEntry[] Packages);
+    internal sealed record PluginLedgerEntry(string Id, string Version, PluginLedgerFile[] Files);
+    internal sealed record PluginLedgerFile(string Path, string Sha256);
     private static PluginLedger ReadPluginLedger(string path)
     {
         LocalPaths.RejectLink(path);
@@ -701,6 +773,21 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         internal void Commit() { }
     }
 
+    private static bool HasPendingModuleLayout(WorkspaceLayout layout, DeploymentPlan plan, DeploymentReceipt receipt)
+    {
+        if (ManagedPluginRoute(plan.Framework) is not { } route || IsPersistentPluginRoot(plan.Framework, route.PluginRoot)) return false;
+        var runtimeRoot = InRoot(plan.RuntimePath, "game/" + route.PluginRoot);
+        var dataRoot = InRoot(layout.InstancesRoot, Id(plan.InstanceId) + "/presets/" + Id(plan.PresetId) + "/" + route.DataRoot);
+        var builtIn = (receipt.PluginManifest ?? []).Where(p => p.FrameworkPayload && p.Framework == plan.Framework)
+            .SelectMany(p => p.Files).Where(f => PluginRules.IsPathUnder(f.Path, route.PluginRoot) && f.Path.Length > route.PluginRoot.Length)
+            .Select(f => f.Path[(route.PluginRoot.Length + 1)..]).Where(p => p.Contains('/'))
+            .Select(p => p.Split('/')[0]).ToHashSet(StringComparer.FromComparison(LocalPaths.Comparison));
+        if (Directory.Exists(runtimeRoot) && new DirectoryInfo(runtimeRoot).EnumerateDirectories().Any(d => d.LinkTarget is null && !builtIn.Contains(d.Name)))
+            return true;
+        return Directory.Exists(dataRoot) && new DirectoryInfo(dataRoot).EnumerateDirectories().Any(d =>
+            !string.Equals(new DirectoryInfo(Path.Combine(runtimeRoot, d.Name)).LinkTarget, d.FullName, LocalPaths.Comparison));
+    }
+
     private static (string PluginRoot, string DataRoot)? ManagedPluginRoute(string? framework)
     {
         var root = FrameworkRules.PluginRootFor(framework);
@@ -883,10 +970,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (!File.ReadAllText(path).StartsWith(ServerMapGroupRules.ManagedMarker, StringComparison.Ordinal)) return;
         File.Delete(path);
     }
-    private static void WriteRotation(string stage, ServerMapGroupPlan rotation)
+    private static void WriteRotation(string stage, ServerMapGroupPlan rotation, bool replace = false)
     {
         var path = InRoot(stage, "game/csgo/" + ServerMapGroupRules.FileName); LocalPaths.RejectLink(path);
-        if (File.Exists(path) && new FileInfo(path).Length != 0)
+        if (!replace && File.Exists(path) && new FileInfo(path).Length != 0)
             throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The staged game already has a nonempty gamemodes_server.txt.");
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
         try
@@ -1083,7 +1170,14 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     {
         Platform();
         LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
-        var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
+        var (plan, retainedOnly) = PrepareManualDeployment(lease, options, cancellationToken); var l = lease.Layout;
+        if ((UnchangedDeployment(lease, plan, cancellationToken) ?? TrySyncPlugins(lease, plan, cancellationToken) ??
+            (retainedOnly ? null : TryUpdateRotation(lease, plan, cancellationToken))) is { } updated)
+        {
+            progress?.Report(new("DeployedOffline"));
+            return updated;
+        }
+        if (retainedOnly) throw InterruptedValidation();
         var tx = new Transaction(1, Guid.NewGuid(), options.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
         var journal = Journal(l, tx.InstanceId); var stage = Stage(l, tx); var previous = Previous(l, tx);
         // Once this is durable, all partial files and renames have a known recovery owner.
@@ -1164,7 +1258,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 ClearRotation(stage);
             var receipt = new DeploymentReceipt(2, tx.OperationId, "DeployedOffline", lease.Identity.DataId, lease.Identity.LibraryId,
                 plan.InstanceId, plan.PresetId, plan.InstanceRevision, plan.PresetRevision, plan.BuildId, plan.CopyMode, DateTimeOffset.UtcNow, plan.PersistentMappings,
-                plan.RotationGroup, plan.RotationHash, plan.RotationCollection, plan.PluginSetHash, plan.Framework, plan.FrameworkReadiness);
+                plan.RotationGroup, plan.RotationHash, plan.RotationCollection, plan.PluginSetHash, plan.Framework, plan.FrameworkReadiness,
+                CapturePluginManifest(currentPlugins.Packages));
             DeploymentFiles.AtomicJson(Path.Combine(stage, "deployment.json"), receipt);
             ValidateExisting(lease, tx.InstanceId, stage); cancellationToken.ThrowIfCancellationRequested();
             checkpoint?.Invoke("Prepared");
@@ -1199,6 +1294,189 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw;
         }
     }
+    private static DeployedPluginPackage[]? CapturePluginManifest(LocalPluginStore.Package[] packages)
+    {
+        var manifest = packages.Select(package => new DeployedPluginPackage(package.Id, package.Version, package.Hash,
+            package.FrameworkPayload, package.Framework,
+            package.Files.Select(file => new DeployedPluginFile(file.RelativePath, file.Sha256)).ToArray())).ToArray();
+        // Leave room for persistent mappings under the receipt reader's 1 MiB limit.
+        return JsonSerializer.SerializeToUtf8Bytes(manifest, DeploymentJsonContext.Default.DeployedPluginPackageArray).Length <= 512 * 1024 ? manifest : null;
+    }
+
+    private DeploymentReceipt? TrySyncPlugins(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct, bool preview = false)
+    {
+        var prior = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
+        if (prior is not { FormatVersion: 2, PluginManifest: not null } || prior.PluginSetHash == plan.PluginSetHash ||
+            prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness || prior.CopyMode != plan.CopyMode ||
+            !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
+            ServerPreparation.IsStale(prior with { PluginSetHash = plan.PluginSetHash, RotationHash = plan.RotationHash,
+                RotationGroup = plan.RotationGroup, RotationCollection = plan.RotationCollection }, plan) ||
+            !RotationFileMatches(prior, plan.RuntimePath)) return null;
+        var mapping = plan.PersistentMappings.Single(m => m.RuntimePath == "game/csgo/addons");
+        if (mapping.Kind != DeploymentMappingKind.Link) return null;
+        var layout = lease.Layout;
+        var preset = InRoot(layout.InstancesRoot, Id(plan.InstanceId) + "/presets/" + Id(plan.PresetId));
+        var selection = PluginSet(preset, layout.LibraryRoot);
+        if (selection.Hash != plan.PluginSetHash)
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "Plugin selection changed during deployment.");
+        var manifest = CapturePluginManifest(selection.Packages);
+        if (manifest is null) return null;
+        var unchanged = manifest.Where(p => prior.PluginManifest.Any(old => old.Id == p.Id && old.Version == p.Version && old.Hash == p.Hash))
+            .Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        var oldChanged = prior.PluginManifest.Where(p => !unchanged.Contains(p.Id)).ToArray();
+        var newChanged = manifest.Where(p => !unchanged.Contains(p.Id)).ToArray();
+        if (oldChanged.Concat(newChanged).Any(p => p.FrameworkPayload || FrameworkRules.Find(p.Id) is not null || p.Files.Any(f =>
+            !PluginRules.IsAddonFile(f.Path) || ManagedPluginRouteOfPath(f.Path) is not null ||
+            plan.PersistentMappings.Any(m => m != mapping && Overlaps(GameRelative(m.RuntimePath), f.Path))))) return null;
+        if (preview)
+            return CanReplaceRotation(plan, prior) ? prior : null;
+        var comparer = StringComparer.FromComparison(LocalPaths.Comparison);
+        var ledgerPath = InRoot(preset, ".hcsl-plugin-ledger.json");
+        var ledger = ReadPluginLedger(ledgerPath);
+        var oldFiles = oldChanged.SelectMany(p => p.Files).ToDictionary(f => f.Path, comparer);
+        var newFiles = selection.Packages.Where(p => !unchanged.Contains(p.Id)).SelectMany(p => p.Files)
+            .ToDictionary(f => f.RelativePath, comparer);
+        var keptEntries = ledger.Packages.Where(p => unchanged.Contains(p.Id)).ToArray();
+        var keptPaths = keptEntries.SelectMany(p => p.Files).Select(f => f.Path).ToHashSet(comparer);
+        var owned = ledger.Packages.Where(p => oldChanged.Any(old => old.Id == p.Id && old.Version == p.Version))
+            .SelectMany(p => p.Files).ToDictionary(f => f.Path, comparer);
+        EnsureStopped(plan.RuntimePath);
+        VerifyBaseline(plan.RuntimePath, ActiveBaseline(layout, plan.BuildId), ct);
+        var writes = new List<PluginAddonFile>();
+        var removals = new List<PluginAddonFile>();
+        const string prefix = "csgo/addons/";
+        foreach (var path in oldFiles.Keys.Union(newFiles.Keys, comparer))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (keptPaths.Contains(path))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin path belongs to another installed package: {path}");
+            oldFiles.TryGetValue(path, out var old);
+            newFiles.TryGetValue(path, out var next);
+            if (old is not null && (!owned.TryGetValue(path, out var recorded) || recorded.Sha256 != old.Sha256))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin ownership could not be confirmed: {path}");
+            if (old is not null && old.Sha256 == next?.Sha256) continue;
+            var destination = AddonsPath(mapping.PersistentPath, path[prefix.Length..]);
+            if (Directory.Exists(destination) || (File.Exists(destination) &&
+                (old is null || !string.Equals(HashFile(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin path is occupied or modified: {path}");
+            if (next is not null) writes.Add(new(next.RelativePath, next.FullPath, next.Sha256));
+            else if (old is not null) removals.Add(new(old.Path, destination, old.Sha256));
+        }
+        RotationChange? rotation = null;
+        if (prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection)
+        {
+            rotation = PrepareRotationChange(lease, plan, prior, ct);
+            if (rotation is null) return null;
+        }
+        var updatedLedger = new PluginLedger(1, [.. keptEntries, .. newChanged.Select(p =>
+            new PluginLedgerEntry(p.Id, p.Version, p.Files.Select(f => new PluginLedgerFile(f.Path, f.Sha256)).ToArray()))]);
+        var changes = new PluginAddonPlan(mapping.PersistentPath, prefix, ledgerPath, [.. writes], [.. removals], updatedLedger);
+        var tx = new Transaction(2, Guid.NewGuid(), plan.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
+        var journal = Journal(layout, plan.InstanceId);
+        var receipt = prior with { OperationId = tx.OperationId, PluginSetHash = plan.PluginSetHash, PluginManifest = manifest,
+            RotationGroup = plan.RotationGroup, RotationHash = plan.RotationHash, RotationCollection = plan.RotationCollection };
+        ct.ThrowIfCancellationRequested();
+        DeploymentFiles.AtomicJson(journal, tx);
+        changes.Apply();
+        var rotationApplied = false;
+        try
+        {
+            if (rotation is not null)
+            {
+                rotation.Apply();
+                rotationApplied = true;
+                checkpoint?.Invoke("RotationWritten");
+            }
+            checkpoint?.Invoke("IncrementalPluginsApplied");
+            DeploymentFiles.AtomicJson(InRoot(plan.RuntimePath, "deployment.json"), receipt);
+        }
+        catch
+        {
+            try { if (rotationApplied) rotation!.Rollback(); }
+            finally { changes.Rollback(); }
+            File.Delete(journal);
+            throw;
+        }
+        changes.Commit();
+        File.Delete(journal);
+        return receipt;
+    }
+
+    private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct, bool preview = false)
+    {
+        var target = plan.RuntimePath;
+        var prior = ValidateExisting(lease, plan.InstanceId, target, verifyRotation: false, allowLegacy: true);
+        if (prior is not { FormatVersion: 2 } ||
+            (prior.RotationHash == plan.RotationHash && prior.RotationCollection == plan.RotationCollection) ||
+            prior.CopyMode != plan.CopyMode || prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness ||
+            !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
+            ServerPreparation.IsStale(prior with { RotationHash = plan.RotationHash, RotationGroup = plan.RotationGroup, RotationCollection = plan.RotationCollection }, plan) ||
+            !RotationFileMatches(prior, target)) return null;
+
+        var layout = lease.Layout;
+        EnsureStopped(target);
+        VerifyBaseline(target, ActiveBaseline(layout, plan.BuildId), ct);
+        if (preview) return CanReplaceRotation(plan, prior) ? prior : null;
+        var change = PrepareRotationChange(lease, plan, prior, ct);
+        if (change is null) return null;
+        ct.ThrowIfCancellationRequested();
+        var receipt = prior with { RotationGroup = plan.RotationGroup, RotationHash = plan.RotationHash, RotationCollection = plan.RotationCollection };
+        change.Apply();
+        try
+        {
+            checkpoint?.Invoke("RotationWritten");
+            DeploymentFiles.AtomicJson(InRoot(target, "deployment.json"), receipt);
+        }
+        catch { change.Rollback(); throw; }
+        return receipt;
+    }
+
+    private sealed record RotationChange(string Target, string Path, ServerMapGroupPlan? Next, ServerMapGroupPlan? Previous)
+    {
+        internal void Apply()
+        {
+            if (Next is not null) WriteRotation(Target, Next, replace: Previous is not null);
+            else if (Previous is not null) File.Delete(Path);
+        }
+        internal void Rollback()
+        {
+            if (Previous is not null) WriteRotation(Target, Previous, replace: true);
+            else if (Next is not null) File.Delete(Path);
+        }
+    }
+
+    private static bool CanReplaceRotation(DeploymentPlan plan, DeploymentReceipt prior) =>
+        (prior.RotationHash == plan.RotationHash && prior.RotationCollection == plan.RotationCollection) ||
+        prior.RotationHash is not null || !Path.Exists(InRoot(plan.RuntimePath, "game/csgo/" + ServerMapGroupRules.FileName));
+
+    private static RotationChange? PrepareRotationChange(IWorkspaceLease lease, DeploymentPlan plan, DeploymentReceipt prior, CancellationToken ct)
+    {
+        var target = plan.RuntimePath;
+        var layout = lease.Layout;
+        var instance = InRoot(layout.InstancesRoot, Id(plan.InstanceId));
+        var preset = LocalInstanceStore.Load(instance, plan.InstanceId).Presets.Single(p => p.Id == plan.PresetId);
+        var presetPath = InRoot(instance, "presets/" + Id(preset.Id));
+        var pool = LocalPresetMapPoolStore.ReadForDeployment(InRoot(presetPath, "maps.json"));
+        var collection = MapPoolRules.CollectionId(pool);
+        var rotation = collection is null ? ServerMapGroupRules.Create(preset.Id, preset.Map, pool) : null;
+        if (rotation?.Hash != plan.RotationHash || collection != plan.RotationCollection)
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The map pool changed while deployment was prepared.");
+        var maps = collection is not null ? new[] { ServerMapRules.CollectionSeedMap }
+            : rotation is null ? new[] { preset.Map } : pool.Maps.Select(map => map.Value).Append(preset.Map);
+        foreach (var map in maps.Distinct(StringComparer.Ordinal))
+        {
+            var package = new FileInfo(InRoot(target, "game/csgo/maps/" + map + ".vpk"));
+            if (!package.Exists || package.Length == 0)
+                throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The deployed runtime is missing a map required by the new rotation.");
+        }
+        var path = InRoot(target, "game/csgo/" + ServerMapGroupRules.FileName);
+        // Only replace/delete a file whose ownership was verified against the previous receipt.
+        if (prior.RotationHash is null && Path.Exists(path)) return null;
+        ct.ThrowIfCancellationRequested();
+        return new(target, path, rotation, prior.RotationHash is null ? null :
+            new(prior.RotationGroup!, preset.Map, SmallText(path), prior.RotationHash));
+    }
+
     private static string GameRelative(string runtimePath) =>
         runtimePath.StartsWith("game/", StringComparison.Ordinal) ? runtimePath[5..] : runtimePath;
     /// <summary>Copies user-owned module directories from an older deployment into the preset data root before the runtime is replaced.</summary>
@@ -1315,12 +1593,14 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var journal = Journal(l, instanceId); LocalPaths.RejectLink(journal);
         if (!File.Exists(journal)) return "NoPendingDeployment";
         var tx = DeploymentFiles.Read<Transaction>(journal);
-        if (tx.FormatVersion != 1 || tx.OperationId == Guid.Empty || tx.InstanceId != instanceId || tx.DataId != lease.Identity.DataId || tx.LibraryId != lease.Identity.LibraryId)
+        if (tx.FormatVersion is not (1 or 2) || tx.OperationId == Guid.Empty || tx.InstanceId != instanceId || tx.DataId != lease.Identity.DataId || tx.LibraryId != lease.Identity.LibraryId)
             throw new DeploymentException("HCSL-DEPLOY-RECOVERY", "Unknown deployment journal; nothing was changed.");
         var target = Target(l, instanceId); var previous = Previous(l, tx); var stage = Stage(l, tx);
         LocalPaths.RejectLink(stage); LocalPaths.RejectLink(previous); EnsureStopped(target);
         var current = ValidateExisting(lease, instanceId, target);
         if (current?.OperationId == tx.OperationId) { File.Delete(journal); return "PublishedDeploymentConfirmed"; }
+        if (tx.FormatVersion == 2)
+            throw new DeploymentException("HCSL-DEPLOY-RECOVERY", "Plugin sync was interrupted before publication. Inspect the preset plugin backups before clearing the deployment journal.");
         if (!Directory.Exists(target) && Directory.Exists(previous))
         {
             ValidateExisting(lease, instanceId, previous); EnsureStopped(previous); Directory.Move(previous, target);

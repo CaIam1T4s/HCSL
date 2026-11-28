@@ -40,7 +40,7 @@ internal static class ServerPreparation
         {
             var deployment = new RuntimeDeploymentService();
             var deploymentOptions = new DeploymentOptions(options.InstanceId);
-            var plan = deployment.Prepare(lease, deploymentOptions, ct);
+            var plan = deployment.PrepareForStart(lease, deploymentOptions, ct);
             // AutoDeploy is the operator's explicit "redeploy and start" choice, made in the UI after a
             // DEPLOYMENT/STALE rejection; it is never implied. The deploy reuses this session's lease,
             // because a second lease in the same process is refused with HCSL-LOCK.
@@ -94,7 +94,8 @@ internal static class ServerPreparation
     }
     internal static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId
-        || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision
+        || receipt.Framework != plan.Framework || receipt.FrameworkReadiness != plan.FrameworkReadiness
+        || !receipt.PersistentMappings.SequenceEqual(plan.PersistentMappings)
         || !string.Equals(receipt.RotationGroup, plan.RotationGroup, StringComparison.Ordinal)
         || !string.Equals(receipt.RotationHash, plan.RotationHash, StringComparison.Ordinal)
         || !string.Equals(receipt.RotationCollection, plan.RotationCollection, StringComparison.Ordinal)
