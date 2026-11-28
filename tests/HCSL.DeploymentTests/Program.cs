@@ -113,9 +113,31 @@ try
         var updated = incremental.Deploy(workspace, Options(first));
         Check(File.ReadAllText(target) == "2.0.0" && updated.RotationHash is not null &&
             RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Plugin and rotation were not published together.");
+        using (var lease = new LocalWorkspaceManager().Acquire(workspace))
+        {
+            var installation = new HCSL.Infrastructure.Steam.Cs2Installation(lease.Layout);
+            installation.Begin(validation: true);
+            installation.Finish(cancelled: true);
+        }
+        File.WriteAllText(native, "shared file being repaired");
+        var interrupted = File.ReadAllText(state);
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Plan(workspace, Options(second)));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => incremental.Deploy(workspace, Options(second)));
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.None &&
+            incremental.Deploy(workspace, Options(first)).OperationId == updated.OperationId,
+            "An unchanged deployment must remain usable after cancellation.");
         Select(null);
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Plugins, "Cancellation blocked a pure plugin removal.");
+        File.WriteAllText(target, "user edit");
+        Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
+        File.WriteAllText(target, "2.0.0");
         incremental.Deploy(workspace, Options(first));
-        Check(!File.Exists(target) && File.Exists(sentinel), "Plugin removal failed or replaced the runtime.");
+        Check(!File.Exists(target) && File.Exists(sentinel) && File.ReadAllText(state) == interrupted,
+            "Plugin removal failed, replaced the runtime, or altered shared validation state.");
+        var changedPool = pools.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+        pools.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            changedPool.Pool.Revision, changedPool.Hash, []));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => incremental.Deploy(workspace, Options(first)));
         Console.WriteLine("PASS addon sync adds, upgrades and removes plugins without replacing the runtime");
         return 0;
     }

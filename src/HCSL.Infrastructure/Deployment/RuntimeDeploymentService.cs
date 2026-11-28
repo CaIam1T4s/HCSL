@@ -168,13 +168,14 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     public DeploymentPlan Plan(WorkspaceRequest workspace, DeploymentOptions options, CancellationToken cancellationToken = default)
     {
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
-        var plan = Prepare(lease, options, cancellationToken);
+        var (plan, retainedOnly) = PrepareManualDeployment(lease, options, cancellationToken);
         if (UnchangedDeployment(lease, plan, cancellationToken) is not null)
             return plan with { Scope = DeploymentScope.None };
         var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
         if (prior is not null)
             return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
                 ? DeploymentScope.PluginsAndRotation : DeploymentScope.Plugins };
+        if (retainedOnly) throw InterruptedValidation();
         return TryUpdateRotation(lease, plan, cancellationToken, preview: true) is null
             ? plan : plan with { Scope = DeploymentScope.Rotation };
     }
@@ -182,7 +183,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     private DeploymentReceipt? UnchangedDeployment(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken cancellationToken)
     {
         var existing = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
-        if (existing is { FormatVersion: 2, PluginManifest: not null } && existing.CopyMode == plan.CopyMode &&
+        if (existing is { FormatVersion: 2 } && existing.CopyMode == plan.CopyMode &&
             existing.Framework == plan.Framework && existing.FrameworkReadiness == plan.FrameworkReadiness &&
             existing.PersistentMappings.SequenceEqual(plan.PersistentMappings) && !ServerPreparation.IsStale(existing, plan) &&
             RotationFileMatches(existing, plan.RuntimePath))
@@ -202,7 +203,20 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     internal DeploymentPlan PrepareForStart(IWorkspaceLease lease, DeploymentOptions options, bool autoDeploy, CancellationToken ct) =>
         PrepareCore(lease, options, ct, allowInterruptedValidation: !autoDeploy);
 
-    private DeploymentPlan PrepareCore(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct, bool allowInterruptedValidation)
+    private (DeploymentPlan Plan, bool RetainedOnly) PrepareManualDeployment(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct)
+    {
+        try { return (Prepare(lease, options, ct), false); }
+        catch (DeploymentException e) when (e.Code == "HCSL-DEPLOY-VALIDATION-INTERRUPTED")
+        {
+            return (PrepareCore(lease, options, ct, allowInterruptedValidation: true, allowPluginChanges: true), true);
+        }
+    }
+
+    private static DeploymentException InterruptedValidation() => new("HCSL-DEPLOY-VALIDATION-INTERRUPTED",
+        "Complete server file validation before deploying or redeploying.");
+
+    private DeploymentPlan PrepareCore(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct,
+        bool allowInterruptedValidation, bool allowPluginChanges = false)
     {
         ct.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(options.CopyMode)) throw new DeploymentException("HCSL-DEPLOY-MODE", "Unknown copy policy.");
@@ -300,7 +314,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var existingPlan = new DeploymentPlan(id, d.Revision, p.Id, p.Revision, retained.BuildId, target, retained.CopyMode,
                 0, 0, 0, 0, retained.PersistentMappings, [], rotation?.Name, rotation?.Hash, collection,
                 pluginSet.Hash, framework, FrameworkRules.ReadinessProfileFor(framework));
-            if (ServerPreparation.IsStale(retained, existingPlan) || !RotationFileMatches(retained, target))
+            var comparison = allowPluginChanges ? retained with { PluginSetHash = existingPlan.PluginSetHash } : retained;
+            if (retained.Framework != existingPlan.Framework || retained.FrameworkReadiness != existingPlan.FrameworkReadiness ||
+                ServerPreparation.IsStale(comparison, existingPlan) || !RotationFileMatches(retained, target))
                 throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
             return existingPlan;
         }
@@ -1140,13 +1156,14 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     {
         Platform();
         LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
-        var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
+        var (plan, retainedOnly) = PrepareManualDeployment(lease, options, cancellationToken); var l = lease.Layout;
         if ((UnchangedDeployment(lease, plan, cancellationToken) ?? TrySyncPlugins(lease, plan, cancellationToken) ??
-            TryUpdateRotation(lease, plan, cancellationToken)) is { } updated)
+            (retainedOnly ? null : TryUpdateRotation(lease, plan, cancellationToken))) is { } updated)
         {
             progress?.Report(new("DeployedOffline"));
             return updated;
         }
+        if (retainedOnly) throw InterruptedValidation();
         var tx = new Transaction(1, Guid.NewGuid(), options.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
         var journal = Journal(l, tx.InstanceId); var stage = Stage(l, tx); var previous = Previous(l, tx);
         // Once this is durable, all partial files and renames have a known recovery owner.
