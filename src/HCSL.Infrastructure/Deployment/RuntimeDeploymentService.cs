@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 using HCSL.Infrastructure.Storage;
+using HCSL.Infrastructure.Server;
 namespace HCSL.Infrastructure.Deployment;
 
 /// <summary>Offline only. Every operation holds the same cross-process leases as SteamCMD and instance editing.</summary>
@@ -169,7 +170,13 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
         return Prepare(lease, options, cancellationToken);
     }
-    internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct)
+    internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
+        PrepareCore(lease, options, ct, allowInterruptedValidation: false);
+
+    internal DeploymentPlan PrepareForStart(IWorkspaceLease lease, DeploymentOptions options, bool autoDeploy, CancellationToken ct) =>
+        PrepareCore(lease, options, ct, allowInterruptedValidation: !autoDeploy);
+
+    private DeploymentPlan PrepareCore(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct, bool allowInterruptedValidation)
     {
         ct.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(options.CopyMode)) throw new DeploymentException("HCSL-DEPLOY-MODE", "Unknown copy policy.");
@@ -207,7 +214,17 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             !authorization.TryGetProperty("Rules", out var rules) || rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() != 0)
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Access rules are not deployable yet; nonempty or unknown manifests are refused.");
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
-        if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
+        var target = Target(l, id);
+        DeploymentReceipt? retained = null;
+        if (state is { FormatVersion: 1, AppId: 730, Status: "ValidationInterrupted" } && !string.IsNullOrWhiteSpace(state.BuildId))
+        {
+            if (allowInterruptedValidation) retained = ValidateExisting(lease, id, target);
+            if (retained is null)
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "Complete server file validation before deploying or redeploying.");
+            if (retained.BuildId != state.BuildId)
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment does not match the last verified build.");
+        }
+        else if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
             throw new DeploymentException("HCSL-DEPLOY-INSTALL-STATE", "Ready installation must have a valid BuildId before deployment.");
         if (pluginSet.Packages.Count(package => package.FrameworkPayload &&
                 FrameworkRules.Find(package.Framework)?.Kind == FrameworkKind.ScriptFramework) > 1 && state.BuildId != "26879581")
@@ -215,16 +232,20 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var activeBaseline = ActiveBaseline(l, state.BuildId!);
         if (state.BuildId != activeBaseline.BuildId)
             throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must match the verified deployment baseline. Update the baseline after a new game build.");
-        var manifest = SmallText(InRoot(l.ServerRoot, "steamapps/appmanifest_730.acf"));
-        if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase) ||
-            !Regex.IsMatch(manifest, "\"StateFlags\"\\s*\"4\"", RegexOptions.IgnoreCase) ||
-            !Regex.IsMatch(manifest, "\"buildid\"\\s*\"" + Regex.Escape(state.BuildId!) + "\"", RegexOptions.IgnoreCase))
-            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest and installation state disagree.");
-        var info = SmallText(InRoot(l.ServerRoot, "game/csgo/steam.inf"));
+        if (retained is null)
+        {
+            var manifest = SmallText(InRoot(l.ServerRoot, "steamapps/appmanifest_730.acf"));
+            if (!Regex.IsMatch(manifest, "\"appid\"\\s*\"730\"", RegexOptions.IgnoreCase) ||
+                !Regex.IsMatch(manifest, "\"StateFlags\"\\s*\"4\"", RegexOptions.IgnoreCase) ||
+                !Regex.IsMatch(manifest, "\"buildid\"\\s*\"" + Regex.Escape(state.BuildId!) + "\"", RegexOptions.IgnoreCase))
+                throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Steam manifest and installation state disagree.");
+        }
+        var contentRoot = retained is null ? l.ServerRoot : target;
+        var info = SmallText(InRoot(contentRoot, "game/csgo/steam.inf"));
         if (!Regex.IsMatch(info, @"(?im)^\s*appid\s*=\s*730\s*$")) throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Invalid steam.inf.");
         if (collection is null)
         {
-            var map = InRoot(l.ServerRoot, "game/csgo/maps/" + p.Map + ".vpk");
+            var map = InRoot(contentRoot, "game/csgo/maps/" + p.Map + ".vpk");
             if (!File.Exists(map) || new FileInfo(map).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "Selected map is not present as a built-in map package; Workshop deployment is not implemented.");
         }
@@ -232,21 +253,31 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         {
             foreach (var pooledMap in mapPool.Maps)
             {
-                var package = InRoot(l.ServerRoot, "game/csgo/maps/" + pooledMap.Value + ".vpk");
+                var package = InRoot(contentRoot, "game/csgo/maps/" + pooledMap.Value + ".vpk");
                 if (!File.Exists(package) || new FileInfo(package).Length == 0)
                     throw new DeploymentException("HCSL-DEPLOY-ROTATION", "Every standard map in the pool must be installed as a built-in map package.");
             }
-            var existingRotation = InRoot(l.ServerRoot, "game/csgo/" + ServerMapGroupRules.FileName);
-            if (File.Exists(existingRotation) && new FileInfo(existingRotation).Length != 0)
+            var existingRotation = InRoot(contentRoot, "game/csgo/" + ServerMapGroupRules.FileName);
+            if (retained is null && File.Exists(existingRotation) && new FileInfo(existingRotation).Length != 0)
                 throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The base installation already has a nonempty gamemodes_server.txt; merge it manually before enabling a managed map group.");
         }
         if (collection is not null)
         {
-            var seed = InRoot(l.ServerRoot, "game/csgo/maps/" + ServerMapRules.CollectionSeedMap + ".vpk");
+            var seed = InRoot(contentRoot, "game/csgo/maps/" + ServerMapRules.CollectionSeedMap + ".vpk");
             if (!File.Exists(seed) || new FileInfo(seed).Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
         }
-        VerifyBaseline(l.ServerRoot, activeBaseline, ct);
+        VerifyBaseline(contentRoot, activeBaseline, ct);
+        if (retained is not null)
+        {
+            EnsureStopped(target);
+            var existingPlan = new DeploymentPlan(id, d.Revision, p.Id, p.Revision, retained.BuildId, target, retained.CopyMode,
+                0, 0, 0, 0, retained.PersistentMappings, [], rotation?.Name, rotation?.Hash, collection,
+                pluginSet.Hash, framework, FrameworkRules.ReadinessProfileFor(framework));
+            if (ServerPreparation.IsStale(retained, existingPlan) || !RotationFileMatches(retained, target))
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
+            return existingPlan;
+        }
         var windows = OperatingSystem.IsWindows();
         if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
             throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
@@ -299,7 +330,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (lease.Capacity.LibraryAvailableBytes < minimum || lease.Capacity.DataAvailableBytes < seedBytes + 64L * 1024 * 1024 ||
             (Path.GetPathRoot(l.LibraryRoot) == Path.GetPathRoot(l.DataRoot) && lease.Capacity.LibraryAvailableBytes < minimum + seedBytes + 64L * 1024 * 1024))
             throw new DeploymentException("HCSL-DEPLOY-SPACE", "Insufficient free space for the selected deployment policy and persistent seeds.");
-        var target = Target(l, id); ValidateExisting(lease, id, target, verifyRotation: false, allowLegacy: true); EnsureStopped(target);
+        ValidateExisting(lease, id, target, verifyRotation: false, allowLegacy: true); EnsureStopped(target);
         var notes = new List<string>
         {
             "Offline deployment only; no server is launched.", "No resource links are approved; the entire game tree is independently cloned.",

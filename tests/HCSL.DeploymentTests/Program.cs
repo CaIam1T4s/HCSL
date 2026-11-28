@@ -58,6 +58,32 @@ try
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    if (args is ["--only", "cancel-validation"])
+    {
+        var deployed = service.Deploy(workspace, Options(first));
+        using var lease = new LocalWorkspaceManager().Acquire(workspace);
+        var installation = new HCSL.Infrastructure.Steam.Cs2Installation(lease.Layout);
+        var ready = File.ReadAllText(state);
+        installation.Finish(cancelled: true);
+        Check(File.ReadAllText(state) == ready, "cancellation before SteamCMD release must not alter the record");
+        installation.Begin(validation: true);
+        installation.Finish(cancelled: true);
+        using (var record = JsonDocument.Parse(File.ReadAllText(state)))
+            Check(record.RootElement.GetProperty("Status").GetString() == "ValidationInterrupted" &&
+                record.RootElement.GetProperty("BuildId").GetString() == "123", "cancelled validation lost the last verified build");
+        File.WriteAllText(native, "unfinished repair in shared content");
+        var plan = service.PrepareForStart(lease, Options(first), autoDeploy: false, default);
+        Check(plan.BuildId == deployed.BuildId && plan.RuntimePath == Runtime(first), "verified deployment must remain startable");
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Prepare(lease, Options(first), default));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(first), autoDeploy: true, default));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(second), autoDeploy: false, default));
+        Check(DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json")).OperationId == deployed.OperationId,
+            "start eligibility must not silently redeploy");
+        File.WriteAllText(Path.Combine(Runtime(first), "game/bin/linuxsteamrt64/cs2"), "damaged deployed binary");
+        Reject("HCSL-DEPLOY-BASELINE", () => service.PrepareForStart(lease, Options(first), autoDeploy: false, default));
+        Console.WriteLine("PASS cancelled validation preserves only an independently verified deployment");
+        return 0;
+    }
     Test("managed update writes a local baseline that deployment can resolve", () =>
     {
         using var lease = new LocalWorkspaceManager().Acquire(workspace);

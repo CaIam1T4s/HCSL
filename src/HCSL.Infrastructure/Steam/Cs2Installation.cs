@@ -13,8 +13,9 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
     private sealed record State(int FormatVersion, int AppId, string Status, string? BuildId = null);
     private string Metadata => Path.Combine(layout.LibraryRoot, ".hcsl", "cs2-install.json");
     private bool begun, completed;
+    private string? previousVerifiedBuild;
 
-    internal void Begin()
+    internal void Begin(bool validation = false)
     {
         if (layout.ServerRoot.Any(char.IsControl) || layout.ServerRoot.Contains('"'))
             throw new SteamCmdException("HCSL-CS2-PATH", "Installation path contains unsupported characters.");
@@ -25,8 +26,11 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
             State? state;
             try { state = JsonSerializer.Deserialize<State>(File.ReadAllText(Metadata)); }
             catch (JsonException) { throw new SteamCmdException("HCSL-CS2-STATE", "Installation metadata needs inspection."); }
-            if (state is not { FormatVersion: 1, AppId: 730 } || state.Status is not ("Installing" or "Incomplete" or "Ready"))
+            if (state is not { FormatVersion: 1, AppId: 730 } || state.Status is not ("Installing" or "Incomplete" or "Ready" or "ValidationInterrupted"))
                 throw new SteamCmdException("HCSL-CS2-STATE", "Unknown installation metadata; nothing was overwritten.");
+            if (validation && state.Status is ("Ready" or "ValidationInterrupted") &&
+                long.TryParse(state.BuildId, out var build) && build > 0)
+                previousVerifiedBuild = state.BuildId;
         }
         else if (Directory.EnumerateFileSystemEntries(layout.ServerRoot).Any())
             throw new SteamCmdException("HCSL-CS2-UNMANAGED", "The nonempty server directory is not an HCSL installation; import is not implemented.");
@@ -71,11 +75,16 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
         return path;
     }
 
-    internal void Finish()
+    internal void Finish(bool cancelled = false)
     {
         if (!begun || completed) return;
         // If this write itself fails, Installing remains a conservative non-ready state.
-        try { Write(new(1, 730, "Incomplete")); }
+        try
+        {
+            Write(cancelled && previousVerifiedBuild is not null
+                ? new(1, 730, "ValidationInterrupted", previousVerifiedBuild)
+                : new(1, 730, "Incomplete"));
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkspaceException) { }
     }
 
