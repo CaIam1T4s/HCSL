@@ -68,8 +68,11 @@ try
             rotationStore.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
                 current.Pool.Revision, current.Hash, maps.Select(map => new ServerMapTarget(ServerMapKind.Standard, map)).ToArray()));
         }
+        var initial = service.Deploy(workspace, Options(first));
         Save("de_dust2", "de_inferno");
         var prior = service.Deploy(workspace, Options(first));
+        Check(prior.OperationId == initial.OperationId && prior.RotationHash is not null &&
+            RuntimeDeploymentService.RotationFileMatches(prior, Runtime(first)), "Adding the first rotation replaced the runtime or did not write the map group.");
         Save("de_inferno", "de_dust2");
         var fail = new RuntimeDeploymentService(baseline, phase =>
         {
@@ -82,7 +85,14 @@ try
         var updated = service.Deploy(workspace, Options(first));
         Check(updated.OperationId == prior.OperationId && updated.RotationHash != prior.RotationHash &&
             RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Rotation update replaced the runtime or did not publish the new rotation.");
-        Console.WriteLine("PASS rotation-only deployment avoids cloning and rolls back a failed publication");
+        Save();
+        try { fail.Deploy(workspace, Options(first)); throw new InvalidOperationException("Expected publication failure."); }
+        catch (IOException e) when (e.Message == "injected receipt publication failure") { }
+        Check(RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Failed removal did not restore the map group.");
+        var removed = service.Deploy(workspace, Options(first));
+        Check(removed.OperationId == initial.OperationId && removed.RotationHash is null &&
+            !File.Exists(Path.Combine(Runtime(first), "game/csgo", ServerMapGroupRules.FileName)), "Removing the rotation replaced the runtime or left the map group behind.");
+        Console.WriteLine("PASS adding, editing and removing a rotation avoids cloning and rolls back a failed publication");
         return 0;
     }
     if (args is ["--only", "cancel-validation"])

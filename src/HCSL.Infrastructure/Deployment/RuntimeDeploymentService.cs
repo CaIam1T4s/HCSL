@@ -1237,13 +1237,13 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     }
     private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
     {
-        if (plan.RotationHash is null) return null;
         var target = plan.RuntimePath;
         var prior = ValidateExisting(lease, plan.InstanceId, target, verifyRotation: false, allowLegacy: true);
-        if (prior is not { FormatVersion: 2, RotationHash: not null } || prior.RotationHash == plan.RotationHash ||
+        if (prior is not { FormatVersion: 2 } ||
+            (prior.RotationHash == plan.RotationHash && prior.RotationCollection == plan.RotationCollection) ||
             prior.CopyMode != plan.CopyMode || prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness ||
             !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
-            ServerPreparation.IsStale(prior with { RotationHash = plan.RotationHash, RotationGroup = plan.RotationGroup }, plan) ||
+            ServerPreparation.IsStale(prior with { RotationHash = plan.RotationHash, RotationGroup = plan.RotationGroup, RotationCollection = plan.RotationCollection }, plan) ||
             !RotationFileMatches(prior, target)) return null;
 
         var layout = lease.Layout;
@@ -1251,20 +1251,28 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         VerifyBaseline(target, ActiveBaseline(layout, plan.BuildId), ct);
         var instance = InRoot(layout.InstancesRoot, Id(plan.InstanceId));
         var preset = LocalInstanceStore.Load(instance, plan.InstanceId).Presets.Single(p => p.Id == plan.PresetId);
-        var rotation = Rotation(InRoot(instance, "presets/" + Id(preset.Id)), preset);
-        if (rotation is null || rotation.Hash != plan.RotationHash)
+        var presetPath = InRoot(instance, "presets/" + Id(preset.Id));
+        var pool = LocalPresetMapPoolStore.ReadForDeployment(InRoot(presetPath, "maps.json"));
+        var collection = MapPoolRules.CollectionId(pool);
+        var rotation = collection is null ? ServerMapGroupRules.Create(preset.Id, preset.Map, pool) : null;
+        if (rotation?.Hash != plan.RotationHash || collection != plan.RotationCollection)
             throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The map pool changed while deployment was prepared.");
-        foreach (var map in LocalPresetMapPoolStore.ReadForDeployment(InRoot(instance, "presets/" + Id(preset.Id) + "/maps.json")).Maps)
+        var maps = collection is not null ? new[] { ServerMapRules.CollectionSeedMap }
+            : rotation is null ? new[] { preset.Map } : pool.Maps.Select(map => map.Value).Append(preset.Map);
+        foreach (var map in maps.Distinct(StringComparer.Ordinal))
         {
-            var package = new FileInfo(InRoot(target, "game/csgo/maps/" + map.Value + ".vpk"));
+            var package = new FileInfo(InRoot(target, "game/csgo/maps/" + map + ".vpk"));
             if (!package.Exists || package.Length == 0)
                 throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The deployed runtime is missing a map required by the new rotation.");
         }
-        ct.ThrowIfCancellationRequested();
-        var receipt = prior with { RotationGroup = rotation.Name, RotationHash = rotation.Hash };
         var path = InRoot(target, "game/csgo/" + ServerMapGroupRules.FileName);
-        var original = SmallText(path);
-        WriteRotation(target, rotation, replace: true);
+        // Only replace/delete a file whose ownership was verified against the previous receipt.
+        if (prior.RotationHash is null && Path.Exists(path)) return null;
+        var original = prior.RotationHash is null ? null : SmallText(path);
+        ct.ThrowIfCancellationRequested();
+        var receipt = prior with { RotationGroup = rotation?.Name, RotationHash = rotation?.Hash, RotationCollection = collection };
+        if (rotation is not null) WriteRotation(target, rotation, replace: original is not null);
+        else if (original is not null) File.Delete(path);
         try
         {
             checkpoint?.Invoke("RotationWritten");
@@ -1272,7 +1280,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         }
         catch
         {
-            WriteRotation(target, rotation with { Content = original }, replace: true);
+            if (original is not null)
+                WriteRotation(target, new(prior.RotationGroup!, preset.Map, original, prior.RotationHash!), replace: true);
+            else if (rotation is not null) File.Delete(path);
             throw;
         }
         return receipt;
