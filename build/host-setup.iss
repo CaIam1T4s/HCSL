@@ -54,6 +54,8 @@ en.UpdateHint=Click Update to continue.
 zh.UpdateHint=点击「更新」继续。
 en.BackHint=Click Back to review or change your choices.
 zh.BackHint=如需查看或修改选项，请点击「上一步」。
+en.OpenHost=Open HCSL Host
+zh.OpenHost=打开 HCSL Host
 
 [Types]
 Name: bundled; Description: "{cm:BundledMode}"
@@ -72,6 +74,9 @@ Source: "{#SystemDir}\*"; DestDir: "{app}"; Components: system; Flags: recursesu
 
 [Icons]
 Name: "{userprograms}\HCSL Host"; Filename: "{app}\HCSL.Host.exe"; WorkingDir: "{app}"
+
+[Run]
+Filename: "{app}\HCSL.Host.exe"; Description: "{cm:OpenHost}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
 
 [Code]
 function ProgramsClosed(): Boolean;
