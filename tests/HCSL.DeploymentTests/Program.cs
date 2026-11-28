@@ -89,6 +89,11 @@ try
         incremental.Deploy(workspace, Options(first));
         Check(File.ReadAllText(target) == "1.0.0", "Plugin was not added.");
         Select("2.0.0");
+        var pools = new LocalPresetMapPoolStore();
+        var pool = pools.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+        pools.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            pool.Pool.Revision, pool.Hash, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_inferno")]));
+        var rotationFile = Path.Combine(Runtime(first), "game/csgo", ServerMapGroupRules.FileName);
         File.WriteAllText(target, "user edit");
         Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
         Check(File.ReadAllText(target) == "user edit", "Plugin sync overwrote a user edit.");
@@ -99,9 +104,10 @@ try
         });
         try { failing.Deploy(workspace, Options(first)); throw new Exception("Expected plugin sync failure."); }
         catch (IOException e) when (e.Message == "injected sync failure") { }
-        Check(File.ReadAllText(target) == "1.0.0", "Failed sync did not restore the installed plugin.");
-        incremental.Deploy(workspace, Options(first));
-        Check(File.ReadAllText(target) == "2.0.0", "Plugin was not upgraded.");
+        Check(File.ReadAllText(target) == "1.0.0" && !File.Exists(rotationFile), "Failed sync did not roll back both changes.");
+        var updated = incremental.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(target) == "2.0.0" && updated.RotationHash is not null &&
+            RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Plugin and rotation were not published together.");
         Select(null);
         incremental.Deploy(workspace, Options(first));
         Check(!File.Exists(target) && File.Exists(sentinel), "Plugin removal failed or replaced the runtime.");

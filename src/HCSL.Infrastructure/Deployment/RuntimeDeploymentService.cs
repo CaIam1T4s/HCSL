@@ -1251,7 +1251,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (prior is not { FormatVersion: 2, PluginManifest: not null } || prior.PluginSetHash == plan.PluginSetHash ||
             prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness || prior.CopyMode != plan.CopyMode ||
             !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
-            ServerPreparation.IsStale(prior with { PluginSetHash = plan.PluginSetHash }, plan) ||
+            ServerPreparation.IsStale(prior with { PluginSetHash = plan.PluginSetHash, RotationHash = plan.RotationHash,
+                RotationGroup = plan.RotationGroup, RotationCollection = plan.RotationCollection }, plan) ||
             !RotationFileMatches(prior, plan.RuntimePath)) return null;
         var mapping = plan.PersistentMappings.Single(m => m.RuntimePath == "game/csgo/addons");
         if (mapping.Kind != DeploymentMappingKind.Link) return null;
@@ -1301,21 +1302,41 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             if (next is not null) writes.Add(new(next.RelativePath, next.FullPath, next.Sha256));
             else if (old is not null) removals.Add(new(old.Path, destination, old.Sha256));
         }
+        RotationChange? rotation = null;
+        if (prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection)
+        {
+            rotation = PrepareRotationChange(lease, plan, prior, ct);
+            if (rotation is null) return null;
+        }
         var updatedLedger = new PluginLedger(1, [.. keptEntries, .. newChanged.Select(p =>
             new PluginLedgerEntry(p.Id, p.Version, p.Files.Select(f => new PluginLedgerFile(f.Path, f.Sha256)).ToArray()))]);
         var changes = new PluginAddonPlan(mapping.PersistentPath, prefix, ledgerPath, [.. writes], [.. removals], updatedLedger);
         var tx = new Transaction(2, Guid.NewGuid(), plan.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
         var journal = Journal(layout, plan.InstanceId);
-        var receipt = prior with { OperationId = tx.OperationId, PluginSetHash = plan.PluginSetHash, PluginManifest = manifest };
+        var receipt = prior with { OperationId = tx.OperationId, PluginSetHash = plan.PluginSetHash, PluginManifest = manifest,
+            RotationGroup = plan.RotationGroup, RotationHash = plan.RotationHash, RotationCollection = plan.RotationCollection };
         ct.ThrowIfCancellationRequested();
         DeploymentFiles.AtomicJson(journal, tx);
         changes.Apply();
+        var rotationApplied = false;
         try
         {
+            if (rotation is not null)
+            {
+                rotation.Apply();
+                rotationApplied = true;
+                checkpoint?.Invoke("RotationWritten");
+            }
             checkpoint?.Invoke("IncrementalPluginsApplied");
             DeploymentFiles.AtomicJson(InRoot(plan.RuntimePath, "deployment.json"), receipt);
         }
-        catch { changes.Rollback(); File.Delete(journal); throw; }
+        catch
+        {
+            try { if (rotationApplied) rotation!.Rollback(); }
+            finally { changes.Rollback(); }
+            File.Delete(journal);
+            throw;
+        }
         changes.Commit();
         File.Delete(journal);
         return receipt;
@@ -1335,6 +1356,38 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var layout = lease.Layout;
         EnsureStopped(target);
         VerifyBaseline(target, ActiveBaseline(layout, plan.BuildId), ct);
+        var change = PrepareRotationChange(lease, plan, prior, ct);
+        if (change is null) return null;
+        ct.ThrowIfCancellationRequested();
+        var receipt = prior with { RotationGroup = plan.RotationGroup, RotationHash = plan.RotationHash, RotationCollection = plan.RotationCollection };
+        change.Apply();
+        try
+        {
+            checkpoint?.Invoke("RotationWritten");
+            DeploymentFiles.AtomicJson(InRoot(target, "deployment.json"), receipt);
+        }
+        catch { change.Rollback(); throw; }
+        return receipt;
+    }
+
+    private sealed record RotationChange(string Target, string Path, ServerMapGroupPlan? Next, ServerMapGroupPlan? Previous)
+    {
+        internal void Apply()
+        {
+            if (Next is not null) WriteRotation(Target, Next, replace: Previous is not null);
+            else if (Previous is not null) File.Delete(Path);
+        }
+        internal void Rollback()
+        {
+            if (Previous is not null) WriteRotation(Target, Previous, replace: true);
+            else if (Next is not null) File.Delete(Path);
+        }
+    }
+
+    private static RotationChange? PrepareRotationChange(IWorkspaceLease lease, DeploymentPlan plan, DeploymentReceipt prior, CancellationToken ct)
+    {
+        var target = plan.RuntimePath;
+        var layout = lease.Layout;
         var instance = InRoot(layout.InstancesRoot, Id(plan.InstanceId));
         var preset = LocalInstanceStore.Load(instance, plan.InstanceId).Presets.Single(p => p.Id == plan.PresetId);
         var presetPath = InRoot(instance, "presets/" + Id(preset.Id));
@@ -1354,24 +1407,9 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var path = InRoot(target, "game/csgo/" + ServerMapGroupRules.FileName);
         // Only replace/delete a file whose ownership was verified against the previous receipt.
         if (prior.RotationHash is null && Path.Exists(path)) return null;
-        var original = prior.RotationHash is null ? null : SmallText(path);
         ct.ThrowIfCancellationRequested();
-        var receipt = prior with { RotationGroup = rotation?.Name, RotationHash = rotation?.Hash, RotationCollection = collection };
-        if (rotation is not null) WriteRotation(target, rotation, replace: original is not null);
-        else if (original is not null) File.Delete(path);
-        try
-        {
-            checkpoint?.Invoke("RotationWritten");
-            DeploymentFiles.AtomicJson(InRoot(target, "deployment.json"), receipt);
-        }
-        catch
-        {
-            if (original is not null)
-                WriteRotation(target, new(prior.RotationGroup!, preset.Map, original, prior.RotationHash!), replace: true);
-            else if (rotation is not null) File.Delete(path);
-            throw;
-        }
-        return receipt;
+        return new(target, path, rotation, prior.RotationHash is null ? null :
+            new(prior.RotationGroup!, preset.Map, SmallText(path), prior.RotationHash));
     }
 
     private static string GameRelative(string runtimePath) =>
