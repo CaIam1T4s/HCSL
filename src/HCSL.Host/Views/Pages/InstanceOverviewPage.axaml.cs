@@ -182,11 +182,21 @@ public partial class InstanceOverviewPage : UserControl
         if (plan is null) { Error("无法获取部署预览", "宿主未连接或已有操作。"); return; }
         if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "确认部署") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
+        var previousRun = m.Server.RunId;
         if (!await m.DeployAsync()) { Error("部署未提交", m.Error.Length == 0 ? m.Server.DetailText : m.Error); return; }
-        for (var waited = 0; m.Server.Active && waited < 1800; waited++) await Task.Delay(500);
-        var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
-        Owner?.ShowInstanceNotification(done ? "部署完成" : "部署未完成", m.Server.DetailText,
-            done ? ToastKind.Success : ToastKind.Error);
+        for (var waited = 0; waited < 1800; waited++)
+        {
+            if (m.Server.Snapshot is { RunId: { } run, InstanceId: { } instance } status &&
+                instance == d.Id && run != previousRun && (!status.Active || status.State == ServerState.RecoveryRequired))
+            {
+                var done = m.Server.Code == "HCSL-SERVER-DEPLOYED";
+                Owner?.ShowInstanceNotification(done ? "部署完成" : "部署未完成", m.Server.DetailText,
+                    done ? ToastKind.Success : ToastKind.Error);
+                return;
+            }
+            if (m.Selected?.Entry.Id != d.Id || !m.Server.Connected) return;
+            await Task.Delay(500);
+        }
     });
 
     private async void RecoverDeployment(object? sender, RoutedEventArgs e) => await RunAsync(async () =>
