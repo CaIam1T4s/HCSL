@@ -204,6 +204,17 @@ try
     if (args is ["--only", "cancel-validation"])
     {
         var deployed = service.Deploy(workspace, Options(first));
+        var instanceFile = Path.Combine(workspace.DataRoot, "instances", first.Id.ToString("D"), "instance.json");
+        var presetFile = Path.Combine(Preset(first), "preset.json");
+        void Rename(string path)
+        {
+            var document = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!;
+            document["Name"] = "Renamed after deployment";
+            document["Revision"] = document["Revision"]!.GetValue<long>() + 1;
+            File.WriteAllText(path, document.ToJsonString());
+        }
+        Rename(instanceFile);
+        Rename(presetFile);
         using var lease = new LocalWorkspaceManager().Acquire(workspace);
         var installation = new HCSL.Infrastructure.Steam.Cs2Installation(lease.Layout);
         var ready = File.ReadAllText(state);
@@ -216,7 +227,9 @@ try
                 record.RootElement.GetProperty("BuildId").GetString() == "123", "cancelled validation lost the last verified build");
         File.WriteAllText(native, "unfinished repair in shared content");
         var plan = service.PrepareForStart(lease, Options(first), autoDeploy: false, default);
-        Check(plan.BuildId == deployed.BuildId && plan.RuntimePath == Runtime(first), "verified deployment must remain startable");
+        Check(plan.BuildId == deployed.BuildId && plan.RuntimePath == Runtime(first) &&
+            plan.InstanceRevision > deployed.InstanceRevision && plan.PresetRevision > deployed.PresetRevision,
+            "A verified deployment must remain startable after instance and preset renames.");
         Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Prepare(lease, Options(first), default));
         Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(first), autoDeploy: true, default));
         Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(second), autoDeploy: false, default));

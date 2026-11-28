@@ -94,7 +94,8 @@ internal static class ServerPreparation
     }
     internal static bool IsStale(DeploymentReceipt receipt, DeploymentPlan plan) =>
         receipt.BuildId != plan.BuildId || receipt.PresetId != plan.PresetId
-        || receipt.InstanceRevision != plan.InstanceRevision || receipt.PresetRevision != plan.PresetRevision
+        || receipt.Framework != plan.Framework || receipt.FrameworkReadiness != plan.FrameworkReadiness
+        || !receipt.PersistentMappings.SequenceEqual(plan.PersistentMappings)
         || !string.Equals(receipt.RotationGroup, plan.RotationGroup, StringComparison.Ordinal)
         || !string.Equals(receipt.RotationHash, plan.RotationHash, StringComparison.Ordinal)
         || !string.Equals(receipt.RotationCollection, plan.RotationCollection, StringComparison.Ordinal)
