@@ -990,7 +990,29 @@ if (only is null or "errors")
     WaitUntil(() => owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("HCSL-DEPLOY-PLUGINS") == true));
     Check(owner.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("hcsl doctor") == true),
         "Deployment failure dialog must include the actionable hint.");
-    Click(owner, "返回"); Layout();
+    var notifications = owner.FindControl<ToastStack>("InstanceNotifications")!;
+    Check(notifications.VisibleToasts > 0 && !WindowModalLayer.GetIsOpen(owner), "Start failure must use ToastStack, not a modal");
+    var shell = (ShellViewModel)owner.DataContext!;
+    foreach (var (code, action, page) in new[]
+    {
+        ("HCSL-DEPLOY-INSTALL-STATE", "前往下载中心", "downloads"),
+        ("HCSL-DEPLOY-BASELINE", "前往启动基线", "settings")
+    })
+    {
+        daemon.StartFailureCode = code;
+        PumpUntil(server.RefreshAsync()); Layout();
+        shell.NavigateCommand.Execute("instance"); Layout();
+        ((MainWindow)owner).InvokeInstanceScopeAction("start");
+        WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "启动")));
+        Click(owner, "启动");
+        WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, action)));
+        Check(!WindowModalLayer.GetIsOpen(owner), "Recovery action must not block the window");
+        Check(!notifications.GetVisualDescendants().OfType<TextBlock>()
+            .Any(t => t.Text?.Contains("hcsl baseline") == true), "GUI recovery must not require a CLI command");
+        Click(owner, action);
+        WaitUntil(() => shell.SelectedPage.Id == page);
+    }
+    shell.NavigateCommand.Execute("instance"); Layout();
     daemon.StartFailureCode = null;
     // Deploy-only and journal cleanup stay reachable from the advanced rows; their daemon calls are exercised directly
     // so the fixture's request ordering cannot hide the outcome.

@@ -127,7 +127,7 @@ public partial class MainWindow
             {
                 // A rejected start already carries the daemon's code and next step; show it in full, not as a toast.
                 watchingStart = false;
-                if (m.Server.DetailText is { Length: > 0 } detail) await ChooseAsync("服务器启动失败", detail, "返回");
+                if (m.Server.DetailText is { Length: > 0 } detail) ShowStartFailure(m.Server.Code, detail);
                 else ShowInstanceNotification("启动未提交", m.Error);
             }
         }
@@ -174,9 +174,40 @@ public partial class MainWindow
                     if (!await m.StartAsync(allowLowMemory: true)) watchingStart = false;
                 }
             }
-            else await ChooseAsync("服务器启动失败", failure.Value.Detail, "返回");
+            else ShowStartFailure(failure.Value.Code, failure.Value.Detail);
         }
         finally { handlingOutcome = false; }
+    }
+
+    private void ShowStartFailure(string code, string detail)
+    {
+        var repair = code switch
+        {
+            "HCSL-DEPLOY-INSTALL-STATE" => true,
+            "HCSL-DEPLOY-BASELINE" => false,
+            _ => (bool?)null
+        };
+        if (repair is not { } validate || DataContext is not ShellViewModel shell)
+        {
+            ShowInstanceNotification("服务器启动失败", detail);
+            return;
+        }
+
+        var message = validate
+            ? "服务端安装记录缺少有效的构建版本，暂不能部署。请在下载中心校验服务端文件，然后再启动。"
+            : "服务端文件未通过启动基线检查。请在设置中校验并重建启动基线，然后再启动。";
+        InstanceNotifications.Show(new TKCode.Arc.ToastOptions
+        {
+            Title = "服务器启动失败",
+            Description = $"{message}（{code}）",
+            Kind = TKCode.Arc.ToastKind.Error,
+            Action = new TKCode.Arc.ToastAction(validate ? "前往下载中心" : "前往启动基线", () =>
+            {
+                shell.NavigateCommand.Execute(validate ? "downloads" : "settings");
+                if (!validate)
+                    Dispatcher.UIThread.Post(() => SettingsPageView.ShowStartupBaseline(), DispatcherPriority.Loaded);
+            })
+        });
     }
 
     private async Task WarnManualPoolAsync(HostServerController model, Guid instanceId, Guid presetId)
