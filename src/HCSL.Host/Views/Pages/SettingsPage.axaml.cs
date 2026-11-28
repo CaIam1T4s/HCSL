@@ -9,7 +9,6 @@ public partial class SettingsPage : UserControl
     public SettingsPage() => InitializeComponent();
 
     public void ShowDownloadSettings() => DownloadSettingsSection.BringIntoView();
-    internal void ShowStartupBaseline() => StartupBaselineHeading.BringIntoView();
     private HCSL.Host.ViewModels.ShellViewModel? Model => DataContext as HCSL.Host.ViewModels.ShellViewModel;
     private async void RecoverDownload(object? sender, RoutedEventArgs e)
     {

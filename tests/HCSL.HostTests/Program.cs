@@ -993,10 +993,10 @@ if (only is null or "errors")
     var notifications = owner.FindControl<ToastStack>("InstanceNotifications")!;
     Check(notifications.VisibleToasts > 0 && !WindowModalLayer.GetIsOpen(owner), "Start failure must use ToastStack, not a modal");
     var shell = (ShellViewModel)owner.DataContext!;
-    foreach (var (code, action, page) in new[]
+    foreach (var (code, path) in new[]
     {
-        ("HCSL-DEPLOY-INSTALL-STATE", "前往下载中心", "downloads"),
-        ("HCSL-DEPLOY-BASELINE", "前往启动基线", "settings")
+        ("HCSL-DEPLOY-INSTALL-STATE", "「下载中心」"),
+        ("HCSL-DEPLOY-BASELINE", "「设置 → 启动基线」")
     })
     {
         daemon.StartFailureCode = code;
@@ -1005,12 +1005,13 @@ if (only is null or "errors")
         ((MainWindow)owner).InvokeInstanceScopeAction("start");
         WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, "启动")));
         Click(owner, "启动");
-        WaitUntil(() => owner.GetVisualDescendants().OfType<TKCode.Arc.Button>().Any(b => b.IsEffectivelyVisible && Equals(b.Content, action)));
-        Check(!WindowModalLayer.GetIsOpen(owner), "Recovery action must not block the window");
-        Check(!notifications.GetVisualDescendants().OfType<TextBlock>()
-            .Any(t => t.Text?.Contains("hcsl baseline") == true), "GUI recovery must not require a CLI command");
-        Click(owner, action);
-        WaitUntil(() => shell.SelectedPage.Id == page);
+        WaitUntil(() => notifications.GetVisualDescendants().OfType<TextBlock>()
+            .Any(t => t.IsEffectivelyVisible && t.Text?.Contains(path, StringComparison.Ordinal) == true));
+        Check(!WindowModalLayer.GetIsOpen(owner) && shell.SelectedPage.Id == "instance",
+            "Recovery notice must not block the window or navigate");
+        Check(!notifications.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Any(b => b.IsEffectivelyVisible && b.Content is string label && label.StartsWith("前往", StringComparison.Ordinal)),
+            "Recovery toast must not have navigation actions");
     }
     shell.NavigateCommand.Execute("instance"); Layout();
     daemon.StartFailureCode = null;

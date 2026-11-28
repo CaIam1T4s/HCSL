@@ -181,33 +181,13 @@ public partial class MainWindow
 
     private void ShowStartFailure(string code, string detail)
     {
-        var repair = code switch
+        var message = code switch
         {
-            "HCSL-DEPLOY-INSTALL-STATE" => true,
-            "HCSL-DEPLOY-BASELINE" => false,
-            _ => (bool?)null
+            "HCSL-DEPLOY-INSTALL-STATE" => "安装记录缺少有效版本。请到「下载中心」校验服务端文件。",
+            "HCSL-DEPLOY-BASELINE" => "启动基线校验失败。请到「设置 → 启动基线」校验并重建。",
+            _ => detail
         };
-        if (repair is not { } validate || DataContext is not ShellViewModel shell)
-        {
-            ShowInstanceNotification("服务器启动失败", detail);
-            return;
-        }
-
-        var message = validate
-            ? "服务端安装记录缺少有效的构建版本，暂不能部署。请在下载中心校验服务端文件，然后再启动。"
-            : "服务端文件未通过启动基线检查。请在设置中校验并重建启动基线，然后再启动。";
-        InstanceNotifications.Show(new TKCode.Arc.ToastOptions
-        {
-            Title = "服务器启动失败",
-            Description = $"{message}（{code}）",
-            Kind = TKCode.Arc.ToastKind.Error,
-            Action = new TKCode.Arc.ToastAction(validate ? "前往下载中心" : "前往启动基线", () =>
-            {
-                shell.NavigateCommand.Execute(validate ? "downloads" : "settings");
-                if (!validate)
-                    Dispatcher.UIThread.Post(() => SettingsPageView.ShowStartupBaseline(), DispatcherPriority.Loaded);
-            })
-        });
+        ShowInstanceNotification("服务器启动失败", message);
     }
 
     private async Task WarnManualPoolAsync(HostServerController model, Guid instanceId, Guid presetId)
