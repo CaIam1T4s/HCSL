@@ -559,15 +559,14 @@ try
         Check(File.Exists(ledger) && File.ReadAllText(ledger).Contains("csgo/addons/metamod/metamod.vdf"), "Plugin ledger missing.");
         // A ledger left inside addons by an older build is migrated out of the game-visible tree.
         var legacyLedger = Path.Combine(Preset(first), "addons", ".hcsl-plugin-ledger.json");
-        File.Copy(ledger, legacyLedger, true);
-        service.Deploy(workspace, Options(first));
-        Check(!File.Exists(legacyLedger) && File.Exists(ledger), "Legacy ledger was not migrated out of addons.");
+        File.Move(ledger, legacyLedger);
         var disabled = plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, saved.Hash, []));
         var disabledPlan = service.Plan(workspace, Options(first));
         Check(disabledPlan.PluginSetHash is null && disabledPlan.PluginSetHash != plan.PluginSetHash, "Disabling did not change hash.");
         service.Deploy(workspace, Options(first));
         Check(!File.Exists(Path.Combine(Runtime(first), "game/csgo/addons/metamod/metamod.vdf")), "Disabled package file remained.");
         Check(File.ReadAllText(Path.Combine(Runtime(first), "game/csgo/gameinfo.gi")) == "fixture gameinfo", "Disabled overlay retained gameinfo.");
+        Check(!File.Exists(legacyLedger) && File.Exists(ledger), "Legacy ledger was not migrated out of addons.");
         Check(!File.ReadAllText(ledger).Contains("metamod.vdf"), "Ledger retained removed file.");
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, disabled.Hash, [new("metamod", "1.0.0")]));
         service.Deploy(workspace, Options(first));
