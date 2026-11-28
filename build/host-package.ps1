@@ -26,7 +26,11 @@ if ($NativeDaemon) { $name += '-native-daemon-experimental' }
 $extension = if ($IsWindows) { 'zip' } else { 'tar.gz' }
 $outputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 $destination = Join-Path $outputDir "$name.$extension"
-if (Test-Path $destination) { throw "Package already exists: $destination" }
+$symbolsName = "$name-symbols"
+$symbolsDestination = Join-Path $outputDir "$symbolsName.$extension"
+foreach ($path in @($destination, $symbolsDestination)) {
+    if (Test-Path -LiteralPath $path) { throw "Package already exists: $path" }
+}
 $temp = New-Item -ItemType Directory (Join-Path ([IO.Path]::GetTempPath()) "hcsl-$([guid]::NewGuid())")
 try {
     $stage = Join-Path $temp.FullName $name
@@ -47,6 +51,22 @@ try {
     if ($managedHost -ne ($Mode -ne 'aot') -or $hostRuntime -ne ($Mode -eq 'self-contained') -or
         $daemonRuntime -ne (!$NativeDaemon -and $Mode -ne 'framework-dependent')) {
         throw "Published layout does not match $Mode."
+    }
+    $symbolsStage = Join-Path $temp.FullName $symbolsName
+    foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse -Force) {
+        if ($file.Extension -notin '.pdb', '.dbg') { continue }
+        $relative = [IO.Path]::GetRelativePath($stage, $file.FullName)
+        $target = Join-Path $symbolsStage $relative
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+        Move-Item -LiteralPath $file.FullName -Destination $target
+    }
+    $symbolsArchive = Join-Path $temp.FullName "$symbolsName.$extension"
+    if (Test-Path -LiteralPath $symbolsStage) {
+        if ($IsWindows) {
+            [IO.Compression.ZipFile]::CreateFromDirectory($symbolsStage, $symbolsArchive, [IO.Compression.CompressionLevel]::Optimal, $true)
+        } else {
+            Invoke-Checked tar @('-czf', $symbolsArchive, '-C', $temp.FullName, $symbolsName)
+        }
     }
     Copy-Item (Join-Path $root 'LICENSE') $stage
     $archive = Join-Path $temp.FullName "$name.$extension"
@@ -70,6 +90,9 @@ try {
     }
     New-Item -ItemType Directory -Force $outputDir | Out-Null
     Move-Item -LiteralPath $archive -Destination $destination
+    if (Test-Path -LiteralPath $symbolsArchive -PathType Leaf) {
+        Move-Item -LiteralPath $symbolsArchive -Destination $symbolsDestination
+    }
     $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $name.$extension" | Set-Content -Encoding ascii "$destination.sha256"
 } finally {
