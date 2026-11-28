@@ -36,6 +36,24 @@ en.InvalidDir=The installation directory must end in HCSL_Host.
 zh.InvalidDir=安装目录必须以 HCSL_Host 结尾。
 en.RuntimeSummary=Runtime:
 zh.RuntimeSummary=运行时：
+en.ReadyInstall=Ready to install
+zh.ReadyInstall=准备安装
+en.ReadyUpdate=Ready to update
+zh.ReadyUpdate=准备更新
+en.InstallDescription=Setup is ready to install HCSL Host.
+zh.InstallDescription=安装程序已准备好安装 HCSL Host。
+en.UpdateDescription=Setup is ready to update the existing HCSL Host installation.
+zh.UpdateDescription=安装程序已准备好更新现有的 HCSL Host。
+en.InstallAction=&Install
+zh.InstallAction=安装(&I)
+en.UpdateAction=&Update
+zh.UpdateAction=更新(&U)
+en.InstallHint=Click Install to continue.
+zh.InstallHint=点击「安装」继续。
+en.UpdateHint=Click Update to continue.
+zh.UpdateHint=点击「更新」继续。
+en.BackHint=Click Back to review or change your choices.
+zh.BackHint=如需查看或修改选项，请点击「上一步」。
 
 [Types]
 Name: bundled; Description: "{cm:BundledMode}"
@@ -166,10 +184,33 @@ begin
   if Result then WizardSelectComponents(Mode);
 end;
 
+function IsManagedUpdate(): Boolean;
+begin
+  Result := (GetPreviousData('RuntimeMode', '') <> '') and
+    (CompareText(GetPreviousData('ManagedDir', ''), NormalizeInstallDir(WizardDirValue())) = 0);
+end;
+
 procedure CurPageChanged(CurPageID: Integer);
 var
   MessageText: String;
 begin
+  if CurPageID = wpReady then begin
+    WizardForm.PageDescriptionLabel.Left := WizardForm.PageNameLabel.Left;
+    if IsManagedUpdate() then begin
+      WizardForm.PageNameLabel.Caption := CustomMessage('ReadyUpdate');
+      WizardForm.PageDescriptionLabel.Caption := CustomMessage('UpdateDescription');
+      WizardForm.NextButton.Caption := CustomMessage('UpdateAction');
+      MessageText := CustomMessage('UpdateHint');
+    end else begin
+      WizardForm.PageNameLabel.Caption := CustomMessage('ReadyInstall');
+      WizardForm.PageDescriptionLabel.Caption := CustomMessage('InstallDescription');
+      WizardForm.NextButton.Caption := CustomMessage('InstallAction');
+      MessageText := CustomMessage('InstallHint');
+    end;
+    if WizardForm.BackButton.Visible then
+      MessageText := MessageText + ' ' + CustomMessage('BackHint');
+    WizardForm.ReadyLabel.Caption := MessageText;
+  end;
   if (CurPageID = wpSelectComponents) and (GetPreviousData('RuntimeMode', '') = 'system') and
     (CompareText(GetPreviousData('ManagedDir', ''), NormalizeInstallDir(WizardDirValue())) = 0) then begin
     MessageText := RuntimeError();
