@@ -58,6 +58,26 @@ try
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    if (args is ["--only", "plugin-manifest"])
+    {
+        var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0");
+        var overlay = Path.Combine(package, "files", "csgo", "gameinfo.gi");
+        Directory.CreateDirectory(Path.GetDirectoryName(overlay)!);
+        File.WriteAllText(overlay, "patched gameinfo");
+        File.WriteAllText(Path.Combine(package, "plugin.json"), """{"FormatVersion":1,"Id":"metamod","Name":"Metamod","Version":"1.0.0"}""");
+        var plugins = new LocalPluginStore();
+        var definition = first.Definition!;
+        var list = plugins.Execute(workspace, new(PluginAction.List, first.Id, definition.SelectedPresetId));
+        plugins.Execute(workspace, new(PluginAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+            list.Hash, [new("metamod", "1.0.0")]));
+        service.Deploy(workspace, Options(first));
+        var receipt = DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json"));
+        var deployed = receipt.PluginManifest?.Single();
+        Check(deployed is { Id: "metamod", Version: "1.0.0" } &&
+            deployed.Files.Contains(new("csgo/gameinfo.gi", Hash(overlay))), "Receipt omitted a non-addon plugin overlay.");
+        Console.WriteLine("PASS deployment receipt records plugin files outside persistent addons");
+        return 0;
+    }
     if (args is ["--only", "rotation-update"])
     {
         var rotationStore = new LocalPresetMapPoolStore();

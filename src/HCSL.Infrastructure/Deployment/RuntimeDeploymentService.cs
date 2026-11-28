@@ -1200,7 +1200,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 ClearRotation(stage);
             var receipt = new DeploymentReceipt(2, tx.OperationId, "DeployedOffline", lease.Identity.DataId, lease.Identity.LibraryId,
                 plan.InstanceId, plan.PresetId, plan.InstanceRevision, plan.PresetRevision, plan.BuildId, plan.CopyMode, DateTimeOffset.UtcNow, plan.PersistentMappings,
-                plan.RotationGroup, plan.RotationHash, plan.RotationCollection, plan.PluginSetHash, plan.Framework, plan.FrameworkReadiness);
+                plan.RotationGroup, plan.RotationHash, plan.RotationCollection, plan.PluginSetHash, plan.Framework, plan.FrameworkReadiness,
+                CapturePluginManifest(currentPlugins.Packages));
             DeploymentFiles.AtomicJson(Path.Combine(stage, "deployment.json"), receipt);
             ValidateExisting(lease, tx.InstanceId, stage); cancellationToken.ThrowIfCancellationRequested();
             checkpoint?.Invoke("Prepared");
@@ -1235,6 +1236,15 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw;
         }
     }
+    private static DeployedPluginPackage[]? CapturePluginManifest(LocalPluginStore.Package[] packages)
+    {
+        var manifest = packages.Select(package => new DeployedPluginPackage(package.Id, package.Version, package.Hash,
+            package.FrameworkPayload, package.Framework,
+            package.Files.Select(file => new DeployedPluginFile(file.RelativePath, file.Sha256)).ToArray())).ToArray();
+        // Leave room for persistent mappings under the receipt reader's 1 MiB limit.
+        return JsonSerializer.SerializeToUtf8Bytes(manifest).Length <= 512 * 1024 ? manifest : null;
+    }
+
     private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
     {
         var target = plan.RuntimePath;

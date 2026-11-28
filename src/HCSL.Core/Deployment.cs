@@ -16,7 +16,11 @@ public sealed record DeploymentReceipt(int FormatVersion, Guid OperationId, stri
     DeploymentCopyMode CopyMode, DateTimeOffset CreatedAt, DeploymentMapping[] PersistentMappings,
     string? RotationGroup = null, string? RotationHash = null, string? RotationCollection = null,
     string? PluginSetHash = null, string? Framework = null,
-    FrameworkReadinessProfile FrameworkReadiness = FrameworkReadinessProfile.Standard);
+    FrameworkReadinessProfile FrameworkReadiness = FrameworkReadinessProfile.Standard,
+    DeployedPluginPackage[]? PluginManifest = null);
+public sealed record DeployedPluginPackage(string Id, string Version, string Hash, bool FrameworkPayload, string? Framework,
+    DeployedPluginFile[] Files);
+public sealed record DeployedPluginFile(string Path, string Sha256);
 public sealed record DeploymentEvent(string Stage, int FilesCompleted = 0, int TotalFiles = 0);
 
 /// <summary>Startup baseline maintenance: read-only status, or re-verify the installed build and record it.</summary>
