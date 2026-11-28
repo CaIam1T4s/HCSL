@@ -308,23 +308,6 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 throw new DeploymentException("HCSL-DEPLOY-MAP", "The built-in seed map required to start a Workshop collection is missing.");
         }
         VerifyBaseline(contentRoot, activeBaseline, ct);
-        if (retained is not null)
-        {
-            EnsureStopped(target);
-            var existingPlan = new DeploymentPlan(id, d.Revision, p.Id, p.Revision, retained.BuildId, target, retained.CopyMode,
-                0, 0, 0, 0, retained.PersistentMappings, [], rotation?.Name, rotation?.Hash, collection,
-                pluginSet.Hash, framework, FrameworkRules.ReadinessProfileFor(framework));
-            var comparison = allowPluginChanges ? retained with { PluginSetHash = existingPlan.PluginSetHash } : retained;
-            if (retained.Framework != existingPlan.Framework || retained.FrameworkReadiness != existingPlan.FrameworkReadiness ||
-                ServerPreparation.IsStale(comparison, existingPlan) || !RotationFileMatches(retained, target))
-                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
-            return existingPlan;
-        }
-        var windows = OperatingSystem.IsWindows();
-        if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
-            throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
-        var sdk = windows ? null : InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
-        if (sdk is not null && (!File.Exists(sdk) || new FileInfo(sdk).Length == 0)) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
         var mappings = new List<DeploymentMapping>
         {
             new("game/csgo/cfg", InRoot(preset, "cfg"), SeedDefaults: true),
@@ -349,6 +332,22 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
                 throw new DeploymentException("HCSL-DEPLOY-PERSISTENT", "A framework persistent path overlaps an already mapped runtime path.");
             mappings.Add(new("game/" + persistent.RuntimePath, persistentTarget, SeedDefaults: persistent.SeedPackageDefaults));
         }
+        if (retained is not null)
+        {
+            EnsureStopped(target);
+            var existingPlan = new DeploymentPlan(id, d.Revision, p.Id, p.Revision, retained.BuildId, target, retained.CopyMode,
+                0, 0, 0, 0, [.. mappings], [], rotation?.Name, rotation?.Hash, collection,
+                pluginSet.Hash, framework, FrameworkRules.ReadinessProfileFor(framework));
+            var comparison = allowPluginChanges ? retained with { PluginSetHash = existingPlan.PluginSetHash } : retained;
+            if (ServerPreparation.IsStale(comparison, existingPlan) || !RotationFileMatches(retained, target))
+                throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
+            return existingPlan;
+        }
+        var windows = OperatingSystem.IsWindows();
+        if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
+            throw new DeploymentException("HCSL-DEPLOY-COPY", "Windows offline deployment requires full copy.");
+        var sdk = windows ? null : InRoot(l.SteamCmdRoot, "tool/linux64/steamclient.so");
+        if (sdk is not null && (!File.Exists(sdk) || new FileInfo(sdk).Length == 0)) throw new DeploymentException("HCSL-DEPLOY-SDK", "Managed SteamCMD linux64/steamclient.so is missing.");
         foreach (var m in mappings) if (Directory.Exists(m.PersistentPath)) DeploymentFiles.Tree(m.PersistentPath, _ => { }, ct);
         // SDK ancestors may not exist yet; check their existing components before any seeding.
         var existingSdk = windows ? null : InRoot(instance, "home/.steam/sdk64/steamclient.so");
