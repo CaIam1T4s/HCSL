@@ -61,5 +61,5 @@ jobs:
           name: host-logs-${{ matrix.os }}-${{ matrix.mode }}
           path: |
             ~/.local/share/hcsl/logs/*.log
-            ~/AppData/Local/HCSL/data/logs/*.log
+            ~/AppData/Local/HCSL/logs/*.log
           if-no-files-found: ignore

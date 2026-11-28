@@ -31,7 +31,7 @@ try
     }
     if (background) BackgroundConsole.Detach();
     var pipe = LocalProtocol.PipeName(requestedPipe);
-    HCSL.Application.Diagnostics.DiagnosticsLog.Configure(Path.Combine(LocalPaths.Defaults().DataRoot, "logs"), "daemon.log");
+    HCSL.Application.Diagnostics.DiagnosticsLog.Configure(LocalPaths.DiagnosticsDirectory(), "daemon.log");
     HCSL.Application.Diagnostics.DiagnosticsLog.Write("daemon", "start pid=" + Environment.ProcessId + " pipe=" + pipe + " idle-seconds=" + idleSeconds + " background=" + background);
     var state = OperatingSystem.IsWindows()
         ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HCSL", "daemon")

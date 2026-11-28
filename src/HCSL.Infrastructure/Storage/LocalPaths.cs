@@ -7,6 +7,10 @@ public static class LocalPaths
     internal static StringComparison Comparison => OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
+    public static string DiagnosticsDirectory() => OperatingSystem.IsWindows()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HCSL", "logs")
+        : Path.Combine(Defaults().DataRoot, "logs");
+
     public static WorkspaceRequest Defaults(string? settingsRoot = null)
     {
         if (OperatingSystem.IsWindows())

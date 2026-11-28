@@ -183,6 +183,11 @@ public sealed partial class FrameworkManager
     private FrameworkCatalogResult SaveAndProject(string file, FrameworkDefinition framework, string libraryRoot, CatalogState state, bool fromCache, string? error = null)
     {
         catalogs[file] = state;
+        var dataRoot = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(file)!)!)!;
+        // An uninitialized workspace must stay empty until its owner marker is published.
+        var marker = Path.Combine(dataRoot, "workspace.json");
+        LocalPaths.RejectLink(marker);
+        if (!File.Exists(marker)) return Project(framework, libraryRoot, state, fromCache, error);
         var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {

@@ -19,6 +19,11 @@ public static class FrameworkCatalogTests
         {
             var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
             using (new LocalWorkspaceManager().Acquire(workspace)) { }
+            var fresh = new WorkspaceRequest(Path.Combine(root, "fresh-settings"), Path.Combine(root, "fresh-data"), Path.Combine(root, "fresh-library"));
+            using var bootstrapHttp = new CatalogHandler();
+            var beforeSetup = await new FrameworkManager(bootstrapHttp).CatalogAsync(fresh, new("counterstrikesharp"));
+            Check(beforeSetup.Versions.Length > 0 && !Directory.Exists(fresh.DataRoot), "Catalog lookup created an unowned workspace.");
+            using (new LocalWorkspaceManager().Acquire(fresh)) { }
             using var http = new CatalogHandler();
             var manager = new FrameworkManager(http);
             var empty = await manager.CatalogAsync(workspace, new("counterstrikesharp", CacheOnly: true));

@@ -28,7 +28,7 @@ public partial class App : Avalonia.Application
             IDaemonClient daemon = smoke is null ? new DaemonClient() : smoke;
             var steamCmd = new SteamCmdController(daemon, action => Dispatcher.UIThread.Post(action), bootstrapper);
             HCSL.Application.Diagnostics.DiagnosticsLog.Configure(
-                System.IO.Path.Combine(HCSL.Infrastructure.Storage.LocalPaths.Defaults().DataRoot, "logs"), "host.log");
+                HCSL.Infrastructure.Storage.LocalPaths.DiagnosticsDirectory(), "host.log");
             HCSL.Application.Diagnostics.DiagnosticsLog.Write("host", "start pid=" + Environment.ProcessId + " v" + ProductVersion.Current);
             var baseline = new BaselineController(new BaselineClient(daemon,
                 () => new(steamCmd.SettingsRoot, steamCmd.DataRoot, steamCmd.LibraryRoot)));
