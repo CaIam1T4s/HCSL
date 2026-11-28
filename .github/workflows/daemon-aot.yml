@@ -7,6 +7,30 @@ permissions:
   contents: read
 
 jobs:
+  windows-host-double-aot:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Package and smoke-test the extracted Host with native Daemon
+        shell: pwsh
+        run: |
+          ./build/host-package.ps1 -Mode aot -NativeDaemon -Output artifacts/host-double-aot -Smoke
+          $archive = Get-Item artifacts/host-double-aot/*-win-x64-aot-native-daemon-experimental.zip
+          $expected = ((Get-Content "$($archive.FullName).sha256" -Raw).Trim() -split '\s+')[0]
+          if ((Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash -ne $expected) {
+            throw 'Windows double AOT archive checksum mismatch.'
+          }
+      - name: Upload verified Windows experiment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-double-aot-win-x64
+          path: artifacts/host-double-aot/*
+          if-no-files-found: error
+
   windows-daemon-aot:
     runs-on: windows-2022
     timeout-minutes: 25
