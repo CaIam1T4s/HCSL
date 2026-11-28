@@ -7,6 +7,26 @@ permissions:
   contents: read
 
 jobs:
+  windows-setup:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build Setup from the verified portable packages
+        shell: pwsh
+        run: |
+          ./build/host-package.ps1 -Mode self-contained -Output artifacts/setup-input -Smoke
+          ./build/host-package.ps1 -Mode framework-dependent -Output artifacts/setup-input -Smoke
+          ./build/host-setup.ps1 -Packages artifacts/setup-input -Output artifacts/setup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-setup-win-x64
+          path: artifacts/setup/*.exe
+          if-no-files-found: error
+
   package:
     name: Host / ${{ matrix.os }} / ${{ matrix.mode }}
     runs-on: ${{ matrix.os }}
