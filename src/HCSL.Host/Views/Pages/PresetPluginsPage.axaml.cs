@@ -59,7 +59,23 @@ public partial class PresetPluginsPage : UserControl
             if (e.Property != IsVisibleProperty) return;
             if (IsVisible) _ = LoadAsync(); else { generation++; PluginProperties.IsOpen = false; CloseTip(); viewMenu?.Close(); }
         };
-        DataContextChanged += (_, _) => { if (IsVisible) _ = LoadAsync(); };
+        DataContextChanged += (_, _) => { ObserveWriteGate(); if (IsVisible) _ = LoadAsync(); };
+        AttachedToVisualTree += (_, _) => ObserveWriteGate();
+        DetachedFromVisualTree += (_, _) => ObserveWriteGate(detached: true);
+    }
+
+    private HostServerController? writeGateModel;
+    private void ObserveWriteGate(bool detached = false)
+    {
+        if (writeGateModel is not null) writeGateModel.PropertyChanged -= WriteGateChanged;
+        writeGateModel = !detached && TopLevel.GetTopLevel(this) is not null ? (DataContext as ShellViewModel)?.Servers : null;
+        if (writeGateModel is not null) writeGateModel.PropertyChanged += WriteGateChanged;
+        SelectionChanged?.Invoke();
+    }
+
+    private void WriteGateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (IsVisible) SelectionChanged?.Invoke();
     }
 
     private static Control? RowControl(object? source) => (source as Avalonia.Visual)?.GetSelfAndVisualAncestors()
@@ -304,7 +320,14 @@ public partial class PresetPluginsPage : UserControl
             Render(result);
         }
         catch (IOException ex) { if (Current()) Owner?.ShowInstanceNotification("无法读取插件", ex.Message); }
-        finally { if (Current()) ManageButton.IsEnabled = scope.Model.Server.Connected && !editing; }
+        finally
+        {
+            if (Current())
+            {
+                ManageButton.IsEnabled = scope.Model.Server.Connected && !editing;
+                SelectionChanged?.Invoke();
+            }
+        }
     }
 
     private static bool IsPlugin(PluginPackageInfo package) => FrameworkRules.Find(package.Id) is null &&

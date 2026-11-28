@@ -104,11 +104,13 @@ public sealed class WindowsServerRuntime : IServerRuntimeService
     public async Task<ServerOutcome> RunAsync(WorkspaceRequest workspace, Guid runId, ServerStartOptions options,
         IProgress<ServerRuntimeEvent> events, CancellationToken stop)
     {
-        var plan = await PlanDeploymentAsync(workspace, options.InstanceId, stop);
+        using var lease = new LocalWorkspaceManager().Acquire(workspace);
+        var deployment = new RuntimeDeploymentService();
+        var deploymentOptions = new DeploymentOptions(options.InstanceId, DeploymentCopyMode.FullCopy);
+        var plan = deployment.PrepareForStart(lease, deploymentOptions, options.AutoDeploy, stop);
         if (plan.RotationCollection is not null)
             throw new ServerException("HCSL-SERVER-WORKSHOP", "Windows startup currently supports installed maps only.");
-        if (options.AutoDeploy) await DeployAsync(workspace, options.InstanceId, events, stop);
-        using var lease = new LocalWorkspaceManager().Acquire(workspace);
+        if (options.AutoDeploy) deployment.Deploy(lease, deploymentOptions, cancellationToken: stop);
         var receipt = RuntimeDeploymentService.ValidateExisting(lease, options.InstanceId, plan.RuntimePath,
             verifyRotation: false, allowLegacy: false);
         if (receipt is null || ServerPreparation.IsStale(receipt, plan) || !RuntimeDeploymentService.RotationFileMatches(receipt, plan.RuntimePath))

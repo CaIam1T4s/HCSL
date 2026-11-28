@@ -995,7 +995,8 @@ if (only is null or "errors")
     var shell = (ShellViewModel)owner.DataContext!;
     foreach (var (code, path) in new[]
     {
-        ("HCSL-DEPLOY-INSTALL-STATE", "「下载中心」"),
+        ("HCSL-DEPLOY-INSTALL-STATE", "安装记录缺少有效版本"),
+        ("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "服务端校验未完成"),
         ("HCSL-DEPLOY-BASELINE", "「设置 → 启动基线」")
     })
     {

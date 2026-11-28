@@ -393,16 +393,11 @@ public sealed class ServerController : INotifyPropertyChanged, IDisposable
     public Task<bool> DeployAsync() =>
         CanDeploy ? SendAsync(new(ServerAction.Deploy, attached), true, "deploy", 4000) : Task.FromResult(false);
 
-    /// <summary>Read-only deployment preview for the confirmation dialog; failure is reported in <see cref="Code"/>.</summary>
+    /// <summary>Read-only deployment preview; daemon and transport errors propagate to the caller.</summary>
     public async Task<DeploymentPlan?> PlanDeploymentAsync(WorkspacePaths workspace)
     {
         if (!connected || attached == Guid.Empty) return null;
-        try
-        {
-            var plan = await new ServerClient(client).PlanDeploymentAsync(attached, workspace);
-            return plan;
-        }
-        catch (IOException) { return null; }
+        return await new ServerClient(client).PlanDeploymentAsync(attached, workspace);
     }
 
     /// <summary>Deployment recovery is read-modify-write on the runtime, so it needs the same admission as deploy.</summary>

@@ -183,6 +183,7 @@ public partial class MainWindow
     {
         var message = code switch
         {
+            "HCSL-DEPLOY-VALIDATION-INTERRUPTED" => "服务端校验未完成。请到「下载中心」完成校验后再部署。",
             "HCSL-DEPLOY-INSTALL-STATE" => "安装记录缺少有效版本。请到「下载中心」校验服务端文件。",
             "HCSL-DEPLOY-BASELINE" => "启动基线校验失败。请到「设置 → 启动基线」校验并重建。",
             _ => detail

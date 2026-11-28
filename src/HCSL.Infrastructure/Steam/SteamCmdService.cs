@@ -89,7 +89,6 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             if (installMode is not null)
             {
                 installation = new Cs2Installation(lease.Layout, baselineRefresh);
-                installation.Begin();
             }
             // Publish before launch: a crash at any later point fails closed until explicit recovery.
             if (OperatingSystem.IsWindows()) job = new WindowsProcessJob();
@@ -146,8 +145,11 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
                 var groupJournal = SteamCmdJournal.New(group);
                 groupJournal.Save(userDirectory);
                 groupJournal.Save(directory);
-                await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             }
+            ct.ThrowIfCancellationRequested();
+            installation?.Begin(installMode == SteamCmdInstallMode.Validate);
+            if (OperatingSystem.IsLinux())
+                await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             else
                 await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray()), SteamCmdJsonContext.Default.SteamCmdGateCommand).AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
@@ -215,7 +217,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
         }
         finally
         {
-            installation?.Finish();
+            installation?.Finish(cancellationToken.IsCancellationRequested);
             inputStop.Cancel();
             job?.Dispose();
             process?.Dispose();

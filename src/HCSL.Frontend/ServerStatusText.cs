@@ -117,6 +117,9 @@ public static class ServerStatusText
         "HCSL-DEPLOY-STALE" => english
             ? "Deployment is stale: hcsl deploy"
             : "部署已过期：hcsl deploy",
+        "HCSL-DEPLOY-VALIDATION-INTERRUPTED" => english
+            ? "Complete server file validation before creating or rebuilding a deployment."
+            : "请完成服务端文件校验后再部署。",
         "HCSL-DEPLOY-INSTALL-STATE" => english
             ? "Validate the CS2 server files to restore the installation record."
             : "请校验服务端文件以恢复安装记录。",
