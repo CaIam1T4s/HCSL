@@ -35,6 +35,11 @@ try {
         }
         return $dir
     }
+    $chinese = Join-Path $temp 'ChineseSimplified.isl'
+    Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/jrsoftware/issrc/is-6_5_4/Files/Languages/Unofficial/ChineseSimplified.isl' -OutFile $chinese
+    if ((Get-FileHash -LiteralPath $chinese -Algorithm SHA256).Hash -ne 'fc1dbf303559cfefd47cf59eec7f1ad1c5fc6266ef8fa64569c13bc754adfeb4') {
+        throw 'Unexpected Inno Setup Chinese translation checksum.'
+    }
     $bundled = Expand-Payload 'self-contained'
     $system = Expand-Payload 'framework-dependent'
     $cleanup = Join-Path $temp 'cleanup.iss'
@@ -62,7 +67,7 @@ try {
                 throw "Unexpected framework requirement in $file"
             }
             "    if not HasRuntime('$($framework.name)', '$($framework.version)') then begin"
-            "      Result := 'Install x64 $($framework.name) $($framework.version) or a newer .NET 10 patch, or select the bundled runtime.';"
+            "      Result := FmtMessage(CustomMessage('RuntimeMissing'), ['$($framework.name)', '$($framework.version)']);"
             '      Exit;'
             '    end;'
         }
@@ -70,7 +75,7 @@ try {
     $runtimeChecks | Set-Content -LiteralPath $checks -Encoding utf8
     [void][IO.Directory]::CreateDirectory($outputDir)
     & $Compiler "/DAppVersion=$version" "/DBundledDir=$bundled" "/DSystemDir=$system" "/DOutputDir=$outputDir" `
-        "/DCleanupFile=$cleanup" "/DRuntimeChecksFile=$checks" (Join-Path $PSScriptRoot 'host-setup.iss')
+        "/DCleanupFile=$cleanup" "/DRuntimeChecksFile=$checks" "/DChineseMessagesFile=$chinese" (Join-Path $PSScriptRoot 'host-setup.iss')
     if ($LASTEXITCODE -ne 0) { throw "ISCC exited with code $LASTEXITCODE" }
 } finally {
     Remove-Item -LiteralPath $temp -Force -Recurse
