@@ -124,8 +124,12 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             {
                 if (windowsGateAssembly is null || !File.Exists(windowsGateAssembly))
                     throw new SteamCmdException("HCSL-STEAMCMD-PROCESS", "Windows requires the SteamCmdCheck process gate assembly.");
-                start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
-                start.ArgumentList.Add(windowsGateAssembly);
+                if (Path.GetExtension(windowsGateAssembly).Equals(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    start.FileName = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+                    start.ArgumentList.Add(windowsGateAssembly);
+                }
+                else start.FileName = windowsGateAssembly;
                 start.ArgumentList.Add("--process-gate");
             }
             process = new Process { StartInfo = start };
@@ -147,7 +151,7 @@ public sealed class SteamCmdService(string? windowsGateAssembly = null, HttpClie
             if (OperatingSystem.IsLinux())
                 await process.StandardInput.WriteLineAsync("HCSL_START".AsMemory(), ct);
             else
-                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray())).AsMemory(), ct);
+                await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new SteamCmdGateCommand(executable, arguments.ToArray()), SteamCmdJsonContext.Default.SteamCmdGateCommand).AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
             stdout = ReadOutputAsync(process.StandardOutput, false, parser);
             stderr = ReadOutputAsync(process.StandardError, true, parser);

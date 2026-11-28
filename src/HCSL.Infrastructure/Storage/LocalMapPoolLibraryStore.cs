@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 
@@ -12,11 +11,8 @@ namespace HCSL.Infrastructure.Storage;
 /// </summary>
 public sealed class LocalMapPoolLibraryStore
 {
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
+    private static readonly System.Text.Json.Serialization.Metadata.JsonTypeInfo<MapPoolLibrary> Json =
+        MapPoolStorageJsonContext.CamelCase.MapPoolLibrary;
     private const int MaxBytes = 256 * 1024;
 
     public MapPoolLibraryResult Execute(WorkspaceRequest workspace, MapPoolLibraryCommand command)
@@ -160,7 +156,7 @@ public sealed class LocalMapPoolLibraryStore
             if (!File.Exists(file) || new FileInfo(file).Length > MaxBytes)
                 throw new InstanceException("HCSL-MAPPOOL-LIMIT", "map-pools.json is not a regular file or exceeds 256 KiB.");
             var bytes = File.ReadAllBytes(file);
-            var library = JsonSerializer.Deserialize<MapPoolLibrary>(bytes, Json)
+            var library = JsonSerializer.Deserialize(bytes, Json)
                 ?? throw new InstanceException("HCSL-MAPPOOL-INVALID", "Missing pool library.");
             MapPoolLibraryRules.Validate(library);
             return new(library, Hash(bytes));

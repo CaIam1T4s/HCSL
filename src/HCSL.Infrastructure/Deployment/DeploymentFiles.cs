@@ -5,6 +5,9 @@ namespace HCSL.Infrastructure.Deployment;
 
 internal static class DeploymentFiles
 {
+    private static System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> JsonType<T>() =>
+        DeploymentJsonContext.Default.GetTypeInfo(typeof(T)) as System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>
+        ?? throw new NotSupportedException($"Unsupported deployment metadata type: {typeof(T)}.");
     [DllImport("libc", SetLastError = true)]
     private static extern int ioctl(int fd, nuint request, int source);
     internal static void Copy(string source, string destination, DeploymentCopyMode mode)
@@ -35,7 +38,7 @@ internal static class DeploymentFiles
         try
         {
             using (var stream = LocalPaths.CreateFile(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { System.Text.Json.JsonSerializer.Serialize(stream, value); stream.Flush(true); }
+            { System.Text.Json.JsonSerializer.Serialize(stream, value, JsonType<T>()); stream.Flush(true); }
             File.Move(temp, path, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
@@ -53,7 +56,7 @@ internal static class DeploymentFiles
     {
         LocalPaths.RejectLink(path);
         if (new FileInfo(path).Length > 1024 * 1024) throw new DeploymentException("HCSL-DEPLOY-STATE", "Deployment metadata is too large.");
-        return System.Text.Json.JsonSerializer.Deserialize<T>(File.ReadAllText(path))
+        return System.Text.Json.JsonSerializer.Deserialize(File.ReadAllText(path), JsonType<T>())
             ?? throw new DeploymentException("HCSL-DEPLOY-STATE", "Deployment metadata is empty.");
     }
 }

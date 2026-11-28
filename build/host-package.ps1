@@ -3,7 +3,8 @@
 param(
     [Parameter(Mandatory)] [ValidateSet('self-contained', 'framework-dependent', 'aot')] [string] $Mode,
     [Parameter(Mandatory)] [string] $Output,
-    [switch] $Smoke
+    [switch] $Smoke,
+    [switch] $NativeDaemon
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,7 +20,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $rid = if ($IsWindows) { 'win-x64' } else { 'linux-x64' }
 $version = ([xml](Get-Content -Raw (Join-Path $root 'Directory.Build.props'))).Project.PropertyGroup.Version
 if ($version -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$') { throw 'Invalid package version.' }
+if ($NativeDaemon -and $Mode -ne 'aot') { throw 'The native Daemon experiment requires -Mode aot.' }
 $name = "HCSL-Host-$version-$rid-$Mode"
+if ($NativeDaemon) { $name += '-native-daemon-experimental' }
 $extension = if ($IsWindows) { 'zip' } else { 'tar.gz' }
 $outputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 $destination = Join-Path $outputDir "$name.$extension"
@@ -29,10 +32,12 @@ try {
     $stage = Join-Path $temp.FullName $name
     $contained = ($Mode -ne 'framework-dependent').ToString().ToLowerInvariant()
     $aot = ($Mode -eq 'aot').ToString().ToLowerInvariant()
+    $daemonAot = $NativeDaemon.IsPresent.ToString().ToLowerInvariant()
     Invoke-Checked dotnet @('publish', (Join-Path $root 'src/HCSL.Host/HCSL.Host.csproj'), '-c', 'Release', '-r', $rid,
-        '--self-contained', $contained, '-p:PublishSingleFile=false', "-p:HostPublishAot=$aot", '-o', $stage)
+        '--self-contained', $contained, '-p:PublishSingleFile=false', "-p:HostPublishAot=$aot", "-p:BundledDaemonAot=$daemonAot", '-o', $stage)
     $exe = if ($IsWindows) { '.exe' } else { '' }
-    foreach ($file in @("HCSL.Host$exe", "daemon/HCSL.Daemon$exe", 'daemon/HCSL.Daemon.dll')) {
+    $identityFile = if ($NativeDaemon) { 'daemon/daemon.native-aot' } else { 'daemon/HCSL.Daemon.dll' }
+    foreach ($file in @("HCSL.Host$exe", "daemon/HCSL.Daemon$exe", $identityFile)) {
         if (!(Test-Path -LiteralPath (Join-Path $stage $file) -PathType Leaf)) { throw "Missing published file: $file" }
     }
     $runtimeFile = if ($IsWindows) { 'coreclr.dll' } else { 'libcoreclr.so' }
@@ -40,7 +45,7 @@ try {
     $hostRuntime = Test-Path -LiteralPath (Join-Path $stage $runtimeFile)
     $daemonRuntime = Test-Path -LiteralPath (Join-Path $stage "daemon/$runtimeFile")
     if ($managedHost -ne ($Mode -ne 'aot') -or $hostRuntime -ne ($Mode -eq 'self-contained') -or
-        $daemonRuntime -ne ($Mode -ne 'framework-dependent')) {
+        $daemonRuntime -ne (!$NativeDaemon -and $Mode -ne 'framework-dependent')) {
         throw "Published layout does not match $Mode."
     }
     Copy-Item (Join-Path $root 'LICENSE') $stage

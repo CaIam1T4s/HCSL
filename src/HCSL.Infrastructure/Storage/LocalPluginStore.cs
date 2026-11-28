@@ -11,9 +11,12 @@ namespace HCSL.Infrastructure.Storage;
 /// Package files are game-root relative (for example csgo/addons/metamod/...). This store never
 /// executes a plugin and never reads package contents into the UI.
 /// </summary>
-public sealed class LocalPluginStore : IPluginStore
+public sealed partial class LocalPluginStore : IPluginStore
 {
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = false };
+    [System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
+    [System.Text.Json.Serialization.JsonSerializable(typeof(PluginManifest))]
+    [System.Text.Json.Serialization.JsonSerializable(typeof(PackageManifest))]
+    private sealed partial class PluginStorageJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
     private static readonly string[] Roots = ["csgo", "core", "csgo_lv"];
     /// <summary>Metadata signature → validated package. Package files never change while HCSL runs.</summary>
     private static readonly ConcurrentDictionary<string, (string Signature, Package Package)> Cache = new(StringComparer.Ordinal);
@@ -90,7 +93,7 @@ public sealed class LocalPluginStore : IPluginStore
         if (!File.Exists(manifestPath)) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin package manifest is missing.");
         if (new FileInfo(manifestPath).Length > PluginRules.MaxManifestBytes) throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is too large.");
         var manifestText = File.ReadAllText(manifestPath);
-        var manifest = JsonSerializer.Deserialize<PackageManifest>(manifestText, Json)
+        var manifest = JsonSerializer.Deserialize(manifestText, PluginStorageJsonContext.Default.PackageManifest)
             ?? throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest is empty.");
         if (manifest.FormatVersion != 1 || manifest.Id != id || manifest.Version != version || string.IsNullOrWhiteSpace(manifest.Name) || manifest.Name.Length > 100 || manifest.Name.Any(char.IsControl))
             throw new InstanceException("HCSL-PLUGIN-PACKAGE", "Plugin manifest identity does not match its folder.");
@@ -191,7 +194,7 @@ public sealed class LocalPluginStore : IPluginStore
         SafePath(file);
         if (!File.Exists(file)) return (new(1, 0, []), "");
         if (new FileInfo(file).Length > PluginRules.MaxManifestBytes) throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin manifest is too large.");
-        var manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(file), Json)
+        var manifest = JsonSerializer.Deserialize(File.ReadAllText(file), PluginStorageJsonContext.Default.PluginManifest)
             ?? throw new InstanceException("HCSL-PLUGIN-STATE", "Plugin manifest is empty.");
         if (manifest.FormatVersion != 1) throw new InstanceException("HCSL-PLUGIN-STATE", "Unknown plugin manifest format.");
         var plugins = manifest.Plugins ?? [];
@@ -219,7 +222,7 @@ public sealed class LocalPluginStore : IPluginStore
                     var root = SafePath(Path.Combine(folder, version));
                     var file = new FileInfo(SafePath(Path.Combine(root, "plugin.json")));
                     if (!file.Exists || file.Length > PluginRules.MaxManifestBytes) continue;
-                    var package = JsonSerializer.Deserialize<PackageManifest>(File.ReadAllText(file.FullName), Json);
+                    var package = JsonSerializer.Deserialize(File.ReadAllText(file.FullName), PluginStorageJsonContext.Default.PackageManifest);
                     if (package is not { FormatVersion: 1 } || package.Id != framework.Id || package.Version != version ||
                         !Directory.Exists(SafePath(Path.Combine(root, SafeRelative(package.FilesRoot ?? "files"))))) continue;
                     result.Add(new(framework.Id, framework.DisplayName, version, "", 0, 0, framework.Id, true, PluginCategory.Framework));
@@ -289,7 +292,7 @@ public sealed class LocalPluginStore : IPluginStore
         try
         {
             using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            { JsonSerializer.Serialize(stream, manifest, Json); stream.Flush(true); }
+            { JsonSerializer.Serialize(stream, manifest, PluginStorageJsonContext.Default.PluginManifest); stream.Flush(true); }
             File.Move(temp, file, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }

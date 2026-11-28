@@ -7,10 +7,14 @@ using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Storage;
 
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP: deployment baseline is Linux-only."); return 0; }
+var previewBinary = args is ["--only", "preview-native", var binary] ? Path.GetFullPath(binary) : null;
+var previewOnly = previewBinary is not null || args is ["--only", "preview-json"];
+if (previewOnly) AppContext.SetSwitch("System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault", false);
 var root = Path.Combine(Environment.GetEnvironmentVariable("HCSL_DEPLOYMENT_TEST_ROOT") ?? Path.GetTempPath(), "hcsl-deployment-" + Guid.NewGuid().ToString("N"));
 var oldState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
 Environment.SetEnvironmentVariable("XDG_STATE_HOME", Path.Combine(root, "state"));
-var workspace = new WorkspaceRequest(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
+var settings = previewBinary is null ? Path.Combine(root, "settings") : Path.Combine(root, "daemon-config", "hcsl");
+var workspace = new WorkspaceRequest(settings, Path.Combine(root, "data"), Path.Combine(root, "library"));
 int passed = 0;
 void Check(bool value, string message) { if (!value) throw new Exception(message); }
 void Test(string name, Action action) { action(); Console.WriteLine("PASS " + name); passed++; }
@@ -266,6 +270,88 @@ try
         Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")), "plan wrote deployment data");
         Reject("HCSL-DEPLOY-CONFLICT", () => service.Plan(workspace, Options(first) with { ExpectedRevision = 999 }));
     });
+    if (previewOnly)
+    {
+        Check(!JsonSerializer.IsReflectionEnabledByDefault, "JSON reflection must be disabled");
+        if (previewBinary is not null)
+        {
+            var pipe = "hcsl-native-preview-" + Guid.NewGuid().ToString("N");
+            var start = new ProcessStartInfo(previewBinary) { UseShellExecute = false, RedirectStandardOutput = true };
+            start.ArgumentList.Add("--pipe"); start.ArgumentList.Add(pipe);
+            start.ArgumentList.Add("--idle-seconds"); start.ArgumentList.Add("3");
+            start.Environment["XDG_CONFIG_HOME"] = Path.Combine(root, "daemon-config");
+            start.Environment["XDG_DATA_HOME"] = Path.Combine(root, "daemon-data");
+            start.Environment["HOME"] = root;
+            using var daemon = Process.Start(start) ?? throw new InvalidOperationException("Cannot launch native daemon.");
+            try
+            {
+                var ready = await daemon.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(ready == "HCSL daemon ready: " + pipe, "native daemon did not report readiness");
+                var daemonClient = new HCSL.Frontend.DaemonClient(pipe);
+                var paths = new HCSL.Contracts.WorkspacePaths(workspace.SettingsRoot, workspace.DataRoot, workspace.LibraryRoot);
+                var client = new HCSL.Frontend.ServerClient(daemonClient);
+                var plan = await client.PlanDeploymentAsync(first.Id, paths);
+                Check(plan.InstanceId == first.Id && plan.BuildId == "123" && plan.FileCount == sourceHashes.Count,
+                    "native IPC returned the wrong plan");
+                Check(!Directory.Exists(Runtime(first)) && !Directory.Exists(Path.Combine(Preset(first), "home")) && !File.Exists(Journal(first)),
+                    "native preview wrote runtime or preset data");
+                var baselineStatus = await new HCSL.Frontend.BaselineClient(daemonClient, () => paths).StatusAsync();
+                Check(baselineStatus is { BuildId: "123", Source: "Local" }, "native baseline status did not use the local baseline");
+                var content = await daemonClient.SendAsync(new(HCSL.Contracts.LocalProtocol.Version, Guid.NewGuid(),
+                    HCSL.Contracts.RequestKind.ContentStatus, new(paths)));
+                using var status = JsonDocument.Parse(content.ContentStatusJson ?? "null");
+                Check(content.Success && status.RootElement.GetProperty("Installed").GetBoolean() &&
+                    status.RootElement.GetProperty("BuildId").GetString() == "123", "native content status was wrong");
+                // Use the isolated fixture workspace: InstanceClient obtains its workspace from Hello.
+                var maps = new HCSL.Frontend.InstanceClient(daemonClient);
+                await maps.MapCatalogAsync(new MapCatalogCommand(first.Id, Register: [new("3070244462", "Fixture workshop map")]));
+                var catalog = await maps.MapCatalogAsync(first.Id);
+                Check(catalog.Entries.Any(map => map.WorkshopId == "3070244462" && map.Name == "Fixture workshop map"),
+                    "native map catalog did not reload the registered workshop map");
+                var frameworks = new HCSL.Frontend.FrameworkClient(daemonClient);
+                var releases = await frameworks.CatalogAsync(new("counterstrikesharp", CacheOnly: true), paths);
+                Check(releases.Id == "counterstrikesharp" && releases.FromCache,
+                    "native daemon did not return a cache-only framework result");
+                Check(await frameworks.ProgressAsync(Guid.NewGuid()) is null, "unknown download must not have progress");
+
+                var presetId = first.Definition!.SelectedPresetId;
+                var plugins = await maps.PluginAsync(new(PluginAction.List, first.Id, presetId));
+                Check(plugins.Selected.Length == 0, "isolated preset should not have plugins selected");
+                var pluginPath = Path.Combine(root, "fixture.smx");
+                File.WriteAllText(pluginPath, "SourcePawn fixture");
+                var probe = await maps.PluginImportProbeAsync(new(pluginPath));
+                Check(probe is not null, "native daemon did not return a plugin probe");
+
+                // Reproduce the installed framework's config directory in the fixture; no plugin is loaded.
+                Directory.CreateDirectory(Path.Combine(Preset(first), "addons", "counterstrikesharp", "configs"));
+                File.WriteAllText(Path.Combine(Preset(first), "plugins.json"),
+                    """{"FormatVersion":1,"Revision":1,"Plugins":[{"Id":"counterstrikesharp","Version":"1.0.379","Enabled":true}]}""");
+                var admins = new HCSL.Frontend.AdminClient(daemonClient);
+                var empty = await admins.ListAsync(first.Id, presetId);
+                const string steamId = "76561198000000000";
+                await admins.ApplyAsync(new(AdminAction.Apply, first.Id, presetId, empty.Snapshot.Hash,
+                    [new(AdminMutationKind.Upsert, steamId, "Fixture admin", [AdminRules.DefaultGroupName])], InitGroups: true));
+                var savedAdmins = await admins.ListAsync(first.Id, presetId);
+                Check(savedAdmins.Snapshot.Entries.Single().SteamId64 == steamId, "native daemon did not persist the admin edit");
+                Console.WriteLine("PASS native framework cache, plugin probe and admin write/read IPC");
+                File.WriteAllText(Path.Combine(Preset(first), "cfg", "aot-test.cfg"), "// fixture only\n");
+                var cfg = await maps.CfgAsync(new(PresetCfgAction.Read, first.Id, presetId, Name: "aot-test.cfg"));
+                Check(cfg.Content == "// fixture only\n", "native daemon did not read preset CFG over IPC");
+                var receipt = await client.SendConsoleAsync(new(Guid.NewGuid(), Guid.NewGuid(), "status", ConfirmMutation: true));
+                Check(receipt is { Delivery: ConsoleDelivery.Rejected, Code: "HCSL-CONSOLE-STALE" },
+                    "native daemon did not reject a console command for a stale run");
+                Console.WriteLine("PASS native preset CFG read and stale console rejection");
+                await daemon.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                Check(daemon.ExitCode == 0, "native daemon did not exit cleanly");
+                Console.WriteLine("PASS native daemon produces a read-only deployment plan over IPC");
+            }
+            finally
+            {
+                if (!daemon.HasExited) { daemon.Kill(); await daemon.WaitForExitAsync(); }
+            }
+        }
+        return 0;
+    }
     Test("two instances deploy independent games and canonical writable directories", () =>
     {
         File.WriteAllText(Path.Combine(Preset(first), "cfg/server.cfg"), "hostname A\n");

@@ -109,7 +109,11 @@ if (only is not null && only is not "daemon")
 }
 
 if (!OperatingSystem.IsLinux()) { Console.WriteLine("SKIP Linux systemd lifecycle tests"); return 0; }
-var gateAssembly = typeof(DaemonEntry).Assembly.Location;
+// Optional native gate for the Linux lifecycle fixture; the fixture daemon itself stays managed.
+var nativeGate = Environment.GetEnvironmentVariable("HCSL_TEST_NATIVE_SERVER_GATE");
+var gateAssembly = string.IsNullOrWhiteSpace(nativeGate)
+    ? typeof(DaemonEntry).Assembly.Location : Path.GetFullPath(nativeGate);
+if (!File.Exists(gateAssembly)) throw new FileNotFoundException("Lifecycle fixture gate was not found.", gateAssembly);
 WorkspaceRequest Workspace(string root) => new(Path.Combine(root, "settings"), Path.Combine(root, "data"), Path.Combine(root, "library"));
 SystemdServerRuntime Service(string root) => new(gateAssembly, (workspace, options, ct) =>
 {

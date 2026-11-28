@@ -6,6 +6,7 @@ using System.Text.Json;
 using HCSL.Application.Abstractions;
 using HCSL.Contracts;
 using HCSL.Daemon.Workers;
+using HCSL.Daemon.Lifecycle;
 using HCSL.Infrastructure.Deployment;
 using HCSL.Infrastructure.Server;
 using HCSL.Infrastructure.Storage;
@@ -216,25 +217,28 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     }
     private static ServerAction? DeserializeServerAction(LocalRequest request)
     {
-        try { return JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")?.Action; }
+        try { return ReadServerCommand(request)?.Action; }
         catch (JsonException) { return null; }
     }
+    private static ServerCommand? ReadServerCommand(LocalRequest request) =>
+        JsonSerializer.Deserialize(request.ServerCommandJson ?? "null", InstancePayloadJsonContext.Default.ServerCommand);
+
     private async Task<LocalResponse> PlanDeploymentAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+        var command = ReadServerCommand(request)
             ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
         var plan = await servers.PlanDeployment(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command.InstanceId);
-        return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan));
+        return new(LocalProtocol.Version, request.Id, true, DeploymentPlanJson: JsonSerializer.Serialize(plan, InstancePayloadJsonContext.Default.DeploymentPlan));
     }
     /// <summary>Startup baseline status/refresh. Refresh writes only the library-local baseline.</summary>
     private Task<LocalResponse> BaselineAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION"));
         var workspace = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<BaselineCommand>(request.BaselineJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.BaselineJson ?? "null", InstancePayloadJsonContext.Default.BaselineCommand)
             ?? throw new InstanceException("HCSL-BASELINE-REQUEST", "Baseline action is required.");
         if (!Enum.IsDefined(command.Action))
             throw new InstanceException("HCSL-BASELINE-REQUEST", "Unknown baseline action.");
@@ -254,7 +258,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             var (source, installed, localBuild) = RuntimeDeploymentService.BaselineStatus(layout, buildId);
             return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
                 BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(installed, source, localBuild.Length == 0 ? null : localBuild,
-                    Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
+                    Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")), InstancePayloadJsonContext.Default.BaselineResult)));
         }
         if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
             throw new InstanceException("HCSL-BASELINE-BUSY", "Stop the server/SteamCMD and complete recovery before refreshing the baseline.");
@@ -263,17 +267,17 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         var result = RuntimeDeploymentService.BaselineStatus(layout, buildId);
         return Task.FromResult(new LocalResponse(LocalProtocol.Version, request.Id, true,
             BaselineResultJson: JsonSerializer.Serialize(new BaselineResult(result.BuildId, result.Source, result.LocalBuildId,
-                Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")))));
+                Path.Combine(layout.LibraryRoot, ".hcsl", "linux-startup-baseline.json")), InstancePayloadJsonContext.Default.BaselineResult)));
     }
     private async Task<LocalResponse> FrameworkCatalogAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<FrameworkCatalogCommand>(request.FrameworkCatalogJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.FrameworkCatalogJson ?? "null", InstancePayloadJsonContext.Default.FrameworkCatalogCommand)
             ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework catalog command is required.");
         BeforeFrameworkCatalog?.Invoke();
         var result = await Frameworks.CatalogAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, ct);
-        return new(LocalProtocol.Version, request.Id, true, FrameworkCatalogJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, FrameworkCatalogJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.FrameworkCatalogResult));
     }
 
     private async Task<LocalResponse> FrameworkCheckAsync(LocalRequest request, CancellationToken ct)
@@ -281,10 +285,10 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
         var command = request.FrameworkCheckJson is { Length: > 0 } json
-            ? JsonSerializer.Deserialize<FrameworkCheckCommand>(json)
+            ? JsonSerializer.Deserialize(json, InstancePayloadJsonContext.Default.FrameworkCheckCommand)
             : null;
         var result = await Frameworks.CheckAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command?.Id, ct);
-        return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, FrameworkCheckJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.FrameworkCheckResult));
     }
     /// <summary>
     /// Cancels whichever unit of work owns the id: a framework install in flight, otherwise the
@@ -307,7 +311,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var paths = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<FrameworkInstallCommand>(request.FrameworkInstallJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.FrameworkInstallJson ?? "null", InstancePayloadJsonContext.Default.FrameworkInstallCommand)
             ?? throw new InstanceException("HCSL-FRAMEWORK-ID", "Framework install command is required.");
         if (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running)
             throw new InstanceException("HCSL-FRAMEWORK-BUSY", "Stop the server/SteamCMD and complete recovery before installing a framework.");
@@ -322,7 +326,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         try
         {
             var result = await Frameworks.InstallAsync(new(paths.SettingsRoot, paths.DataRoot, paths.LibraryRoot), command, install.Token, progress);
-            return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result));
+            return new(LocalProtocol.Version, request.Id, true, FrameworkInstallResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.FrameworkInstallResult));
         }
         finally
         {
@@ -336,13 +340,13 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var transfer = request.OperationId is { } id && frameworkTransfers.TryGetValue(id, out var value) ? value : null;
-        return new(LocalProtocol.Version, request.Id, true, TransferJson: transfer is null ? null : JsonSerializer.Serialize(transfer));
+        return new(LocalProtocol.Version, request.Id, true, TransferJson: transfer is null ? null : JsonSerializer.Serialize(transfer, InstancePayloadJsonContext.Default.TransferSnapshot));
     }
     private async Task<LocalResponse> AdminAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<AdminCommand>(request.AdminJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.AdminJson ?? "null", InstancePayloadJsonContext.Default.AdminCommand)
             ?? throw new InstanceException("HCSL-ADMIN-REQUEST", "Admin command is required.");
         var workspace = new WorkspaceRequest(p.SettingsRoot, p.DataRoot, p.LibraryRoot);
         var store = new LocalAdminStore();
@@ -351,12 +355,12 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             var snapshot = store.Execute(workspace, command with { Action = AdminAction.List });
             var reload = await ReloadAdminsAsync(snapshot.Snapshot.SourceId, ct);
             var reloaded = new AdminResult(snapshot.Snapshot, "HCSL-ADMIN-RELOADED", [], reload);
-            return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded));
+            return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(reloaded, InstancePayloadJsonContext.Default.AdminResult));
         }
         var result = store.Execute(workspace, command);
         if (command.Action == AdminAction.Apply)
             result = result with { Reload = await ReloadAdminsAsync(result.Snapshot.SourceId, ct) };
-        return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, AdminResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.AdminResult));
     }
 
     /// <summary>Apply a written admin list: frameworks with a console command get it; native readers need a restart.</summary>
@@ -383,41 +387,41 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerKickCommand>(request.ServerKickJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.ServerKickJson ?? "null", InstancePayloadJsonContext.Default.ServerKickCommand)
             ?? throw new ServerException("HCSL-KICK-TARGET", "Kick command is required.");
         var result = await servers.KickAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, ServerKickResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.ServerKickResult));
     }
 
     private async Task<LocalResponse> PlayersAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null")
+        var command = ReadServerCommand(request)
             ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         var roster = await servers.PlayersAsync(command.InstanceId, ct);
         var snapshot = servers.Snapshot(hint: command.InstanceId == Guid.Empty ? null : command.InstanceId) with { PlayerRoster = roster };
-        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot, InstancePayloadJsonContext.Default.ServerSnapshot));
     }
 
     private async Task<LocalResponse> CfgBatchAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
-        var command = JsonSerializer.Deserialize<CfgBatchCommand>(request.PresetCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PresetCfgJson ?? "null", InstancePayloadJsonContext.Default.CfgBatchCommand)
             ?? throw new ServerException("HCSL-CFG-REQUEST", "CFG batch required.");
         var receipts = await servers.SendCfgBatchAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipts));
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipts, InstancePayloadJsonContext.Default.ServerConsoleReceiptArray));
     }
 
     private async Task<LocalResponse> ConsoleAsync(LocalRequest request, CancellationToken ct)
     {
         if (request.Version != LocalProtocol.Version) return new(LocalProtocol.Version, request.Id, false, "HCSL-IPC-VERSION");
         if (servers is null) throw new ServerException("HCSL-CONSOLE-UNAVAILABLE", "Server runtime unavailable.");
-        var command = JsonSerializer.Deserialize<ServerConsoleCommand>(request.ServerConsoleJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.ServerConsoleJson ?? "null", InstancePayloadJsonContext.Default.ServerConsoleCommand)
             ?? throw new ServerException("HCSL-CONSOLE-INPUT", "Console query required.");
         var receipt = await servers.SendConsoleAsync(command, ct);
-        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipt));
+        return new(LocalProtocol.Version, request.Id, true, ConsoleReceiptJson: JsonSerializer.Serialize(receipt, InstancePayloadJsonContext.Default.ServerConsoleReceipt));
     }
     private LocalResponse Dispatch(LocalRequest request)
     {
@@ -427,7 +431,8 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
         {
             RequestKind.Hello => Hello(request),
             RequestKind.ContentStatus => new(LocalProtocol.Version, request.Id, true,
-                ContentStatusJson: JsonSerializer.Serialize(HCSL.Infrastructure.Steam.Cs2ContentStatusReader.Read(RequiredOptions(request).Workspace.LibraryRoot))),
+                ContentStatusJson: JsonSerializer.Serialize(HCSL.Infrastructure.Steam.Cs2ContentStatusReader.Read(RequiredOptions(request).Workspace.LibraryRoot),
+                    InstancePayloadJsonContext.Default.Cs2ContentStatus)),
             RequestKind.Instances => Instances(request),
             RequestKind.PresetCfg => PresetCfg(request),
             RequestKind.MapPool => MapPool(request),
@@ -455,7 +460,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse Server(LocalRequest request)
     {
         if (servers == null) throw new ServerException("HCSL-SERVER-UNAVAILABLE", "Server lifecycle service is unavailable.");
-        var command = JsonSerializer.Deserialize<ServerCommand>(request.ServerCommandJson ?? "null") ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
+        var command = ReadServerCommand(request) ?? throw new ServerException("HCSL-SERVER-OPTIONS", "Server command is required.");
         WorkspaceRequest Workspace()
         {
             var paths = request.Options?.Workspace ?? throw new ServerException("HCSL-OPTIONS", "Workspace is required.");
@@ -473,19 +478,19 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             ServerAction.Recover => servers.Recover(Workspace(), command.InstanceId, command.RunId),
             _ => throw new ServerException("HCSL-SERVER-OPTIONS", "Unknown server action.")
         };
-        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot));
+        return new(LocalProtocol.Version, request.Id, true, ServerSnapshotJson: JsonSerializer.Serialize(snapshot, InstancePayloadJsonContext.Default.ServerSnapshot));
     }
     private LocalResponse MapPool(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapPoolCommand>(request.MapPoolJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapPoolJson ?? "null", InstancePayloadJsonContext.Default.MapPoolCommand)
             ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool command is required.");
         if (command.Action != MapPoolAction.Read &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing maps.");
         var result = new LocalPresetMapPoolStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapPoolResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapPoolResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool response exceeds IPC frame limit.");
         return response;
     }
@@ -493,15 +498,15 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private LocalResponse MapPoolLibrary(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapPoolLibraryCommand>(request.MapPoolLibraryJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapPoolLibraryJson ?? "null", InstancePayloadJsonContext.Default.MapPoolLibraryCommand)
             ?? throw new InstanceException("HCSL-MAPPOOL-REQUEST", "Map pool library command is required.");
         if (command.Action != MapPoolLibraryAction.List &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-MAPPOOL-BUSY", "Stop server/SteamCMD and finish recovery before editing map pools.");
         var result = new LocalMapPoolLibraryStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
         var response = new LocalResponse(LocalProtocol.Version, request.Id, true,
-            MapPoolLibraryResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+            MapPoolLibraryResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapPoolLibraryResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPPOOL-LIMIT", "Map pool library response exceeds the IPC frame limit.");
         return response;
     }
@@ -512,7 +517,7 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     private async Task<LocalResponse> MapCatalogAsync(LocalRequest request, CancellationTokenSource deadline)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<MapCatalogCommand>(request.MapCatalogJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.MapCatalogJson ?? "null", InstancePayloadJsonContext.Default.MapCatalogCommand)
             ?? throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "Map catalog request is required.");
         if (command.InstanceId == Guid.Empty) throw new InstanceException("HCSL-MAPCATALOG-REQUEST", "An instance id is required.");
         var game = Path.Combine(p.LibraryRoot, "runtime", command.InstanceId.ToString("D"), "game");
@@ -546,85 +551,85 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
             };
         }
         MapCatalogRules.Validate(result);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, MapCatalogResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.MapCatalogResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-MAPCATALOG-LIMIT", "Map catalog response exceeds the IPC frame limit.");
         return response;
     }
     private LocalResponse PluginImportProbe(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginImportProbeCommand>(request.PluginImportProbeJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginImportProbeJson ?? "null", InstancePayloadJsonContext.Default.PluginImportProbeCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin import probe command is required.");
         var preview = new LocalPluginImporter().Probe(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        return new(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(preview));
+        return new(LocalProtocol.Version, request.Id, true, PluginImportPreviewJson: JsonSerializer.Serialize(preview, InstancePayloadJsonContext.Default.PluginImportPreview));
     }
     private LocalResponse PluginImport(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginImportCommand>(request.PluginImportJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginImportJson ?? "null", InstancePayloadJsonContext.Default.PluginImportCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin import command is required.");
         if (command.Enable &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before enabling an imported package.");
         var result = new LocalPluginImporter().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        return new(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, PluginImportResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PluginImportResult));
     }
     private LocalResponse PluginCfg(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginCfgCommand>(request.PluginCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginCfgJson ?? "null", InstancePayloadJsonContext.Default.PluginCfgCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin cfg command is required.");
         if (command.Action is PluginCfgAction.Apply or PluginCfgAction.CleanupApply &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before changing cfg files.");
         var sync = new HCSL.Infrastructure.Storage.LocalPluginCfgSync();
-        var result = command.Action switch
+        var workspace = new WorkspaceRequest(p.SettingsRoot, p.DataRoot, p.LibraryRoot);
+        var json = command.Action switch
         {
-            PluginCfgAction.Apply => sync.Apply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
-            PluginCfgAction.CleanupApply => sync.CleanupApply(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command),
-            _ => (object)(command.Action == PluginCfgAction.Preview
-                ? sync.Preview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command)
-                : sync.CleanupPreview(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command))
+            PluginCfgAction.Apply => JsonSerializer.Serialize(sync.Apply(workspace, command), InstancePayloadJsonContext.Default.PluginCfgResult),
+            PluginCfgAction.CleanupApply => JsonSerializer.Serialize(sync.CleanupApply(workspace, command), InstancePayloadJsonContext.Default.PluginCfgResult),
+            _ => JsonSerializer.Serialize(command.Action == PluginCfgAction.Preview
+                ? sync.Preview(workspace, command) : sync.CleanupPreview(workspace, command), InstancePayloadJsonContext.Default.PluginCfgPreview)
         };
-        return new(LocalProtocol.Version, request.Id, true, PluginCfgResultJson: JsonSerializer.Serialize(result));
+        return new(LocalProtocol.Version, request.Id, true, PluginCfgResultJson: json);
     }
     private LocalResponse Plugin(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PluginCommand>(request.PluginJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PluginJson ?? "null", InstancePayloadJsonContext.Default.PluginCommand)
             ?? throw new InstanceException("HCSL-PLUGIN-REQUEST", "Plugin command is required.");
         if (command.Action != PluginAction.List &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-PLUGIN-BUSY", "Stop the server/SteamCMD and complete recovery before editing plugins.");
         var result = new LocalPluginStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PluginResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PluginResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PluginResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-PLUGIN-LIMIT", "Plugin response exceeds the IPC limit.");
         return response;
     }
     private LocalResponse PresetCfg(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<PresetCfgCommand>(request.PresetCfgJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.PresetCfgJson ?? "null", InstancePayloadJsonContext.Default.PresetCfgCommand)
             ?? throw new InstanceException("HCSL-CFG-REQUEST", "CFG command is required.");
         if (command.Action is not (PresetCfgAction.List or PresetCfgAction.Read) &&
             (servers?.Active == true || servers?.Snapshot().State == ServerState.RecoveryRequired || operations.Snapshot().Running))
             throw new InstanceException("HCSL-CFG-BUSY", "Stop the server/SteamCMD and complete recovery before editing CFG.");
         var result = new LocalPresetCfgStore().Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PresetCfgResultJson: JsonSerializer.Serialize(result));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, PresetCfgResultJson: JsonSerializer.Serialize(result, InstancePayloadJsonContext.Default.PresetCfgResult));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-CFG-LIMIT", "CFG response exceeds the IPC limit.");
         return response;
     }
     private static LocalResponse Instances(LocalRequest request)
     {
         var p = request.Options?.Workspace ?? throw new InstanceException("HCSL-OPTIONS", "Workspace is required.");
-        var command = JsonSerializer.Deserialize<InstanceCommand>(request.InstanceCommandJson ?? "null")
+        var command = JsonSerializer.Deserialize(request.InstanceCommandJson ?? "null", InstancePayloadJsonContext.Default.InstanceCommand)
             ?? throw new InstanceException("HCSL-INSTANCE-REQUEST", "Instance command is required.");
         var catalog = new InstanceService(new LocalInstanceStore()).Execute(new(p.SettingsRoot, p.DataRoot, p.LibraryRoot), command);
-        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(catalog));
-        if (JsonSerializer.SerializeToUtf8Bytes(response).Length > LocalProtocol.MaxFrameBytes - 1024)
+        var response = new LocalResponse(LocalProtocol.Version, request.Id, true, InstanceCatalogJson: JsonSerializer.Serialize(catalog, InstancePayloadJsonContext.Default.InstanceCatalog));
+        if (JsonSerializer.SerializeToUtf8Bytes(response, InstancePayloadJsonContext.Default.LocalResponse).Length > LocalProtocol.MaxFrameBytes - 1024)
             throw new InstanceException("HCSL-INSTANCE-LIMIT", "Catalog exceeds the local IPC frame limit.");
         return response;
     }
@@ -632,14 +637,14 @@ public sealed class LocalDaemonServer(string pipeName, SteamCmdOperations operat
     /// launch, so an old process left over from a previous build can be replaced instead of silently used.</summary>
     private static readonly string? build = BuildStamp();
     /// <summary>
-    /// Identity of the running daemon: a hash of its own assembly. A rebuild that changes nothing produces the
+    /// Identity of the running daemon: a hash of its managed assembly or native executable. A rebuild that changes nothing produces the
     /// same hash, so a file timestamp is no longer mistaken for new code.
     /// </summary>
     private static string? BuildStamp()
     {
         try
         {
-            var path = typeof(LocalDaemonServer).Assembly.Location;
+            var path = DaemonBinary.Path;
             if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
             using var stream = File.OpenRead(path);
             return "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();

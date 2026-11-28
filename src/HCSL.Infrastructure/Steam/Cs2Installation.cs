@@ -10,7 +10,7 @@ namespace HCSL.Infrastructure.Steam;
 /// <summary>Installation state is separate from Steam's resumable content. Never delete partial downloads.</summary>
 internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLayout, string, Guid>? refreshBaseline = null)
 {
-    private sealed record State(int FormatVersion, int AppId, string Status, string? BuildId = null);
+    internal sealed record State(int FormatVersion, int AppId, string Status, string? BuildId = null);
     private string Metadata => Path.Combine(layout.LibraryRoot, ".hcsl", "cs2-install.json");
     private bool begun, completed;
     private string? previousVerifiedBuild;
@@ -24,7 +24,7 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
         if (File.Exists(Metadata))
         {
             State? state;
-            try { state = JsonSerializer.Deserialize<State>(File.ReadAllText(Metadata)); }
+            try { state = JsonSerializer.Deserialize(File.ReadAllText(Metadata), SteamCmdJsonContext.Default.State); }
             catch (JsonException) { throw new SteamCmdException("HCSL-CS2-STATE", "Installation metadata needs inspection."); }
             if (state is not { FormatVersion: 1, AppId: 730 } || state.Status is not ("Installing" or "Incomplete" or "Ready" or "ValidationInterrupted"))
                 throw new SteamCmdException("HCSL-CS2-STATE", "Unknown installation metadata; nothing was overwritten.");
@@ -96,7 +96,7 @@ internal sealed class Cs2Installation(WorkspaceLayout layout, Action<WorkspaceLa
         {
             using (var file = LocalPaths.CreateFile(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                JsonSerializer.Serialize(file, value);
+                JsonSerializer.Serialize(file, value, SteamCmdJsonContext.Default.State);
                 file.Flush(flushToDisk: true);
             }
             File.Move(temporary, Metadata, overwrite: true);

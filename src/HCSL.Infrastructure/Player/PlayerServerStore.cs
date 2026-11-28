@@ -1,8 +1,13 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using HCSL.Application.Abstractions;
 using HCSL.Core;
 
 namespace HCSL.Infrastructure.Player;
+
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(List<PlayerServer>))]
+internal sealed partial class PlayerCatalogJsonContext : JsonSerializerContext;
 
 public sealed class PlayerServerStore(string root, IPlayerSecretStore secrets) : IPlayerServerStore
 {
@@ -17,7 +22,7 @@ public sealed class PlayerServerStore(string root, IPlayerSecretStore secrets) :
         if (!File.Exists(Catalog)) return [];
         try
         {
-            var rows = JsonSerializer.Deserialize<List<PlayerServer>>(await File.ReadAllTextAsync(Catalog, ct))
+            var rows = JsonSerializer.Deserialize(await File.ReadAllTextAsync(Catalog, ct), PlayerCatalogJsonContext.Default.ListPlayerServer)
                 ?? throw new JsonException();
             if (rows.Any(x => x is null || x.Id == Guid.Empty) || rows.Select(x => x.Id).Distinct().Count() != rows.Count)
                 throw new JsonException();
@@ -31,7 +36,7 @@ public sealed class PlayerServerStore(string root, IPlayerSecretStore secrets) :
         var temp = Catalog + ".tmp-" + Guid.NewGuid().ToString("N");
         try
         {
-            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }), ct);
+            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(rows, PlayerCatalogJsonContext.Default.ListPlayerServer), ct);
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             File.Move(temp, Catalog, true);
         }

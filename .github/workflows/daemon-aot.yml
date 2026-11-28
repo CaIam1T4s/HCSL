@@ -1,0 +1,68 @@
+name: Windows Daemon Native AOT experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-host-double-aot:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Package and smoke-test the extracted Host with native Daemon
+        shell: pwsh
+        run: |
+          ./build/host-package.ps1 -Mode aot -NativeDaemon -Output artifacts/host-double-aot -Smoke
+          $archive = Get-Item artifacts/host-double-aot/*-win-x64-aot-native-daemon-experimental.zip
+          $expected = ((Get-Content "$($archive.FullName).sha256" -Raw).Trim() -split '\s+')[0]
+          if ((Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash -ne $expected) {
+            throw 'Windows double AOT archive checksum mismatch.'
+          }
+      - name: Upload verified Windows experiment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-double-aot-win-x64
+          path: artifacts/host-double-aot/*
+          if-no-files-found: error
+
+  windows-daemon-aot:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish native Daemon
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/daemon-aot | Out-Null
+          dotnet publish src/HCSL.Daemon -c Release -r win-x64 --self-contained true -p:PublishAot=true -o artifacts/daemon-aot/win-x64 2>&1 |
+            Tee-Object -FilePath artifacts/daemon-aot/publish.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native IPC and Windows process gate
+        shell: pwsh
+        run: dotnet run --project tests/HCSL.IpcTests -- --only native-windows artifacts/daemon-aot/win-x64/HCSL.Daemon.exe
+      - name: Upload experiment output
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemon-native-win-x64
+          path: |
+            artifacts/daemon-aot/win-x64/
+            !artifacts/daemon-aot/win-x64/**/*.pdb
+          if-no-files-found: error
+      - name: Upload symbols and publish log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daemon-native-win-x64-diagnostics
+          path: |
+            artifacts/daemon-aot/publish.log
+            artifacts/daemon-aot/win-x64/**/*.pdb
+          if-no-files-found: ignore
