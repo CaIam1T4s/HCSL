@@ -45,9 +45,23 @@ public partial class InstanceOverviewPage : UserControl
     }
 
     private int deployHelpRequest;
+    private readonly SemaphoreSlim deployPreviewGate = new(1, 1);
+
+    private async Task<DeploymentPlan?> GetDeployPreviewAsync(HostServerController model, Guid instance, Guid preset)
+    {
+        await deployPreviewGate.WaitAsync();
+        try
+        {
+            if (Model != model || model.Selected?.Entry.Definition is not { } current ||
+                current.Id != instance || current.SelectedPresetId != preset) return null;
+            return await model.DeployPreviewAsync(instance, preset);
+        }
+        finally { deployPreviewGate.Release(); }
+    }
 
     private async Task RefreshDeployHelpAsync()
     {
+        if (operating || deployPreviewGate.CurrentCount == 0) return;
         var request = ++deployHelpRequest;
         Tooltip.SetTip(DeployHelpButton, "当前正在检查部署范围");
         if (Model is not { } model || model.Selected?.Entry.Definition is not { } definition || !model.CanDeploy)
@@ -57,13 +71,14 @@ public partial class InstanceOverviewPage : UserControl
         }
         try
         {
-            var plan = await model.DeployPreviewAsync(definition.Id, definition.SelectedPresetId);
+            var plan = await GetDeployPreviewAsync(model, definition.Id, definition.SelectedPresetId);
             if (request != deployHelpRequest || Model != model || model.Selected?.Entry.Definition != definition) return;
             Tooltip.SetTip(DeployHelpButton, plan?.Scope switch
             {
                 DeploymentScope.Plugins => "当前仅同步插件",
                 DeploymentScope.Rotation => "当前仅更新地图轮换",
                 DeploymentScope.PluginsAndRotation => "当前仅同步插件和地图轮换",
+                DeploymentScope.None => "当前无需部署",
                 DeploymentScope.Full => "当前需要完整部署",
                 _ => "当前无法检查部署范围"
             });
@@ -178,7 +193,9 @@ public partial class InstanceOverviewPage : UserControl
     {
         if (Model is not { } m || Owner is not { } owner || m.Selected?.Entry.Definition is not { } d) return;
         var preset = m.Selected.Entry.Presets.FirstOrDefault(p => p.Id == d.SelectedPresetId);
-        var plan = await m.DeployPreviewAsync(d.Id, d.SelectedPresetId);
+        DeploymentPlan? plan;
+        try { plan = await GetDeployPreviewAsync(m, d.Id, d.SelectedPresetId); }
+        catch (IOException e) { Error("无法获取部署预览", e.Message); return; }
         if (plan is null) { Error("无法获取部署预览", "宿主未连接或已有操作。"); return; }
         if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "确认部署") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
