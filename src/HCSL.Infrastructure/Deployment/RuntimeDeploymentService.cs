@@ -168,7 +168,13 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     public DeploymentPlan Plan(WorkspaceRequest workspace, DeploymentOptions options, CancellationToken cancellationToken = default)
     {
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
-        return Prepare(lease, options, cancellationToken);
+        var plan = Prepare(lease, options, cancellationToken);
+        var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
+        if (prior is not null)
+            return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
+                ? DeploymentScope.PluginsAndRotation : DeploymentScope.Plugins };
+        return TryUpdateRotation(lease, plan, cancellationToken, preview: true) is null
+            ? plan : plan with { Scope = DeploymentScope.Rotation };
     }
     internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
         PrepareCore(lease, options, ct, allowInterruptedValidation: false);
@@ -1245,7 +1251,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         return JsonSerializer.SerializeToUtf8Bytes(manifest).Length <= 512 * 1024 ? manifest : null;
     }
 
-    private DeploymentReceipt? TrySyncPlugins(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
+    private DeploymentReceipt? TrySyncPlugins(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct, bool preview = false)
     {
         var prior = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
         if (prior is not { FormatVersion: 2, PluginManifest: not null } || prior.PluginSetHash == plan.PluginSetHash ||
@@ -1270,6 +1276,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (oldChanged.Concat(newChanged).Any(p => p.FrameworkPayload || FrameworkRules.Find(p.Id) is not null || p.Files.Any(f =>
             !PluginRules.IsAddonFile(f.Path) || ManagedPluginRouteOfPath(f.Path) is not null ||
             plan.PersistentMappings.Any(m => m != mapping && Overlaps(GameRelative(m.RuntimePath), f.Path))))) return null;
+        if (preview)
+            return CanReplaceRotation(plan, prior) ? prior : null;
         var comparer = StringComparer.FromComparison(LocalPaths.Comparison);
         var ledgerPath = InRoot(preset, ".hcsl-plugin-ledger.json");
         var ledger = ReadPluginLedger(ledgerPath);
@@ -1342,7 +1350,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         return receipt;
     }
 
-    private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
+    private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct, bool preview = false)
     {
         var target = plan.RuntimePath;
         var prior = ValidateExisting(lease, plan.InstanceId, target, verifyRotation: false, allowLegacy: true);
@@ -1356,6 +1364,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var layout = lease.Layout;
         EnsureStopped(target);
         VerifyBaseline(target, ActiveBaseline(layout, plan.BuildId), ct);
+        if (preview) return CanReplaceRotation(plan, prior) ? prior : null;
         var change = PrepareRotationChange(lease, plan, prior, ct);
         if (change is null) return null;
         ct.ThrowIfCancellationRequested();
@@ -1383,6 +1392,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             else if (Next is not null) File.Delete(Path);
         }
     }
+
+    private static bool CanReplaceRotation(DeploymentPlan plan, DeploymentReceipt prior) =>
+        (prior.RotationHash == plan.RotationHash && prior.RotationCollection == plan.RotationCollection) ||
+        prior.RotationHash is not null || !Path.Exists(InRoot(plan.RuntimePath, "game/csgo/" + ServerMapGroupRules.FileName));
 
     private static RotationChange? PrepareRotationChange(IWorkspaceLease lease, DeploymentPlan plan, DeploymentReceipt prior, CancellationToken ct)
     {

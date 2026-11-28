@@ -1,5 +1,6 @@
 namespace HCSL.Core;
 
+public enum DeploymentScope { Full, Plugins, Rotation, PluginsAndRotation }
 public enum DeploymentCopyMode { Reflink, FullCopy }
 public enum DeploymentMappingKind { Link, Materialized }
 public sealed record DeploymentOptions(Guid InstanceId, DeploymentCopyMode CopyMode = DeploymentCopyMode.Reflink, long? ExpectedRevision = null);
@@ -10,7 +11,8 @@ public sealed record DeploymentPlan(Guid InstanceId, long InstanceRevision, Guid
     long MinimumLibraryFreeBytes, long MinimumDataFreeBytes, DeploymentMapping[] PersistentMappings,
     string[] Notes, string? RotationGroup = null, string? RotationHash = null, string? RotationCollection = null,
     string? PluginSetHash = null, string? Framework = null,
-    FrameworkReadinessProfile FrameworkReadiness = FrameworkReadinessProfile.Standard);
+    FrameworkReadinessProfile FrameworkReadiness = FrameworkReadinessProfile.Standard,
+    DeploymentScope Scope = DeploymentScope.Full);
 public sealed record DeploymentReceipt(int FormatVersion, Guid OperationId, string Status, Guid DataId, Guid LibraryId,
     Guid InstanceId, Guid PresetId, long InstanceRevision, long PresetRevision, string BuildId,
     DeploymentCopyMode CopyMode, DateTimeOffset CreatedAt, DeploymentMapping[] PersistentMappings,

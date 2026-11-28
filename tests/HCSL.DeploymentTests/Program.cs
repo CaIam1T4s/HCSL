@@ -86,6 +86,7 @@ try
             if (phase == "Cloned") throw new Exception("Plugin sync cloned the runtime.");
         });
         Select("1.0.0");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Plugins, "Preview did not classify plugin sync.");
         incremental.Deploy(workspace, Options(first));
         Check(File.ReadAllText(target) == "1.0.0", "Plugin was not added.");
         Select("2.0.0");
@@ -94,6 +95,7 @@ try
         pools.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
             pool.Pool.Revision, pool.Hash, [new(ServerMapKind.Standard, "de_dust2"), new(ServerMapKind.Standard, "de_inferno")]));
         var rotationFile = Path.Combine(Runtime(first), "game/csgo", ServerMapGroupRules.FileName);
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.PluginsAndRotation, "Preview did not classify combined sync.");
         File.WriteAllText(target, "user edit");
         Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
         Check(File.ReadAllText(target) == "user edit", "Plugin sync overwrote a user edit.");
@@ -146,6 +148,7 @@ try
         }
         var initial = service.Deploy(workspace, Options(first));
         Save("de_dust2", "de_inferno");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Rotation, "Preview did not classify rotation sync.");
         var prior = service.Deploy(workspace, Options(first));
         Check(prior.OperationId == initial.OperationId && prior.RotationHash is not null &&
             RuntimeDeploymentService.RotationFileMatches(prior, Runtime(first)), "Adding the first rotation replaced the runtime or did not write the map group.");
