@@ -388,10 +388,19 @@ try
         Check(File.Exists(Path.Combine(Runtime(first), "home", "instance-home.marker")), "instance home lost across preset switch");
         Check(File.Exists(Path.Combine(Runtime(first), "userdata", "instance-userdata.marker")), "instance userdata lost across preset switch");
     });
+    void SelectOtherPreset()
+    {
+        var definition = first.Definition!;
+        var other = first.Presets.Single(p => p.Id != definition.SelectedPresetId);
+        first = store.Execute(workspace, new(InstanceAction.SelectPreset, first.Id, other.Id, definition.Revision))
+            .Instances.Single(e => e.Id == first.Id);
+    }
     foreach (var phase in new[] { "Journaled", "Cloned", "Prepared", "PluginsApplied", "PreviousMoved", "Published" })
         Test("interruption recovery at " + phase, () =>
         {
             var original = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+            if (first.Definition!.SelectedPresetId == original.PresetId) SelectOtherPreset();
+            Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Full, "Recovery fixture must trigger a full deployment.");
             var interrupted = new RuntimeDeploymentService(baseline, p => { if (p == phase) throw new IOException("injected interruption"); });
             try { interrupted.Deploy(workspace, Options(first)); throw new Exception("injection not reached"); } catch (IOException) { }
             Check(File.Exists(Journal(first)), "recovery owner missing");
@@ -404,11 +413,18 @@ try
         });
     Test("cancelled deployment retains old runtime and can recover", () =>
     {
+        SelectOtherPreset(); // The preceding Published test left the selected preset deployed.
         using var stop = new CancellationTokenSource();
         var cancelService = new RuntimeDeploymentService(baseline, p => { if (p == "Cloned") stop.Cancel(); });
         try { cancelService.Deploy(workspace, Options(first), cancellationToken: stop.Token); throw new Exception("not cancelled"); } catch (OperationCanceledException) { }
         service.Recover(workspace, first.Id); Check(File.Exists(Path.Combine(Runtime(first), "deployment.json")), "old runtime lost");
+        SelectOtherPreset(); // Restore the selection to the deployment preserved by recovery.
     });
+    if (args is ["--only", "deployment-recovery"])
+    {
+        Test("failed plugin application restores preset addons and ledger", VerifyFullPluginRollback);
+        return 0;
+    }
     Test("source corruption, unfinished SteamCMD and nonempty plugin manifests fail closed", () =>
     {
         File.WriteAllText(native, "tampered"); Reject("HCSL-DEPLOY-BASELINE", () => service.Plan(workspace, Options(first))); File.WriteAllText(native, "fixture native");
@@ -590,7 +606,8 @@ try
         Check(service.Plan(workspace, Options(first)).PluginSetHash is not null, "Valid Source2Mod selection failed to plan.");
         File.WriteAllText(file, """{"FormatVersion":1,"Revision":1,"Plugins":[]}""");
     });
-    Test("failed plugin application restores preset addons and ledger", () =>
+    Test("failed plugin application restores preset addons and ledger", VerifyFullPluginRollback);
+    void VerifyFullPluginRollback()
     {
         var presetId = first.Definition!.SelectedPresetId;
         var plugins = new LocalPluginStore();
@@ -600,12 +617,14 @@ try
         Directory.CreateDirectory(Path.Combine(package, "files", "csgo", "addons", "rollback"));
         File.WriteAllText(Path.Combine(package, "plugin.json"), "{\"FormatVersion\":1,\"Id\":\"rollback\",\"Name\":\"Rollback\",\"Version\":\"1.0.0\"}");
         File.WriteAllText(Path.Combine(package, "files", "csgo", "addons", "rollback", "rollback.vdf"), "package content");
+        File.WriteAllText(Path.Combine(package, "files", "csgo", "rollback-overlay.txt"), "Requires full deployment");
         plugins.Execute(workspace, new(PluginAction.Save, first.Id, presetId, first.Definition.Revision, empty.Hash, [new("rollback", "1.0.0")]));
         var addon = Path.Combine(Preset(first), "addons", "rollback", "rollback.vdf");
         Directory.CreateDirectory(Path.GetDirectoryName(addon)!); File.WriteAllText(addon, "preexisting user file");
         var ledger = Path.Combine(Preset(first), ".hcsl-plugin-ledger.json");
         var beforeLedger = File.Exists(ledger) ? File.ReadAllText(ledger) : null;
         var before = JsonSerializer.Deserialize<DeploymentReceipt>(File.ReadAllText(Path.Combine(Runtime(first), "deployment.json")))!;
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Full, "Plugin rollback fixture must trigger a full deployment.");
         var failing = new RuntimeDeploymentService(baseline, p => { if (p == "PluginsApplied") throw new IOException("injected publication failure"); });
         try { failing.Deploy(workspace, Options(first)); throw new Exception("injection not reached"); } catch (IOException) { }
         Check(File.ReadAllText(addon) == "preexisting user file", "Failed deploy did not restore the preset addon file.");
@@ -615,7 +634,7 @@ try
         Check(after.OperationId == before.OperationId, "Failed plugin publication replaced the runtime.");
         service.Recover(workspace, first.Id);
         Check(!File.Exists(Journal(first)), "Recovery did not finish after the plugin failure.");
-    });
+    }
     Test("plugin packages cannot write reserved or mapped paths", () =>
     {
         var presetId = first.Definition!.SelectedPresetId;
