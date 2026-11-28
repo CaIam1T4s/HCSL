@@ -34,6 +34,8 @@ en.ClosePrograms=Stop any server or download, then exit HCSL Host and Daemon bef
 zh.ClosePrograms=请先停服并结束下载或校验，再退出 HCSL Host 和 Daemon。
 en.InvalidDir=The installation directory must end in HCSL_Host.
 zh.InvalidDir=安装目录必须以 HCSL_Host 结尾。
+en.RuntimeSummary=Runtime:
+zh.RuntimeSummary=运行时：
 
 [Types]
 Name: bundled; Description: "{cm:BundledMode}"
@@ -136,14 +138,69 @@ begin
     end;
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+function RuntimeError(): String;
 begin
+  Result := '';
+#include RuntimeChecksFile
+end;
+
+function CompatiblePreviousMode(): String;
+var
+  Mode: String;
+begin
+  Result := '';
+  if CompareText(GetPreviousData('ManagedDir', ''), NormalizeInstallDir(WizardDirValue())) <> 0 then Exit;
+  Mode := GetPreviousData('RuntimeMode', '');
+  if (Mode = 'bundled') or ((Mode = 'system') and (RuntimeError() = '')) then
+    Result := Mode;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+var
+  Mode: String;
+begin
+  Result := False;
+  if PageID <> wpSelectComponents then Exit;
+  Mode := CompatiblePreviousMode();
+  Result := Mode <> '';
+  if Result then WizardSelectComponents(Mode);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  MessageText: String;
+begin
+  if (CurPageID = wpSelectComponents) and (GetPreviousData('RuntimeMode', '') = 'system') and
+    (CompareText(GetPreviousData('ManagedDir', ''), NormalizeInstallDir(WizardDirValue())) = 0) then begin
+    MessageText := RuntimeError();
+    if MessageText <> '' then
+      SuppressibleMsgBox(MessageText, mbInformation, MB_OK, IDOK);
+  end;
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+var
+  ModeDescription: String;
+begin
+  if WizardIsComponentSelected('system') then
+    ModeDescription := CustomMessage('SystemMode')
+  else
+    ModeDescription := CustomMessage('BundledMode');
+  Result := MemoDirInfo + NewLine + NewLine + CustomMessage('RuntimeSummary') + NewLine + Space + ModeDescription;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Mode: String;
+begin
+  Mode := CompatiblePreviousMode();
+  if Mode <> '' then WizardSelectComponents(Mode);
   Result := '';
   if CompareText(WizardDirValue(), NormalizeInstallDir(WizardDirValue())) <> 0 then
     Result := CustomMessage('InvalidDir')
   else if not ProgramsClosed() then
     Result := CustomMessage('ClosePrograms')
-  else if WizardIsComponentSelected('system') then begin
-#include RuntimeChecksFile
-  end;
+  else if WizardIsComponentSelected('system') then
+    Result := RuntimeError();
 end;
