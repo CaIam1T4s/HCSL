@@ -191,7 +191,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             try
             {
                 VerifyBaseline(plan.RuntimePath, ActiveBaseline(lease.Layout, plan.BuildId), cancellationToken);
-                return existing;
+                return HasPendingModuleLayout(lease.Layout, plan, existing) ? null : existing;
             }
             catch (Exception e) when (e is DeploymentException or IOException) { /* Keep the repair path available. */ }
         }
@@ -771,6 +771,21 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             }
         }
         internal void Commit() { }
+    }
+
+    private static bool HasPendingModuleLayout(WorkspaceLayout layout, DeploymentPlan plan, DeploymentReceipt receipt)
+    {
+        if (ManagedPluginRoute(plan.Framework) is not { } route || IsPersistentPluginRoot(plan.Framework, route.PluginRoot)) return false;
+        var runtimeRoot = InRoot(plan.RuntimePath, "game/" + route.PluginRoot);
+        var dataRoot = InRoot(layout.InstancesRoot, Id(plan.InstanceId) + "/presets/" + Id(plan.PresetId) + "/" + route.DataRoot);
+        var builtIn = (receipt.PluginManifest ?? []).Where(p => p.FrameworkPayload && p.Framework == plan.Framework)
+            .SelectMany(p => p.Files).Where(f => PluginRules.IsPathUnder(f.Path, route.PluginRoot) && f.Path.Length > route.PluginRoot.Length)
+            .Select(f => f.Path[(route.PluginRoot.Length + 1)..]).Where(p => p.Contains('/'))
+            .Select(p => p.Split('/')[0]).ToHashSet(StringComparer.FromComparison(LocalPaths.Comparison));
+        if (Directory.Exists(runtimeRoot) && new DirectoryInfo(runtimeRoot).EnumerateDirectories().Any(d => d.LinkTarget is null && !builtIn.Contains(d.Name)))
+            return true;
+        return Directory.Exists(dataRoot) && new DirectoryInfo(dataRoot).EnumerateDirectories().Any(d =>
+            !string.Equals(new DirectoryInfo(Path.Combine(runtimeRoot, d.Name)).LinkTarget, d.FullName, LocalPaths.Comparison));
     }
 
     private static (string PluginRoot, string DataRoot)? ManagedPluginRoute(string? framework)
