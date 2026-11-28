@@ -45,6 +45,15 @@ try
     var baseline = new RuntimeDeploymentService.Baseline("123", Hash(entrypoint), [new("game/bin/linuxsteamrt64/cs2", new FileInfo(native).Length, Hash(native))], ["game/csgo/gameinfo.gi", "game/csgo/steam.inf"]);
     var service = new RuntimeDeploymentService(baseline);
     DeploymentOptions Options(InstanceEntry e) => new(e.Id, DeploymentCopyMode.FullCopy);
+    if (args is ["--only", "install-state"])
+    {
+        File.WriteAllText(state, """{"FormatVersion":1,"AppId":730,"Status":"Ready"}""");
+        Reject("HCSL-DEPLOY-INSTALL-STATE", () => service.Plan(workspace, Options(first)));
+        File.WriteAllText(state, """{"FormatVersion":1,"AppId":730,"Status":"Ready","BuildId":"456"}""");
+        Reject("HCSL-DEPLOY-BASELINE", () => service.Plan(workspace, Options(first)));
+        Console.WriteLine("PASS invalid installation state and stale baseline have distinct codes");
+        return 0;
+    }
     string Runtime(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, "runtime", e.Id.ToString());
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");

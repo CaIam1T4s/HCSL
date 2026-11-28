@@ -71,7 +71,7 @@
             <arc:Checkbox Content="自动准备缺失的 SteamCMD" IsChecked="{Binding SteamCmd.InstallIfMissing, Mode=TwoWay}"/>
           </StackPanel>
           <arc:Button Content="恢复下载任务" Click="RecoverDownload" IsEnabled="{Binding SteamCmd.CanStart}" Variant="Ghost" HorizontalAlignment="Left"/>
-          <TextBlock Classes="subheading" Text="启动基线（部署校验记录）" Margin="0,12,0,0"/>
+          <TextBlock x:Name="StartupBaselineHeading" Classes="subheading" Text="启动基线（部署校验记录）" Margin="0,12,0,0"/>
           <TextBlock Text="用于部署前核对当前内容库中的服务端文件。校验记录异常不会改变服务端的安装状态。" Classes="muted" TextWrapping="Wrap"/>
           <TextBlock Text="{Binding Baseline.StatusText}" Classes="muted" TextWrapping="Wrap"/>
           <WrapPanel>

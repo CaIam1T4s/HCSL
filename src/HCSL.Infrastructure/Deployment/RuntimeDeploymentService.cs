@@ -208,7 +208,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw new DeploymentException("HCSL-DEPLOY-PLUGINS", "Access rules are not deployable yet; nonempty or unknown manifests are refused.");
         var state = DeploymentFiles.Read<InstallState>(InRoot(l.LibraryRoot, ".hcsl/cs2-install.json"));
         if (state is not { FormatVersion: 1, AppId: 730, Status: "Ready" } || string.IsNullOrWhiteSpace(state.BuildId))
-            throw new DeploymentException("HCSL-DEPLOY-BASELINE", "Ready installation must have a valid BuildId before deployment.");
+            throw new DeploymentException("HCSL-DEPLOY-INSTALL-STATE", "Ready installation must have a valid BuildId before deployment.");
         if (pluginSet.Packages.Count(package => package.FrameworkPayload &&
                 FrameworkRules.Find(package.Framework)?.Kind == FrameworkKind.ScriptFramework) > 1 && state.BuildId != "26879581")
             throw new DeploymentException("HCSL-DEPLOY-FRAMEWORK-BUILD", "多框架组合仅在 CS2 构建 26879581 上通过验证。");
