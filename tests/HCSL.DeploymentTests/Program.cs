@@ -58,6 +58,56 @@ try
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    if (args is ["--only", "plugin-sync"])
+    {
+        var plugins = new LocalPluginStore();
+        var definition = first.Definition!;
+        const string relative = "csgo/addons/example-plugin/bin/plugin.so";
+        foreach (var version in new[] { "1.0.0", "2.0.0" })
+        {
+            var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "example-plugin", version);
+            var file = Path.Combine(package, "files", relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllText(file, version);
+            File.WriteAllText(Path.Combine(package, "plugin.json"), $$"""{"FormatVersion":1,"Id":"example-plugin","Name":"Example","Version":"{{version}}"}""");
+        }
+        void Select(string? version)
+        {
+            var list = plugins.Execute(workspace, new(PluginAction.List, first.Id, definition.SelectedPresetId));
+            plugins.Execute(workspace, new(PluginAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+                list.Hash, version is null ? [] : [new("example-plugin", version)]));
+        }
+        service.Deploy(workspace, Options(first));
+        var sentinel = Path.Combine(Runtime(first), "keep-in-current-runtime.txt");
+        File.WriteAllText(sentinel, "original runtime");
+        var target = Path.Combine(Runtime(first), "game", relative);
+        var incremental = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "Cloned") throw new Exception("Plugin sync cloned the runtime.");
+        });
+        Select("1.0.0");
+        incremental.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(target) == "1.0.0", "Plugin was not added.");
+        Select("2.0.0");
+        File.WriteAllText(target, "user edit");
+        Reject("HCSL-DEPLOY-PLUGIN-CONFLICT", () => incremental.Deploy(workspace, Options(first)));
+        Check(File.ReadAllText(target) == "user edit", "Plugin sync overwrote a user edit.");
+        File.WriteAllText(target, "1.0.0");
+        var failing = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "IncrementalPluginsApplied") throw new IOException("injected sync failure");
+        });
+        try { failing.Deploy(workspace, Options(first)); throw new Exception("Expected plugin sync failure."); }
+        catch (IOException e) when (e.Message == "injected sync failure") { }
+        Check(File.ReadAllText(target) == "1.0.0", "Failed sync did not restore the installed plugin.");
+        incremental.Deploy(workspace, Options(first));
+        Check(File.ReadAllText(target) == "2.0.0", "Plugin was not upgraded.");
+        Select(null);
+        incremental.Deploy(workspace, Options(first));
+        Check(!File.Exists(target) && File.Exists(sentinel), "Plugin removal failed or replaced the runtime.");
+        Console.WriteLine("PASS addon sync adds, upgrades and removes plugins without replacing the runtime");
+        return 0;
+    }
     if (args is ["--only", "plugin-manifest"])
     {
         var package = Path.Combine(workspace.LibraryRoot, "plugin-packages", "metamod", "1.0.0");

@@ -1115,7 +1115,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         Platform();
         LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
         var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
-        if (TryUpdateRotation(lease, plan, cancellationToken) is { } updated)
+        if ((TrySyncPlugins(lease, plan, cancellationToken) ?? TryUpdateRotation(lease, plan, cancellationToken)) is { } updated)
         {
             progress?.Report(new("DeployedOffline"));
             return updated;
@@ -1243,6 +1243,82 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             package.Files.Select(file => new DeployedPluginFile(file.RelativePath, file.Sha256)).ToArray())).ToArray();
         // Leave room for persistent mappings under the receipt reader's 1 MiB limit.
         return JsonSerializer.SerializeToUtf8Bytes(manifest).Length <= 512 * 1024 ? manifest : null;
+    }
+
+    private DeploymentReceipt? TrySyncPlugins(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
+    {
+        var prior = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
+        if (prior is not { FormatVersion: 2, PluginManifest: not null } || prior.PluginSetHash == plan.PluginSetHash ||
+            prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness || prior.CopyMode != plan.CopyMode ||
+            !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
+            ServerPreparation.IsStale(prior with { PluginSetHash = plan.PluginSetHash }, plan) ||
+            !RotationFileMatches(prior, plan.RuntimePath)) return null;
+        var mapping = plan.PersistentMappings.Single(m => m.RuntimePath == "game/csgo/addons");
+        if (mapping.Kind != DeploymentMappingKind.Link) return null;
+        var layout = lease.Layout;
+        var preset = InRoot(layout.InstancesRoot, Id(plan.InstanceId) + "/presets/" + Id(plan.PresetId));
+        var selection = PluginSet(preset, layout.LibraryRoot);
+        if (selection.Hash != plan.PluginSetHash)
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "Plugin selection changed during deployment.");
+        var manifest = CapturePluginManifest(selection.Packages);
+        if (manifest is null) return null;
+        var unchanged = manifest.Where(p => prior.PluginManifest.Any(old => old.Id == p.Id && old.Version == p.Version && old.Hash == p.Hash))
+            .Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        var oldChanged = prior.PluginManifest.Where(p => !unchanged.Contains(p.Id)).ToArray();
+        var newChanged = manifest.Where(p => !unchanged.Contains(p.Id)).ToArray();
+        if (oldChanged.Concat(newChanged).Any(p => p.FrameworkPayload || FrameworkRules.Find(p.Id) is not null || p.Files.Any(f =>
+            !PluginRules.IsAddonFile(f.Path) || ManagedPluginRouteOfPath(f.Path) is not null ||
+            plan.PersistentMappings.Any(m => m != mapping && Overlaps(GameRelative(m.RuntimePath), f.Path))))) return null;
+        var comparer = StringComparer.FromComparison(LocalPaths.Comparison);
+        var ledgerPath = InRoot(preset, ".hcsl-plugin-ledger.json");
+        var ledger = ReadPluginLedger(ledgerPath);
+        var oldFiles = oldChanged.SelectMany(p => p.Files).ToDictionary(f => f.Path, comparer);
+        var newFiles = selection.Packages.Where(p => !unchanged.Contains(p.Id)).SelectMany(p => p.Files)
+            .ToDictionary(f => f.RelativePath, comparer);
+        var keptEntries = ledger.Packages.Where(p => unchanged.Contains(p.Id)).ToArray();
+        var keptPaths = keptEntries.SelectMany(p => p.Files).Select(f => f.Path).ToHashSet(comparer);
+        var owned = ledger.Packages.Where(p => oldChanged.Any(old => old.Id == p.Id && old.Version == p.Version))
+            .SelectMany(p => p.Files).ToDictionary(f => f.Path, comparer);
+        EnsureStopped(plan.RuntimePath);
+        VerifyBaseline(plan.RuntimePath, ActiveBaseline(layout, plan.BuildId), ct);
+        var writes = new List<PluginAddonFile>();
+        var removals = new List<PluginAddonFile>();
+        const string prefix = "csgo/addons/";
+        foreach (var path in oldFiles.Keys.Union(newFiles.Keys, comparer))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (keptPaths.Contains(path))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin path belongs to another installed package: {path}");
+            oldFiles.TryGetValue(path, out var old);
+            newFiles.TryGetValue(path, out var next);
+            if (old is not null && (!owned.TryGetValue(path, out var recorded) || recorded.Sha256 != old.Sha256))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin ownership could not be confirmed: {path}");
+            if (old is not null && old.Sha256 == next?.Sha256) continue;
+            var destination = AddonsPath(mapping.PersistentPath, path[prefix.Length..]);
+            if (Directory.Exists(destination) || (File.Exists(destination) &&
+                (old is null || !string.Equals(HashFile(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))))
+                throw new DeploymentException("HCSL-DEPLOY-PLUGIN-CONFLICT", $"Plugin path is occupied or modified: {path}");
+            if (next is not null) writes.Add(new(next.RelativePath, next.FullPath, next.Sha256));
+            else if (old is not null) removals.Add(new(old.Path, destination, old.Sha256));
+        }
+        var updatedLedger = new PluginLedger(1, [.. keptEntries, .. newChanged.Select(p =>
+            new PluginLedgerEntry(p.Id, p.Version, p.Files.Select(f => new PluginLedgerFile(f.Path, f.Sha256)).ToArray()))]);
+        var changes = new PluginAddonPlan(mapping.PersistentPath, prefix, ledgerPath, [.. writes], [.. removals], updatedLedger);
+        var tx = new Transaction(2, Guid.NewGuid(), plan.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
+        var journal = Journal(layout, plan.InstanceId);
+        var receipt = prior with { OperationId = tx.OperationId, PluginSetHash = plan.PluginSetHash, PluginManifest = manifest };
+        ct.ThrowIfCancellationRequested();
+        DeploymentFiles.AtomicJson(journal, tx);
+        changes.Apply();
+        try
+        {
+            checkpoint?.Invoke("IncrementalPluginsApplied");
+            DeploymentFiles.AtomicJson(InRoot(plan.RuntimePath, "deployment.json"), receipt);
+        }
+        catch { changes.Rollback(); File.Delete(journal); throw; }
+        changes.Commit();
+        File.Delete(journal);
+        return receipt;
     }
 
     private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
@@ -1414,12 +1490,14 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         var journal = Journal(l, instanceId); LocalPaths.RejectLink(journal);
         if (!File.Exists(journal)) return "NoPendingDeployment";
         var tx = DeploymentFiles.Read<Transaction>(journal);
-        if (tx.FormatVersion != 1 || tx.OperationId == Guid.Empty || tx.InstanceId != instanceId || tx.DataId != lease.Identity.DataId || tx.LibraryId != lease.Identity.LibraryId)
+        if (tx.FormatVersion is not (1 or 2) || tx.OperationId == Guid.Empty || tx.InstanceId != instanceId || tx.DataId != lease.Identity.DataId || tx.LibraryId != lease.Identity.LibraryId)
             throw new DeploymentException("HCSL-DEPLOY-RECOVERY", "Unknown deployment journal; nothing was changed.");
         var target = Target(l, instanceId); var previous = Previous(l, tx); var stage = Stage(l, tx);
         LocalPaths.RejectLink(stage); LocalPaths.RejectLink(previous); EnsureStopped(target);
         var current = ValidateExisting(lease, instanceId, target);
         if (current?.OperationId == tx.OperationId) { File.Delete(journal); return "PublishedDeploymentConfirmed"; }
+        if (tx.FormatVersion == 2)
+            throw new DeploymentException("HCSL-DEPLOY-RECOVERY", "Plugin sync was interrupted before publication. Inspect the preset plugin backups before clearing the deployment journal.");
         if (!Directory.Exists(target) && Directory.Exists(previous))
         {
             ValidateExisting(lease, instanceId, previous); EnsureStopped(previous); Directory.Move(previous, target);
