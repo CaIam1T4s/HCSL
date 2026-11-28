@@ -226,17 +226,17 @@ try
             Check(record.RootElement.GetProperty("Status").GetString() == "ValidationInterrupted" &&
                 record.RootElement.GetProperty("BuildId").GetString() == "123", "cancelled validation lost the last verified build");
         File.WriteAllText(native, "unfinished repair in shared content");
-        var plan = service.PrepareForStart(lease, Options(first), autoDeploy: false, default);
+        var plan = service.PrepareForStart(lease, Options(first), default);
+        Check(plan.Scope == DeploymentScope.None, "Startup must reuse the verified runtime even when automatic deployment is permitted.");
         Check(plan.BuildId == deployed.BuildId && plan.RuntimePath == Runtime(first) &&
             plan.InstanceRevision > deployed.InstanceRevision && plan.PresetRevision > deployed.PresetRevision,
             "A verified deployment must remain startable after instance and preset renames.");
         Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.Prepare(lease, Options(first), default));
-        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(first), autoDeploy: true, default));
-        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(second), autoDeploy: false, default));
+        Reject("HCSL-DEPLOY-VALIDATION-INTERRUPTED", () => service.PrepareForStart(lease, Options(second), default));
         Check(DeploymentFiles.Read<DeploymentReceipt>(Path.Combine(Runtime(first), "deployment.json")).OperationId == deployed.OperationId,
             "start eligibility must not silently redeploy");
         File.WriteAllText(Path.Combine(Runtime(first), "game/bin/linuxsteamrt64/cs2"), "damaged deployed binary");
-        Reject("HCSL-DEPLOY-BASELINE", () => service.PrepareForStart(lease, Options(first), autoDeploy: false, default));
+        Reject("HCSL-DEPLOY-BASELINE", () => service.PrepareForStart(lease, Options(first), default));
         Console.WriteLine("PASS cancelled validation preserves only an independently verified deployment");
         return 0;
     }

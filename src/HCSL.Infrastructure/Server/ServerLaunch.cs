@@ -40,7 +40,7 @@ internal static class ServerPreparation
         {
             var deployment = new RuntimeDeploymentService();
             var deploymentOptions = new DeploymentOptions(options.InstanceId);
-            var plan = deployment.PrepareForStart(lease, deploymentOptions, options.AutoDeploy, ct);
+            var plan = deployment.PrepareForStart(lease, deploymentOptions, ct);
             // AutoDeploy is the operator's explicit "redeploy and start" choice, made in the UI after a
             // DEPLOYMENT/STALE rejection; it is never implied. The deploy reuses this session's lease,
             // because a second lease in the same process is refused with HCSL-LOCK.
