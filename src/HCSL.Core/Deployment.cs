@@ -1,6 +1,6 @@
 namespace HCSL.Core;
 
-public enum DeploymentScope { Full, Plugins, Rotation, PluginsAndRotation }
+public enum DeploymentScope { Full, Plugins, Rotation, PluginsAndRotation, None }
 public enum DeploymentCopyMode { Reflink, FullCopy }
 public enum DeploymentMappingKind { Link, Materialized }
 public sealed record DeploymentOptions(Guid InstanceId, DeploymentCopyMode CopyMode = DeploymentCopyMode.Reflink, long? ExpectedRevision = null);

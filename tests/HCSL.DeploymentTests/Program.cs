@@ -80,6 +80,7 @@ try
         service.Deploy(workspace, Options(first));
         var sentinel = Path.Combine(Runtime(first), "keep-in-current-runtime.txt");
         File.WriteAllText(sentinel, "original runtime");
+        Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.None, "An unchanged verified deployment should not require deployment.");
         var target = Path.Combine(Runtime(first), "game", relative);
         var incremental = new RuntimeDeploymentService(baseline, phase =>
         {

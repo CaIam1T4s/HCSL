@@ -169,6 +169,19 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     {
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
         var plan = Prepare(lease, options, cancellationToken);
+        var existing = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
+        if (existing is { FormatVersion: 2, PluginManifest: not null } && existing.CopyMode == plan.CopyMode &&
+            existing.Framework == plan.Framework && existing.FrameworkReadiness == plan.FrameworkReadiness &&
+            existing.PersistentMappings.SequenceEqual(plan.PersistentMappings) && !ServerPreparation.IsStale(existing, plan) &&
+            RotationFileMatches(existing, plan.RuntimePath))
+        {
+            try
+            {
+                VerifyBaseline(plan.RuntimePath, ActiveBaseline(lease.Layout, plan.BuildId), cancellationToken);
+                return plan with { Scope = DeploymentScope.None };
+            }
+            catch (Exception e) when (e is DeploymentException or IOException) { /* Keep the repair path available. */ }
+        }
         var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
         if (prior is not null)
             return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
