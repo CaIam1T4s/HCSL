@@ -83,9 +83,11 @@ public partial class InstanceOverviewPage : UserControl
                 _ => "当前无法检查部署范围"
             });
         }
-        catch (Exception)
+        catch (Exception e)
         {
-            if (request == deployHelpRequest) Tooltip.SetTip(DeployHelpButton, "当前无法检查部署范围");
+            if (request == deployHelpRequest && Model == model && model.Selected?.Entry.Definition == definition)
+                Tooltip.SetTip(DeployHelpButton, e is IOException && e.Message.StartsWith("HCSL-MAPGROUP-STARTUP:", StringComparison.Ordinal)
+                    ? "当前图池缺少启动地图" : "当前无法检查部署范围");
         }
     }
 
@@ -197,6 +199,11 @@ public partial class InstanceOverviewPage : UserControl
         try { plan = await GetDeployPreviewAsync(m, d.Id, d.SelectedPresetId); }
         catch (IOException e) { Error("无法获取部署预览", e.Message); return; }
         if (plan is null) { Error("无法获取部署预览", "宿主未连接或已有操作。"); return; }
+        if (plan.Scope == DeploymentScope.None)
+        {
+            owner.ShowInstanceNotification("当前无需部署", "现有部署已匹配当前配置。", ToastKind.Success);
+            return;
+        }
         if (await owner.ChooseAsync("部署预览（不启动）", DevFormat.Plan(plan, m.Selected.Entry, preset), "取消", "确认部署") != 1) return;
         if (m.Selected?.Entry.Id != d.Id) return;
         var previousRun = m.Server.RunId;

@@ -77,7 +77,7 @@ try
             plugins.Execute(workspace, new(PluginAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
                 list.Hash, version is null ? [] : [new("example-plugin", version)]));
         }
-        service.Deploy(workspace, Options(first));
+        var initialReceipt = service.Deploy(workspace, Options(first));
         var sentinel = Path.Combine(Runtime(first), "keep-in-current-runtime.txt");
         File.WriteAllText(sentinel, "original runtime");
         Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.None, "An unchanged verified deployment should not require deployment.");
@@ -86,6 +86,8 @@ try
         {
             if (phase == "Cloned") throw new Exception("Plugin sync cloned the runtime.");
         });
+        Check(incremental.Deploy(workspace, Options(first)).OperationId == initialReceipt.OperationId,
+            "Deploy cloned an unchanged runtime instead of returning the existing receipt.");
         Select("1.0.0");
         Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Plugins, "Preview did not classify plugin sync.");
         incremental.Deploy(workspace, Options(first));
@@ -148,6 +150,8 @@ try
                 current.Pool.Revision, current.Hash, maps.Select(map => new ServerMapTarget(ServerMapKind.Standard, map)).ToArray()));
         }
         var initial = service.Deploy(workspace, Options(first));
+        Save("de_inferno", "de_mirage");
+        Reject("HCSL-MAPGROUP-STARTUP", () => service.Plan(workspace, Options(first)));
         Save("de_dust2", "de_inferno");
         Check(service.Plan(workspace, Options(first)).Scope == DeploymentScope.Rotation, "Preview did not classify rotation sync.");
         var prior = service.Deploy(workspace, Options(first));

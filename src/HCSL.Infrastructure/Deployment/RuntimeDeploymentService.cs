@@ -169,6 +169,18 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     {
         Platform(); using var lease = new LocalWorkspaceManager().Acquire(workspace);
         var plan = Prepare(lease, options, cancellationToken);
+        if (UnchangedDeployment(lease, plan, cancellationToken) is not null)
+            return plan with { Scope = DeploymentScope.None };
+        var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
+        if (prior is not null)
+            return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
+                ? DeploymentScope.PluginsAndRotation : DeploymentScope.Plugins };
+        return TryUpdateRotation(lease, plan, cancellationToken, preview: true) is null
+            ? plan : plan with { Scope = DeploymentScope.Rotation };
+    }
+
+    private DeploymentReceipt? UnchangedDeployment(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken cancellationToken)
+    {
         var existing = ValidateExisting(lease, plan.InstanceId, plan.RuntimePath, verifyRotation: false, allowLegacy: true);
         if (existing is { FormatVersion: 2, PluginManifest: not null } && existing.CopyMode == plan.CopyMode &&
             existing.Framework == plan.Framework && existing.FrameworkReadiness == plan.FrameworkReadiness &&
@@ -178,16 +190,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             try
             {
                 VerifyBaseline(plan.RuntimePath, ActiveBaseline(lease.Layout, plan.BuildId), cancellationToken);
-                return plan with { Scope = DeploymentScope.None };
+                return existing;
             }
             catch (Exception e) when (e is DeploymentException or IOException) { /* Keep the repair path available. */ }
         }
-        var prior = TrySyncPlugins(lease, plan, cancellationToken, preview: true);
-        if (prior is not null)
-            return plan with { Scope = prior.RotationHash != plan.RotationHash || prior.RotationCollection != plan.RotationCollection
-                ? DeploymentScope.PluginsAndRotation : DeploymentScope.Plugins };
-        return TryUpdateRotation(lease, plan, cancellationToken, preview: true) is null
-            ? plan : plan with { Scope = DeploymentScope.Rotation };
+        return null;
     }
     internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
         PrepareCore(lease, options, ct, allowInterruptedValidation: false);
@@ -225,7 +232,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             collection = MapPoolRules.CollectionId(mapPool);
             rotation = collection is null ? ServerMapGroupRules.Create(p.Id, p.Map, mapPool) : null;
         }
-        catch (InstanceException e) { throw new DeploymentException("HCSL-DEPLOY-ROTATION", e.Message); }
+        catch (InstanceException e) { throw new DeploymentException(e.Code == "HCSL-MAPGROUP-STARTUP" ? e.Code : "HCSL-DEPLOY-ROTATION", e.Message); }
         var pluginSet = PluginSet(preset, l.LibraryRoot);
         var framework = FrameworkOf(pluginSet.Packages);
         var authorization = DeploymentFiles.Read<JsonElement>(InRoot(preset, "authorization.json"));
@@ -1134,7 +1141,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         Platform();
         LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
         var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
-        if ((TrySyncPlugins(lease, plan, cancellationToken) ?? TryUpdateRotation(lease, plan, cancellationToken)) is { } updated)
+        if ((UnchangedDeployment(lease, plan, cancellationToken) ?? TrySyncPlugins(lease, plan, cancellationToken) ??
+            TryUpdateRotation(lease, plan, cancellationToken)) is { } updated)
         {
             progress?.Report(new("DeployedOffline"));
             return updated;
