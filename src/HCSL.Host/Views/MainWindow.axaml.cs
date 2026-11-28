@@ -128,14 +128,12 @@ public partial class MainWindow : ArcWindow
         return (result == 1, result == 1 && consent.IsChecked == true);
     }
 
-    public Task<int> ChooseAsync(string title, string text, params string[] choices) => ChooseCoreAsync(title, text, choices);
-
-    private Task<int> ChooseCoreAsync(string title, string text, string[] choices, bool primaryLast = false)
+    public Task<int> ChooseAsync(string title, string text, params string[] choices)
     {
         var content = new StackPanel { Spacing = 12 };
         content.Children.Add(new TextBlock { Text = title, FontSize = 20 });
         content.Children.Add(new TextBlock { Text = text, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
-        return ShowOverlayAsync(content, choices, primaryLast: primaryLast);
+        return ShowOverlayAsync(content, choices);
     }
     public async Task<bool> EditInstanceAsync(InstanceDefinition? original, Func<HCSL.Frontend.HostInstanceDraft, Task<string?>> save, bool nameOnly = false)
     {
@@ -205,14 +203,14 @@ public partial class MainWindow : ArcWindow
         try { InstanceRules.Password(value); return value; }
         catch (InstanceException e) { await ChooseAsync("密码无效", e.Message, "返回"); return null; }
     }
-    private async Task<int> ShowOverlayAsync(StackPanel content, string[] choices, bool hideConsole = true, bool primaryLast = false)
+    private async Task<int> ShowOverlayAsync(StackPanel content, string[] choices, bool hideConsole = true)
     {
         // Async server failures must not be silently discarded while another prompt is open.
         await promptGate.WaitAsync();
-        try { return windowClosed ? -1 : await ShowOverlayCoreAsync(content, choices, hideConsole, primaryLast); }
+        try { return windowClosed ? -1 : await ShowOverlayCoreAsync(content, choices, hideConsole); }
         finally { promptGate.Release(); }
     }
-    private async Task<int> ShowOverlayCoreAsync(StackPanel content, string[] choices, bool hideConsole, bool primaryLast)
+    private async Task<int> ShowOverlayCoreAsync(StackPanel content, string[] choices, bool hideConsole)
     {
         var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         prompt = completion;
@@ -227,8 +225,7 @@ public partial class MainWindow : ArcWindow
         {
             var index = i;
             var isSave = isInstanceEditor && i == choices.Length - 1;
-            var primary = isSave || primaryLast && i == choices.Length - 1;
-            var button = new TKCode.Arc.Button { Content = choices[i], Variant = primary ? ButtonVariant.Primary : ButtonVariant.Secondary,
+            var button = new TKCode.Arc.Button { Content = choices[i], Variant = isSave ? ButtonVariant.Primary : ButtonVariant.Secondary,
                 IsDefault = isSave, Margin = isInstanceEditor ? default : new Thickness(0, 0, 8, 8) };
             if (isSave) button.Classes.Add("instance-save");
             firstButton ??= button;
