@@ -507,7 +507,7 @@ try
         service.Deploy(workspace, Options(first));
         Check(File.ReadAllText(rotation).Contains("de_inferno", StringComparison.Ordinal), "Redeploy did not repair the map group.");
         Save([new(ServerMapKind.Standard, "de_mirage")]);
-        Reject("HCSL-DEPLOY-ROTATION", () => service.Plan(workspace, Options(first)));
+        Reject("HCSL-MAPGROUP-STARTUP", () => service.Plan(workspace, Options(first)));
         Save([new(ServerMapKind.Workshop, "3070244462")]);
         Check(service.Plan(workspace, Options(first)).RotationGroup is null, "Workshop pool produced a native map group.");
         service.Deploy(workspace, Options(first));
