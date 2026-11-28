@@ -58,6 +58,33 @@ try
     string Preset(InstanceEntry e) => Path.Combine(workspace.DataRoot, "instances", e.Id.ToString(), "presets", e.Definition!.SelectedPresetId.ToString());
     string Journal(InstanceEntry e) => Path.Combine(workspace.LibraryRoot, ".hcsl", "deployment-" + e.Id + ".json");
     var sourceHashes = Directory.GetFiles(Path.Combine(server, "game"), "*", SearchOption.AllDirectories).ToDictionary(p => p, Hash);
+    if (args is ["--only", "rotation-update"])
+    {
+        var rotationStore = new LocalPresetMapPoolStore();
+        var definition = first.Definition!;
+        void Save(params string[] maps)
+        {
+            var current = rotationStore.Execute(workspace, new(MapPoolAction.Read, first.Id, definition.SelectedPresetId));
+            rotationStore.Execute(workspace, new(MapPoolAction.Save, first.Id, definition.SelectedPresetId, definition.Revision,
+                current.Pool.Revision, current.Hash, maps.Select(map => new ServerMapTarget(ServerMapKind.Standard, map)).ToArray()));
+        }
+        Save("de_dust2", "de_inferno");
+        var prior = service.Deploy(workspace, Options(first));
+        Save("de_inferno", "de_dust2");
+        var fail = new RuntimeDeploymentService(baseline, phase =>
+        {
+            if (phase == "Cloned") throw new InvalidOperationException("Rotation update cloned the runtime.");
+            if (phase == "RotationWritten") throw new IOException("injected receipt publication failure");
+        });
+        try { fail.Deploy(workspace, Options(first)); throw new InvalidOperationException("Expected publication failure."); }
+        catch (IOException e) when (e.Message == "injected receipt publication failure") { }
+        Check(RuntimeDeploymentService.RotationFileMatches(prior, Runtime(first)), "Failed update did not restore the old rotation.");
+        var updated = service.Deploy(workspace, Options(first));
+        Check(updated.OperationId == prior.OperationId && updated.RotationHash != prior.RotationHash &&
+            RuntimeDeploymentService.RotationFileMatches(updated, Runtime(first)), "Rotation update replaced the runtime or did not publish the new rotation.");
+        Console.WriteLine("PASS rotation-only deployment avoids cloning and rolls back a failed publication");
+        return 0;
+    }
     if (args is ["--only", "cancel-validation"])
     {
         var deployed = service.Deploy(workspace, Options(first));

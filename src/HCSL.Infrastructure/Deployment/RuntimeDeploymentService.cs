@@ -914,10 +914,10 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         if (!File.ReadAllText(path).StartsWith(ServerMapGroupRules.ManagedMarker, StringComparison.Ordinal)) return;
         File.Delete(path);
     }
-    private static void WriteRotation(string stage, ServerMapGroupPlan rotation)
+    private static void WriteRotation(string stage, ServerMapGroupPlan rotation, bool replace = false)
     {
         var path = InRoot(stage, "game/csgo/" + ServerMapGroupRules.FileName); LocalPaths.RejectLink(path);
-        if (File.Exists(path) && new FileInfo(path).Length != 0)
+        if (!replace && File.Exists(path) && new FileInfo(path).Length != 0)
             throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The staged game already has a nonempty gamemodes_server.txt.");
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
         try
@@ -1115,6 +1115,11 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
         Platform();
         LocalPluginMigration.Run(Path.Combine(lease.Layout.LibraryRoot, "plugin-packages"));
         var plan = Prepare(lease, options, cancellationToken); var l = lease.Layout;
+        if (TryUpdateRotation(lease, plan, cancellationToken) is { } updated)
+        {
+            progress?.Report(new("DeployedOffline"));
+            return updated;
+        }
         var tx = new Transaction(1, Guid.NewGuid(), options.InstanceId, lease.Identity.DataId, lease.Identity.LibraryId);
         var journal = Journal(l, tx.InstanceId); var stage = Stage(l, tx); var previous = Previous(l, tx);
         // Once this is durable, all partial files and renames have a known recovery owner.
@@ -1230,6 +1235,49 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             throw;
         }
     }
+    private DeploymentReceipt? TryUpdateRotation(IWorkspaceLease lease, DeploymentPlan plan, CancellationToken ct)
+    {
+        if (plan.RotationHash is null) return null;
+        var target = plan.RuntimePath;
+        var prior = ValidateExisting(lease, plan.InstanceId, target, verifyRotation: false, allowLegacy: true);
+        if (prior is not { FormatVersion: 2, RotationHash: not null } || prior.RotationHash == plan.RotationHash ||
+            prior.CopyMode != plan.CopyMode || prior.Framework != plan.Framework || prior.FrameworkReadiness != plan.FrameworkReadiness ||
+            !prior.PersistentMappings.SequenceEqual(plan.PersistentMappings) ||
+            ServerPreparation.IsStale(prior with { RotationHash = plan.RotationHash, RotationGroup = plan.RotationGroup }, plan) ||
+            !RotationFileMatches(prior, target)) return null;
+
+        var layout = lease.Layout;
+        EnsureStopped(target);
+        VerifyBaseline(target, ActiveBaseline(layout, plan.BuildId), ct);
+        var instance = InRoot(layout.InstancesRoot, Id(plan.InstanceId));
+        var preset = LocalInstanceStore.Load(instance, plan.InstanceId).Presets.Single(p => p.Id == plan.PresetId);
+        var rotation = Rotation(InRoot(instance, "presets/" + Id(preset.Id)), preset);
+        if (rotation is null || rotation.Hash != plan.RotationHash)
+            throw new DeploymentException("HCSL-DEPLOY-CONFLICT", "The map pool changed while deployment was prepared.");
+        foreach (var map in LocalPresetMapPoolStore.ReadForDeployment(InRoot(instance, "presets/" + Id(preset.Id) + "/maps.json")).Maps)
+        {
+            var package = new FileInfo(InRoot(target, "game/csgo/maps/" + map.Value + ".vpk"));
+            if (!package.Exists || package.Length == 0)
+                throw new DeploymentException("HCSL-DEPLOY-ROTATION", "The deployed runtime is missing a map required by the new rotation.");
+        }
+        ct.ThrowIfCancellationRequested();
+        var receipt = prior with { RotationGroup = rotation.Name, RotationHash = rotation.Hash };
+        var path = InRoot(target, "game/csgo/" + ServerMapGroupRules.FileName);
+        var original = SmallText(path);
+        WriteRotation(target, rotation, replace: true);
+        try
+        {
+            checkpoint?.Invoke("RotationWritten");
+            DeploymentFiles.AtomicJson(InRoot(target, "deployment.json"), receipt);
+        }
+        catch
+        {
+            WriteRotation(target, rotation with { Content = original }, replace: true);
+            throw;
+        }
+        return receipt;
+    }
+
     private static string GameRelative(string runtimePath) =>
         runtimePath.StartsWith("game/", StringComparison.Ordinal) ? runtimePath[5..] : runtimePath;
     /// <summary>Copies user-owned module directories from an older deployment into the preset data root before the runtime is replaced.</summary>
