@@ -200,8 +200,8 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
     internal DeploymentPlan Prepare(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
         PrepareCore(lease, options, ct, allowInterruptedValidation: false);
 
-    internal DeploymentPlan PrepareForStart(IWorkspaceLease lease, DeploymentOptions options, bool autoDeploy, CancellationToken ct) =>
-        PrepareCore(lease, options, ct, allowInterruptedValidation: !autoDeploy);
+    internal DeploymentPlan PrepareForStart(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct) =>
+        PrepareCore(lease, options, ct, allowInterruptedValidation: true);
 
     private (DeploymentPlan Plan, bool RetainedOnly) PrepareManualDeployment(IWorkspaceLease lease, DeploymentOptions options, CancellationToken ct)
     {
@@ -341,7 +341,7 @@ public sealed class RuntimeDeploymentService : IRuntimeDeploymentService
             var comparison = allowPluginChanges ? retained with { PluginSetHash = existingPlan.PluginSetHash } : retained;
             if (ServerPreparation.IsStale(comparison, existingPlan) || !RotationFileMatches(retained, target))
                 throw new DeploymentException("HCSL-DEPLOY-VALIDATION-INTERRUPTED", "The existing deployment needs to be rebuilt after server file validation.");
-            return existingPlan;
+            return existingPlan with { Scope = DeploymentScope.None };
         }
         var windows = OperatingSystem.IsWindows();
         if (windows && options.CopyMode != DeploymentCopyMode.FullCopy)
